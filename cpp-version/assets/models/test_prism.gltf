@@ -1,0 +1,43 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Manual test prism - X wide, Y tall, Z deep"
+  },
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [{"mesh": 0}],
+  "meshes": [{
+    "primitives": [{
+      "attributes": {"POSITION": 0, "NORMAL": 1},
+      "indices": 2
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3",
+      "min": [-2.0, -0.5, -1.0],
+      "max": [2.0, 1.0, 1.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 18,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 24,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 216},
+    {"buffer": 0, "byteOffset": 216, "byteLength": 216},
+    {"buffer": 0, "byteOffset": 432, "byteLength": 48}
+  ],
+  "buffers": [{"uri": "data:application/octet-stream;base64,AADAwAAAAAAAAIC/AADAwAAAAAAAAIA/AADAwAAAQEAAAAAAAADAwAAAgD8AAAAAAAAAQAAAAAAAAAAAAADAQAAAAAAAAAAAAABAQAAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAAAAACAvwAAAAAAAAAAAABAAAAAAACAvwAAQMAAAEBAAAAAAAAAAAAAAEBAAAAAAAAAAAAAAMBAAAAAAAAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAEAAgACAAMABAAFAAQABgAHAAgACQAKAAsADAANAA4ADwAQABEA","byteLength": 480}]
+}

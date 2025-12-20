@@ -1,0 +1,4 @@
+build
+**/out*
+uber
+.DS_Store
