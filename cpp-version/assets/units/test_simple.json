@@ -1,0 +1,24 @@
+{
+  "name": "Simple Test Unit",
+  "id": "test_simple",
+  "properties": {
+    "description": "Single section unit for basic testing"
+  },
+  "rootSection": {
+    "name": "body",
+    "model": "models/Suzanne.glb",
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 1.0
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "properties": {
+      "health": 100
+    }
+  }
+}

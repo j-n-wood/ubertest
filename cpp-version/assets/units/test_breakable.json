@@ -1,0 +1,106 @@
+{
+  "name": "Breakable Test Unit",
+  "id": "test_breakable",
+  "properties": {
+    "description": "Unit with breakable joints for deconstruction testing"
+  },
+  "rootSection": {
+    "name": "core",
+    "model": "models/Suzanne.glb",
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 1.0
+      },
+      "density": 3.0,
+      "friction": 0.5,
+      "linearDamping": 2.0,
+      "angularDamping": 4.0
+    },
+    "properties": {
+      "health": 300,
+      "armor": 2
+    },
+    "children": [
+      {
+        "name": "module_front",
+        "model": "models/Duck.glb",
+        "localOffset": [0, -1.5],
+        "scale": [0.4, 0.4, 0.4],
+        "physics": {
+          "shape": {
+            "type": "box",
+            "width": 0.8,
+            "height": 0.8
+          },
+          "density": 1.0
+        },
+        "jointBreakForce": 500,
+        "jointBreakTorque": 200,
+        "properties": {
+          "health": 50,
+          "moduleType": "sensor"
+        }
+      },
+      {
+        "name": "module_back",
+        "model": "models/Duck.glb",
+        "localOffset": [0, 1.5],
+        "localRotation": 3.14159,
+        "scale": [0.4, 0.4, 0.4],
+        "physics": {
+          "shape": {
+            "type": "box",
+            "width": 0.8,
+            "height": 0.8
+          },
+          "density": 1.0
+        },
+        "jointBreakForce": 500,
+        "jointBreakTorque": 200,
+        "properties": {
+          "health": 50,
+          "moduleType": "thruster"
+        }
+      },
+      {
+        "name": "module_left",
+        "model": "models/ellipsoid.gltf",
+        "localOffset": [-1.5, 0],
+        "scale": [0.5, 0.5, 0.5],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.4
+          },
+          "density": 0.8
+        },
+        "jointBreakForce": 300,
+        "jointBreakTorque": 100,
+        "properties": {
+          "health": 30,
+          "moduleType": "weapon"
+        }
+      },
+      {
+        "name": "module_right",
+        "model": "models/ellipsoid.gltf",
+        "localOffset": [1.5, 0],
+        "scale": [0.5, 0.5, 0.5],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.4
+          },
+          "density": 0.8
+        },
+        "jointBreakForce": 300,
+        "jointBreakTorque": 100,
+        "properties": {
+          "health": 30,
+          "moduleType": "weapon"
+        }
+      }
+    ]
+  }
+}

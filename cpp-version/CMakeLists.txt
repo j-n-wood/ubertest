@@ -45,3 +45,4 @@ add_custom_command(TARGET topdown_game POST_BUILD
 # Tools
 #------------------------------------------------------------------------------
 add_subdirectory(tools/model_tool)
+add_subdirectory(tools/unit_test)

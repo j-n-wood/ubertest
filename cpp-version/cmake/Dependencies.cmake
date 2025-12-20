@@ -23,9 +23,17 @@ if(VENDOR_DEPENDENCIES)
         set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(box2d)
     endif()
+
+    # nlohmann/json - for unit definition parsing and serialization
+    FetchContent_Declare(json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(json)
 else()
     find_package(raylib REQUIRED)
     if(ENABLE_BOX2D)
         find_package(box2d REQUIRED)
     endif()
+    find_package(nlohmann_json REQUIRED)
 endif()
