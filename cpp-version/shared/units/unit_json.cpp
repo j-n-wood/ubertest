@@ -364,3 +364,10 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
         return "{}";
     }
 }
+
+void scaleDefinitionHeights(SectionDefinition& section, float scale) {
+    section.height *= scale;
+    for (auto& child : section.children) {
+        scaleDefinitionHeights(child, scale);
+    }
+}

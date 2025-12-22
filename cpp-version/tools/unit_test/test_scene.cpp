@@ -1,6 +1,5 @@
 #include "test_scene.h"
 #include "units/unit_json.h"
-#include "lighting/light.h"
 #include "raymath.h"
 #include <cmath>
 #include <iostream>
@@ -11,24 +10,51 @@
 
 constexpr float CAMERA_MOVE_SPEED = 10.0f;
 constexpr float CAMERA_ROTATE_SPEED = 0.003f;
-constexpr float IMPULSE_STRENGTH = 50.0f;
+constexpr float DEFAULT_IMPULSE_STRENGTH = 5.0f;
+constexpr float MIN_IMPULSE_STRENGTH = 1.0f;
+constexpr float MAX_IMPULSE_STRENGTH = 100.0f;
+constexpr float IMPULSE_STEP = 2.0f;
 constexpr float EXPLOSION_STRENGTH = 100.0f;
 constexpr float EXPLOSION_JITTER = 20.0f;
 constexpr float WALL_CLEARANCE = 5.0f;  // Extra space beyond unit radius
 constexpr float WALL_THICKNESS = 1.0f;
+constexpr float MIN_DEBUG_RADIUS = 0.1f;  // Minimum radius for debug visualization
+constexpr float HEIGHT_OFFSET_STEP = 0.025f;  // Per-section height adjustment step (25mm)
+
+// Current impulse strength (adjustable at runtime)
+static float g_impulseStrength = DEFAULT_IMPULSE_STRENGTH;
 
 //------------------------------------------------------------------------------
 // Initialization
 //------------------------------------------------------------------------------
 
-void testSceneInit(TestScene* scene) {
+bool testSceneInit(TestScene* scene, const char* shaderPath, const char* modelsBasePath) {
+    // Store models base path for resolving model references
+    if (modelsBasePath && modelsBasePath[0] != '\0') {
+        scene->modelsBasePath = modelsBasePath;
+    }
+
+    // Initialize scene renderer with lighting shader
+    if (!sceneRendererInit(&scene->renderer, shaderPath)) {
+        std::cerr << "Failed to initialize scene renderer" << std::endl;
+        return false;
+    }
+
+    // Add standard lighting: directional light from above
+    // lightDir = normalize(target - position), so for light from above:
+    // position = origin, target = above -> lightDir points UP
+    sceneRendererAddDirectionalLight(&scene->renderer,
+        {0, 0, 0},    // Position (light calculation reference point)
+        {0, 50, 0},   // Target (lightDir = target - position = UP)
+        WHITE);
+
     // Create physics world with zero gravity (top-down)
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = {0, 0};
     scene->worldId = b2CreateWorld(&worldDef);
 
-    // Initialize unit manager
-    scene->units.init(scene->worldId);
+    // Initialize unit manager with optional models base path
+    scene->units.init(scene->worldId, scene->modelsBasePath.c_str());
 
     // Setup camera
     scene->camera.position = {0, 15, 10};
@@ -41,9 +67,16 @@ void testSceneInit(TestScene* scene) {
     scene->groundModel = LoadModelFromMesh(GenMeshPlane(50.0f, 50.0f, 1, 1));
     scene->hasGroundModel = IsModelValid(scene->groundModel);
 
+    // Apply shader to ground model
+    if (scene->hasGroundModel) {
+        sceneRendererApplyShader(&scene->renderer, &scene->groundModel);
+    }
+
     scene->paused = false;
     scene->showDebug = true;
     scene->showInfo = true;
+
+    return true;
 }
 
 void testSceneDestroy(TestScene* scene) {
@@ -63,6 +96,8 @@ void testSceneDestroy(TestScene* scene) {
         UnloadModel(scene->groundModel);
         scene->hasGroundModel = false;
     }
+
+    sceneRendererDestroy(&scene->renderer);
 }
 
 //------------------------------------------------------------------------------
@@ -92,6 +127,15 @@ bool testSceneLoadUnit(TestScene* scene, const char* path) {
 
     scene->currentUnitPath = path;
     std::cout << "Loaded unit: " << def->name << " (" << def->id << ")" << std::endl;
+
+    // Apply lighting shader to unit models
+    scene->units.applyShaderToModels(sceneRendererGetShader(&scene->renderer));
+
+    // Initialize per-section height offsets (all zeros initially)
+    scene->sectionHeightOffsets.clear();
+    scene->sectionHeightOffsets.resize(scene->currentUnit->allSections.size(), 0.0f);
+    scene->selectedSection = 0;
+    scene->heightsModified = false;
 
     // Calculate unit radius from all sections for wall placement
     float maxRadius = 0.0f;
@@ -254,6 +298,18 @@ void testSceneUpdate(TestScene* scene, float dt) {
 }
 
 void testSceneHandleInput(TestScene* scene) {
+    // +/= - Increase impulse strength
+    if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) {
+        g_impulseStrength = std::min(g_impulseStrength + IMPULSE_STEP, MAX_IMPULSE_STRENGTH);
+        std::cout << "Impulse strength: " << g_impulseStrength << std::endl;
+    }
+
+    // - - Decrease impulse strength
+    if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) {
+        g_impulseStrength = std::max(g_impulseStrength - IMPULSE_STEP, MIN_IMPULSE_STRENGTH);
+        std::cout << "Impulse strength: " << g_impulseStrength << std::endl;
+    }
+
     // Space - Apply impulse to root body
     if (IsKeyPressed(KEY_SPACE) && scene->currentUnit && scene->currentUnit->rootSection) {
         auto* root = scene->currentUnit->rootSection.get();
@@ -261,11 +317,11 @@ void testSceneHandleInput(TestScene* scene) {
             // Apply impulse in a random direction
             float angle = GetRandomValue(0, 360) * DEG2RAD;
             b2Vec2 impulse = {
-                std::cos(angle) * IMPULSE_STRENGTH,
-                std::sin(angle) * IMPULSE_STRENGTH
+                std::cos(angle) * g_impulseStrength,
+                std::sin(angle) * g_impulseStrength
             };
             b2Body_ApplyLinearImpulseToCenter(root->bodyId, impulse, true);
-            std::cout << "Applied impulse" << std::endl;
+            std::cout << "Applied impulse (strength: " << g_impulseStrength << ")" << std::endl;
         }
     }
 
@@ -362,6 +418,49 @@ void testSceneHandleInput(TestScene* scene) {
             }
         }
     }
+
+    // Section selection with Tab/Shift+Tab
+    if (IsKeyPressed(KEY_TAB) && scene->currentUnit) {
+        int numSections = (int)scene->currentUnit->allSections.size();
+        if (numSections > 0) {
+            if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
+                scene->selectedSection = (scene->selectedSection - 1 + numSections) % numSections;
+            } else {
+                scene->selectedSection = (scene->selectedSection + 1) % numSections;
+            }
+            std::cout << "Selected section: " << scene->selectedSection << std::endl;
+        }
+    }
+
+    // Per-section height adjustment
+    // ] - Increase selected section height
+    if (IsKeyPressed(KEY_RIGHT_BRACKET) && scene->currentUnit) {
+        if (scene->selectedSection >= 0 && scene->selectedSection < (int)scene->sectionHeightOffsets.size()) {
+            scene->sectionHeightOffsets[scene->selectedSection] += HEIGHT_OFFSET_STEP;
+            scene->heightsModified = true;
+            std::cout << "Section " << scene->selectedSection << " height offset: "
+                      << scene->sectionHeightOffsets[scene->selectedSection] << std::endl;
+        }
+    }
+
+    // [ - Decrease selected section height
+    if (IsKeyPressed(KEY_LEFT_BRACKET) && scene->currentUnit) {
+        if (scene->selectedSection >= 0 && scene->selectedSection < (int)scene->sectionHeightOffsets.size()) {
+            scene->sectionHeightOffsets[scene->selectedSection] -= HEIGHT_OFFSET_STEP;
+            scene->heightsModified = true;
+            std::cout << "Section " << scene->selectedSection << " height offset: "
+                      << scene->sectionHeightOffsets[scene->selectedSection] << std::endl;
+        }
+    }
+
+    // Ctrl+S - Save unit with adjusted heights
+    if ((IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) && IsKeyPressed(KEY_S)) {
+        if (testSceneSaveUnit(scene)) {
+            std::cout << "Saved unit with adjusted heights" << std::endl;
+        } else {
+            std::cout << "Failed to save unit" << std::endl;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -369,6 +468,9 @@ void testSceneHandleInput(TestScene* scene) {
 //------------------------------------------------------------------------------
 
 void testSceneRender(TestScene* scene) {
+    // Update camera position for specular calculations
+    sceneRendererUpdateCamera(&scene->renderer, scene->camera.position);
+
     BeginMode3D(scene->camera);
 
     // Draw ground plane
@@ -379,12 +481,13 @@ void testSceneRender(TestScene* scene) {
     // Draw grid
     DrawGrid(50, 1.0f);
 
-    // Render units
-    scene->units.renderAll();
+    // Render units with per-section height offsets
+    const std::vector<float>* offsets = scene->sectionHeightOffsets.empty() ? nullptr : &scene->sectionHeightOffsets;
+    scene->units.renderAll(offsets);
 
     // Debug visualization
     if (scene->showDebug) {
-        scene->units.renderDebug();
+        scene->units.renderDebug(offsets);
 
         // Draw enclosing walls
         float wb = scene->wallBounds;
@@ -430,6 +533,8 @@ void testSceneRenderInfo(TestScene* scene) {
     y += lineHeight;
     DrawText("  Space - Apply impulse", 10, y, 14, GRAY);
     y += lineHeight;
+    DrawText("  +/- - Adjust impulse strength", 10, y, 14, GRAY);
+    y += lineHeight;
     DrawText("  B - Break all joints", 10, y, 14, GRAY);
     y += lineHeight;
     DrawText("  X - Explode (break + impulse)", 10, y, 14, GRAY);
@@ -444,8 +549,24 @@ void testSceneRenderInfo(TestScene* scene) {
     y += lineHeight;
     DrawText("  I - Toggle info", 10, y, 14, GRAY);
     y += lineHeight;
+    DrawText("  Tab - Select next section", 10, y, 14, GRAY);
+    y += lineHeight;
+    DrawText("  [/] - Adjust section height", 10, y, 14, GRAY);
+    y += lineHeight;
+    DrawText("  Ctrl+S - Save unit", 10, y, 14, GRAY);
+    y += lineHeight;
     DrawText("  ESC - Exit", 10, y, 14, GRAY);
     y += lineHeight + 10;
+
+    // Impulse strength
+    DrawText(TextFormat("Impulse: %.0f (+/- to adjust)", g_impulseStrength), 10, y, 14, YELLOW);
+    y += lineHeight + 5;
+
+    // Modified indicator
+    if (scene->heightsModified) {
+        DrawText("Heights modified *", 10, y, 14, ORANGE);
+        y += lineHeight + 5;
+    }
 
     // Status
     if (scene->paused) {
@@ -483,16 +604,23 @@ void testSceneRenderInfo(TestScene* scene) {
             y += lineHeight;
         }
 
-        // Section list with indices for deconstruction
+        // Section list with indices, heights, and selection
         y += 5;
-        DrawText("Sections (press 1-9 to break):", 10, y, 14, LIGHTGRAY);
+        DrawText("Sections (Tab to select, [/] to adjust height):", 10, y, 14, LIGHTGRAY);
         y += lineHeight;
         int idx = 0;
         for (auto* section : scene->currentUnit->allSections) {
-            const char* status = section->parent == nullptr ? "root" :
-                                (section->attached ? "attached" : "DETACHED");
-            Color textColor = section->attached ? GRAY : RED;
-            DrawText(TextFormat("  [%d] %s (%s)", idx, section->definition->name.c_str(), status),
+            bool isSelected = (idx == scene->selectedSection);
+            float heightOffset = (idx < (int)scene->sectionHeightOffsets.size())
+                               ? scene->sectionHeightOffsets[idx] : 0.0f;
+            float totalHeight = section->definition->height + heightOffset;
+
+            Color textColor = isSelected ? YELLOW : (section->attached ? GRAY : RED);
+            const char* selector = isSelected ? ">" : " ";
+
+            DrawText(TextFormat("%s[%d] %s h:%.3f%s", selector, idx,
+                     section->definition->name.c_str(), totalHeight,
+                     (heightOffset != 0.0f) ? "*" : ""),
                      10, y, 14, textColor);
             y += lineHeight;
             idx++;
@@ -504,4 +632,51 @@ void testSceneRenderInfo(TestScene* scene) {
 
     // FPS
     DrawFPS(GetScreenWidth() - 100, 10);
+}
+
+//------------------------------------------------------------------------------
+// Save Unit
+//------------------------------------------------------------------------------
+
+// Helper to apply height offsets to a section tree (matches allSections order)
+static void applyHeightOffsets(SectionDefinition& section, const std::vector<float>& offsets, int& index) {
+    if (index < (int)offsets.size()) {
+        section.height += offsets[index];
+    }
+    ++index;
+
+    for (auto& child : section.children) {
+        applyHeightOffsets(child, offsets, index);
+    }
+}
+
+bool testSceneSaveUnit(TestScene* scene) {
+    if (!scene->currentUnit || !scene->currentUnit->definition) {
+        return false;
+    }
+
+    if (scene->currentUnitPath.empty()) {
+        std::cerr << "No unit path to save to" << std::endl;
+        return false;
+    }
+
+    // Make a copy of the definition to modify
+    UnitDefinition modifiedDef = *scene->currentUnit->definition;
+
+    // Apply per-section height offsets
+    int index = 0;
+    applyHeightOffsets(modifiedDef.rootSection, scene->sectionHeightOffsets, index);
+
+    // Save to file
+    if (!saveUnitDefinitionToFile(scene->currentUnitPath, modifiedDef)) {
+        return false;
+    }
+
+    // Unload cached definition and reload from the saved file
+    std::string defId = scene->currentUnit->definition->id;
+    std::string path = scene->currentUnitPath;
+    scene->units.unloadDefinition(defId);
+    testSceneLoadUnit(scene, path.c_str());
+
+    return true;
 }

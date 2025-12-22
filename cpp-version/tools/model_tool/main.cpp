@@ -1,8 +1,8 @@
 #include "raylib.h"
 #include "rlgl.h"
-#include "asc_loader.h"
-#include "gltf_export.h"
-#include "lighting/light.h"
+#include "model_convert/asc_loader.h"
+#include "model_convert/gltf_export.h"
+#include "rendering/scene_renderer.h"
 #include "utils/string_utils.h"
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +19,17 @@ namespace fs = std::filesystem;
 //------------------------------------------------------------------------------
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 960
+
+// Conventional asset directory structure (relative to asset base path)
+// assets/
+//   models/
+//   textures/
+//   shaders/
+//   units/
+constexpr const char* ASSET_MODELS = "models";
+constexpr const char* ASSET_TEXTURES = "textures";
+constexpr const char* ASSET_SHADERS = "shaders";
+constexpr const char* ASSET_UNITS = "units";
 
 //------------------------------------------------------------------------------
 // Viewport structure for four-panel display
@@ -39,12 +50,7 @@ struct Viewport {
 // Application state
 //------------------------------------------------------------------------------
 struct AppState {
-    Shader lighting_shader;
-    Light lights[MAX_LIGHTS];
-    int light_count;
-    int ambient_loc;
-    int debug_mode_loc;
-    int debug_mode;
+    SceneRenderer renderer;
 
     Camera3D camera;
     float rotation_angle;
@@ -63,64 +69,43 @@ struct AppState {
     std::string convert_input;
     std::string convert_output;
     std::string texture_source_path;  // Override path for texture source files
+
+    // Asset path mode (conventional directory structure)
+    std::string asset_path;  // Base path for assets (contains models/, textures/, etc.)
+    std::string shaders_path;  // Resolved shaders path (with trailing slash)
 };
 
 //------------------------------------------------------------------------------
 // Initialize renderer (shader, lights)
 //------------------------------------------------------------------------------
-static void init_renderer(AppState* app) {
-    // Load lighting shader
-    app->lighting_shader = LoadShader("shaders/lighting.vs", "shaders/lighting.fs");
-
-    if (!IsShaderValid(app->lighting_shader)) {
-        TraceLog(LOG_ERROR, "Failed to load shaders from shaders/ directory");
-        return;
+static bool init_renderer(AppState* app) {
+    // Initialize scene renderer with lighting shader
+    if (!sceneRendererInit(&app->renderer, app->shaders_path.c_str())) {
+        TraceLog(LOG_ERROR, "Failed to initialize scene renderer from: %s", app->shaders_path.c_str());
+        return false;
     }
 
-    // Get shader locations
-    app->lighting_shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(app->lighting_shader, "viewPos");
-    app->lighting_shader.locs[SHADER_LOC_COLOR_SPECULAR] = GetShaderLocation(app->lighting_shader, "colSpecular");
-    app->ambient_loc = GetShaderLocation(app->lighting_shader, "ambient");
-    app->debug_mode_loc = GetShaderLocation(app->lighting_shader, "debugMode");
-    app->debug_mode = 0;
+    // Add directional light from above (same as main project)
+    // lightDir = normalize(target - position), so for light from above:
+    // position = origin, target = above -> lightDir points UP
+    sceneRendererAddDirectionalLight(&app->renderer,
+        (Vector3){0, 0, 0},    // Position (light calculation reference point)
+        (Vector3){0, 50, 0},   // Target (lightDir = target - position = UP)
+        WHITE);
 
-    // Set ambient light
-    float ambient[4] = {0.1f, 0.1f, 0.1f, 1.0f};
-    SetShaderValue(app->lighting_shader, app->ambient_loc, ambient, SHADER_UNIFORM_VEC4);
-
-    // Set default specular values
-    int specPowerLoc = GetShaderLocation(app->lighting_shader, "specularPower");
-    int specIntensityLoc = GetShaderLocation(app->lighting_shader, "specularIntensity");
-    float defaultSpecPower = 32.0f;
-    float defaultSpecIntensity = 0.5f;
-    SetShaderValue(app->lighting_shader, specPowerLoc, &defaultSpecPower, SHADER_UNIFORM_FLOAT);
-    SetShaderValue(app->lighting_shader, specIntensityLoc, &defaultSpecIntensity, SHADER_UNIFORM_FLOAT);
-
-    // Initialize debug mode to 0 (normal rendering)
-    SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
-
-    // Create directional light from above (same as main project)
-    app->light_count = 0;
-    app->lights[app->light_count++] = create_light(
-        LIGHT_DIRECTIONAL,
-        (Vector3){0, 0, 0},    // Light shines toward origin
-        (Vector3){0, 50, 0},   // Light comes from above -> lightDir = (0, 1, 0)
-        WHITE,
-        app->lighting_shader,
-        0
-    );
+    return true;
 }
 
 //------------------------------------------------------------------------------
 // Create procedural box model with explicit normals
 //------------------------------------------------------------------------------
-static Model create_procedural_box(Shader shader) {
+static Model create_procedural_box(SceneRenderer* renderer) {
     // Generate cube mesh - Raylib's GenMeshCube has correct normals
     Mesh mesh = GenMeshCube(2.0f, 2.0f, 2.0f);
     Model model = LoadModelFromMesh(mesh);
 
     // Apply lighting shader
-    model.materials[0].shader = shader;
+    sceneRendererApplyShader(renderer, &model);
     model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){100, 100, 100, 255};
 
     return model;
@@ -129,13 +114,13 @@ static Model create_procedural_box(Shader shader) {
 //------------------------------------------------------------------------------
 // Create procedural sphere model
 //------------------------------------------------------------------------------
-static Model create_procedural_sphere(Shader shader) {
+static Model create_procedural_sphere(SceneRenderer* renderer) {
     // Generate sphere mesh
     Mesh mesh = GenMeshSphere(1.5f, 32, 32);
     Model model = LoadModelFromMesh(mesh);
 
     // Apply lighting shader
-    model.materials[0].shader = shader;
+    sceneRendererApplyShader(renderer, &model);
     model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){100, 100, 100, 255};
 
     return model;
@@ -255,7 +240,7 @@ static void compute_model_bounds(Model model, Vector3* out_min, Vector3* out_max
 // Load a model (GLTF/GLB/ASC) and apply shader
 // Returns bounds via out_min/out_max if not NULL
 //------------------------------------------------------------------------------
-static Model load_model_with_shader(const std::string& path, Shader shader, ASCLoadOptions asc_opts,
+static Model load_model_with_shader(const std::string& path, SceneRenderer* renderer, ASCLoadOptions asc_opts,
                                     Vector3* out_min, Vector3* out_max, bool* out_has_bounds) {
     Model model = {0};
     bool has_bounds = false;
@@ -294,9 +279,7 @@ static Model load_model_with_shader(const std::string& path, Shader shader, ASCL
 
     if (model.meshCount > 0) {
         // Apply lighting shader to all materials
-        for (int i = 0; i < model.materialCount; i++) {
-            model.materials[i].shader = shader;
-        }
+        sceneRendererApplyShader(renderer, &model);
     }
 
     // Return bounds info
@@ -317,7 +300,7 @@ static void init_viewports(AppState* app) {
     // Top-left: Procedural Box (2x2x2)
     app->viewports[0].bounds = (Rectangle){0, 0, half_w, half_h};
     app->viewports[0].label = "Procedural Box";
-    app->viewports[0].model = create_procedural_box(app->lighting_shader);
+    app->viewports[0].model = create_procedural_box(&app->renderer);
     app->viewports[0].valid = true;
     app->viewports[0].load_attempted = false;
     app->viewports[0].model_bounds_min = (Vector3){-1.0f, -1.0f, -1.0f};
@@ -327,7 +310,7 @@ static void init_viewports(AppState* app) {
     // Top-right: Procedural Sphere (radius 1.5)
     app->viewports[1].bounds = (Rectangle){half_w, 0, half_w, half_h};
     app->viewports[1].label = "Procedural Sphere";
-    app->viewports[1].model = create_procedural_sphere(app->lighting_shader);
+    app->viewports[1].model = create_procedural_sphere(&app->renderer);
     app->viewports[1].valid = true;
     app->viewports[1].load_attempted = false;
     app->viewports[1].model_bounds_min = (Vector3){-1.5f, -1.5f, -1.5f};
@@ -352,7 +335,7 @@ static void init_viewports(AppState* app) {
     if (!app->model_a_path.empty()) {
         app->viewports[2].load_attempted = true;
         app->viewports[2].model = load_model_with_shader(
-            app->model_a_path, app->lighting_shader, app->asc_options,
+            app->model_a_path, &app->renderer, app->asc_options,
             &app->viewports[2].model_bounds_min, &app->viewports[2].model_bounds_max,
             &app->viewports[2].has_bounds);
         app->viewports[2].valid = (app->viewports[2].model.meshCount > 0);
@@ -371,7 +354,7 @@ static void init_viewports(AppState* app) {
     if (!app->model_b_path.empty()) {
         app->viewports[3].load_attempted = true;
         app->viewports[3].model = load_model_with_shader(
-            app->model_b_path, app->lighting_shader, app->asc_options,
+            app->model_b_path, &app->renderer, app->asc_options,
             &app->viewports[3].model_bounds_min, &app->viewports[3].model_bounds_max,
             &app->viewports[3].has_bounds);
         app->viewports[3].valid = (app->viewports[3].model.meshCount > 0);
@@ -413,9 +396,7 @@ static void draw_viewport(AppState* app, Viewport* vp) {
     DrawRectangleRec(vp->bounds, (Color){30, 30, 35, 255});
 
     // Update camera position for specular calculations
-    float cameraPos[3] = {app->camera.position.x, app->camera.position.y, app->camera.position.z};
-    SetShaderValue(app->lighting_shader, app->lighting_shader.locs[SHADER_LOC_VECTOR_VIEW],
-                   cameraPos, SHADER_UNIFORM_VEC3);
+    sceneRendererUpdateCamera(&app->renderer, app->camera.position);
 
     // Set up viewport for 3D rendering
     rlViewport((int)vp->bounds.x, (int)(WINDOW_HEIGHT - vp->bounds.y - vp->bounds.height),
@@ -468,28 +449,22 @@ static void draw_viewport(AppState* app, Viewport* vp) {
 static void handle_input(AppState* app) {
     // Debug modes 0-5
     if (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0)) {
-        app->debug_mode = 0;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 0);
     }
     if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_KP_1)) {
-        app->debug_mode = 1;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 1);
     }
     if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_KP_2)) {
-        app->debug_mode = 2;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 2);
     }
     if (IsKeyPressed(KEY_THREE) || IsKeyPressed(KEY_KP_3)) {
-        app->debug_mode = 3;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 3);
     }
     if (IsKeyPressed(KEY_FOUR) || IsKeyPressed(KEY_KP_4)) {
-        app->debug_mode = 4;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 4);
     }
     if (IsKeyPressed(KEY_FIVE) || IsKeyPressed(KEY_KP_5)) {
-        app->debug_mode = 5;
-        SetShaderValue(app->lighting_shader, app->debug_mode_loc, &app->debug_mode, SHADER_UNIFORM_INT);
+        sceneRendererSetDebugMode(&app->renderer, 5);
     }
 
     // Toggle auto-rotate
@@ -536,7 +511,7 @@ static void draw_hud(AppState* app) {
 
     int y = WINDOW_HEIGHT - 100;
 
-    DrawText(TextFormat("Debug Mode: %s", debug_labels[app->debug_mode]), 10, y, 16, YELLOW);
+    DrawText(TextFormat("Debug Mode: %s", debug_labels[app->renderer.debugMode]), 10, y, 16, YELLOW);
     y += 20;
     DrawText(TextFormat("Rotation: %.1f deg  [Space: %s]", app->rotation_angle,
                         app->auto_rotate ? "Auto" : "Manual"), 10, y, 16, LIGHTGRAY);
@@ -556,6 +531,8 @@ static void parse_args(int argc, char** argv, AppState* app) {
     app->convert_input.clear();
     app->convert_output.clear();
     app->texture_source_path.clear();
+    app->asset_path.clear();
+    app->shaders_path = "shaders/";  // Default: look in current directory
 
     // Initialize ASC options to defaults
     app->asc_options = ASCDefaultOptions();
@@ -578,6 +555,9 @@ static void parse_args(int argc, char** argv, AppState* app) {
         } else if (arg == "--texture-path" && i + 1 < argc) {
             app->texture_source_path = argv[i + 1];
             i++;
+        } else if (arg == "--asset-path" && i + 1 < argc) {
+            app->asset_path = argv[i + 1];
+            i++;
         } else if (arg == "--scale" && i + 1 < argc) {
             app->asc_options.scale = std::stof(argv[i + 1]);
             i++;
@@ -588,6 +568,9 @@ static void parse_args(int argc, char** argv, AppState* app) {
         } else if (arg == "--help" || arg == "-h") {
             printf("Model Tool - 3D Model Viewer and Converter\n\n");
             printf("Usage: model_tool [options]\n\n");
+            printf("Asset Path Mode:\n");
+            printf("  --asset-path <dir>   Base path for assets (conventional structure)\n");
+            printf("                       Assumes: models/, textures/, shaders/ subdirs\n\n");
             printf("Viewer Mode (default):\n");
             printf("  --model-a <path>   Load model into slot A (bottom-left)\n");
             printf("  --model-b <path>   Load model into slot B (bottom-right)\n\n");
@@ -614,17 +597,49 @@ static void parse_args(int argc, char** argv, AppState* app) {
             printf("  Arrows    Manual rotation\n");
             printf("  +/-       Zoom in/out\n");
             printf("  R         Reset rotation\n\n");
+            printf("Conventional asset structure:\n");
+            printf("  <asset-path>/\n");
+            printf("    models/     - GLTF/GLB model files\n");
+            printf("    textures/   - Texture images\n");
+            printf("    shaders/    - Shader files\n");
+            printf("    units/      - Unit definition JSON files\n\n");
             printf("Examples:\n");
+            printf("  # Viewer with asset path\n");
+            printf("  model_tool --asset-path ./assets --model-a models/robot.gltf\n\n");
             printf("  # Single file conversion\n");
             printf("  model_tool --convert model.asc -o out/model.gltf --swap-yz\n\n");
             printf("  # Batch conversion (all .asc files in directory)\n");
             printf("  model_tool --convert ./models/ -o ./output/ --swap-yz\n\n");
-            printf("  # Batch conversion (wildcard pattern)\n");
-            printf("  model_tool --convert \"../source/*.asc\" -o ./converted/\n\n");
             printf("  # Viewer mode\n");
             printf("  model_tool --model-a model.asc --swap-yz\n");
             exit(0);
         }
+    }
+
+    // If asset_path is set, resolve relative model paths
+    if (!app->asset_path.empty()) {
+        fs::path base(app->asset_path);
+
+        // Resolve model paths relative to asset_path/models/ if they're relative
+        if (!app->model_a_path.empty() && fs::path(app->model_a_path).is_relative()) {
+            app->model_a_path = (base / ASSET_MODELS / app->model_a_path).string();
+        }
+        if (!app->model_b_path.empty() && fs::path(app->model_b_path).is_relative()) {
+            app->model_b_path = (base / ASSET_MODELS / app->model_b_path).string();
+        }
+
+        // Set texture fallback if not already specified
+        if (app->texture_source_path.empty()) {
+            app->texture_source_path = (base / ASSET_TEXTURES).string();
+        }
+
+        // Set shaders path (with trailing slash for shader loading)
+        app->shaders_path = (base / ASSET_SHADERS).string() + "/";
+
+        printf("Asset path: %s\n", app->asset_path.c_str());
+        printf("  Models:   %s\n", (base / ASSET_MODELS).string().c_str());
+        printf("  Textures: %s\n", (base / ASSET_TEXTURES).string().c_str());
+        printf("  Shaders:  %s\n", app->shaders_path.c_str());
     }
 
     // Log ASC options if any model is being loaded
@@ -874,7 +889,12 @@ int main(int argc, char** argv) {
     SetTargetFPS(60);
 
     // Initialize subsystems
-    init_renderer(&app);
+    if (!init_renderer(&app)) {
+        fprintf(stderr, "Error: Failed to initialize renderer (check shader path: %s)\n",
+                app.shaders_path.c_str());
+        CloseWindow();
+        return 1;
+    }
     init_camera(&app);
     init_viewports(&app);
 
@@ -910,7 +930,7 @@ int main(int argc, char** argv) {
             UnloadModel(app.viewports[i].model);
         }
     }
-    UnloadShader(app.lighting_shader);
+    sceneRendererDestroy(&app.renderer);
 
     CloseWindow();
     return 0;

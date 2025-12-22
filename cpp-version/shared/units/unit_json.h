@@ -34,4 +34,8 @@
     bool pretty = true
 );
 
+// Scale all height values in a section definition tree by the given factor
+// Modifies the section in place, recursively including all children
+void scaleDefinitionHeights(SectionDefinition& section, float scale);
+
 #endif // UNIT_JSON_H

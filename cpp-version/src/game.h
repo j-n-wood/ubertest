@@ -18,9 +18,12 @@ typedef struct Game {
     Entity* controlled_entity;
     Camera3D camera;
     bool running;
+    char asset_path[512];  // Base path for assets
 } Game;
 
-void game_init(Game* game);
+// Initialize game with asset path
+// assetPath: base path for assets (default: "assets")
+void game_init(Game* game, const char* assetPath = "assets");
 void game_update(Game* game, float dt);
 void game_render(Game* game);
 void game_destroy(Game* game);

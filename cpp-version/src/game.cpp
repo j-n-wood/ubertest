@@ -1,6 +1,7 @@
 #include "game.h"
 #include "generation/procgen.h"
 #include <cmath>
+#include <cstring>
 
 #define MAX_TORQUE 100.0f
 #define PI 3.14159265358979323846f
@@ -35,7 +36,11 @@ static void apply_rotation_torque(Entity* entity) {
     physics_body_apply_torque(&entity->physics, torque);
 }
 
-void game_init(Game* game) {
+void game_init(Game* game, const char* assetPath) {
+    // Store asset path
+    strncpy(game->asset_path, assetPath, sizeof(game->asset_path) - 1);
+    game->asset_path[sizeof(game->asset_path) - 1] = '\0';
+
     physics_world_init(&game->physics);
     renderer_init(&game->renderer);
     input_init(&game->input);

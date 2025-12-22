@@ -15,14 +15,18 @@ UnitManager::~UnitManager() {
     destroy();
 }
 
-void UnitManager::init(b2WorldId worldId) {
+void UnitManager::init(b2WorldId worldId, const char* modelsBasePath) {
     m_worldId = worldId;
+    if (modelsBasePath && modelsBasePath[0] != '\0') {
+        m_modelsBasePath = modelsBasePath;
+    }
 }
 
 void UnitManager::destroy() {
     // Clear instances - SectionInstance destructors handle cleanup via RAII
     m_instances.clear();
     m_definitions.clear();
+    m_modelsBasePath.clear();
     m_worldId = b2_nullWorldId;
 }
 
@@ -65,6 +69,10 @@ const UnitDefinition* UnitManager::getDefinition(std::string_view id) const {
         return it->second.get();
     }
     return nullptr;
+}
+
+void UnitManager::unloadDefinition(std::string_view id) {
+    m_definitions.erase(std::string(id));
 }
 
 void UnitManager::preloadDefinitions(std::string_view directory) {
@@ -252,7 +260,19 @@ SectionInstance* UnitManager::createSectionInstance(
 
     // Load model if specified
     if (!def.modelPath.empty()) {
-        section->model = LoadModel(def.modelPath.c_str());
+        std::string resolvedPath = def.modelPath;
+
+        // If we have a models base path and the model path is relative, resolve it
+        if (!m_modelsBasePath.empty() && !fs::path(def.modelPath).is_absolute()) {
+            // Strip "models/" prefix from the model path if present (conventional structure)
+            std::string_view modelPath = def.modelPath;
+            if (modelPath.substr(0, 7) == "models/") {
+                modelPath = modelPath.substr(7);
+            }
+            resolvedPath = (fs::path(m_modelsBasePath) / modelPath).string();
+        }
+
+        section->model = LoadModel(resolvedPath.c_str());
         section->hasModel = IsModelValid(section->model);
     }
 
@@ -406,23 +426,53 @@ void UnitManager::updateSectionTransforms(
 // Rendering
 //------------------------------------------------------------------------------
 
-void UnitManager::renderAll() {
+void UnitManager::applyShaderToModels(Shader shader) {
     for (auto& instance : m_instances) {
-        if (!instance || !instance->active) continue;
-        if (instance->rootSection) {
-            renderSection(instance->rootSection.get());
+        if (!instance) continue;
+        for (auto* section : instance->allSections) {
+            if (section->hasModel) {
+                for (int i = 0; i < section->model.materialCount; ++i) {
+                    section->model.materials[i].shader = shader;
+                }
+            }
         }
     }
 }
 
-void UnitManager::renderSection(SectionInstance* section) {
+void UnitManager::renderAll(const std::vector<float>* heightOffsets) {
+    for (auto& instance : m_instances) {
+        if (!instance || !instance->active) continue;
+        if (instance->rootSection) {
+            renderSection(instance->rootSection.get(), heightOffsets, instance->allSections);
+        }
+    }
+}
+
+int UnitManager::getSectionIndex(SectionInstance* section, const std::vector<SectionInstance*>& allSections) {
+    for (size_t i = 0; i < allSections.size(); ++i) {
+        if (allSections[i] == section) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void UnitManager::renderSection(SectionInstance* section, const std::vector<float>* heightOffsets,
+                                 const std::vector<SectionInstance*>& allSections) {
     if (!section) return;
 
     if (section->hasModel) {
+        // Calculate height with optional offset
+        float height = section->definition->height;
+        if (heightOffsets) {
+            int idx = getSectionIndex(section, allSections);
+            if (idx >= 0 && idx < (int)heightOffsets->size()) {
+                height += (*heightOffsets)[idx];
+            }
+        }
+
         // Map 2D physics to 3D rendering
         Vector3 position = {
             section->worldPosition.x,
-            section->definition->height,
+            height,
             section->worldPosition.y
         };
 
@@ -438,23 +488,34 @@ void UnitManager::renderSection(SectionInstance* section) {
 
     // Render children
     for (auto& child : section->children) {
-        renderSection(child.get());
+        renderSection(child.get(), heightOffsets, allSections);
     }
 }
 
-void UnitManager::renderDebug() {
+void UnitManager::renderDebug(const std::vector<float>* heightOffsets) {
     for (auto& instance : m_instances) {
         if (!instance || !instance->active) continue;
         if (instance->rootSection) {
-            renderSectionDebug(instance->rootSection.get());
+            renderSectionDebug(instance->rootSection.get(), heightOffsets, instance->allSections);
         }
     }
 }
 
-void UnitManager::renderSectionDebug(SectionInstance* section) {
+void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector<float>* heightOffsets,
+                                      const std::vector<SectionInstance*>& allSections) {
     if (!section) return;
 
-    float y = section->definition->height + 0.1f;
+    // Minimum visible radius for debug shapes
+    constexpr float MIN_DEBUG_RADIUS = 0.1f;
+
+    // Calculate height with optional offset
+    float height = section->definition->height;
+    int sectionIdx = getSectionIndex(section, allSections);
+    if (heightOffsets && sectionIdx >= 0 && sectionIdx < (int)heightOffsets->size()) {
+        height += (*heightOffsets)[sectionIdx];
+    }
+
+    float y = height + 0.1f;
 
     // Draw physics shape outline
     if (section->hasPhysics && section->definition->physics.has_value()) {
@@ -468,13 +529,16 @@ void UnitManager::renderSectionDebug(SectionInstance* section) {
         };
 
         switch (phys.shapeType) {
-            case PhysicsShapeType::Circle:
-                DrawCircle3D(center, phys.circle.radius, {1, 0, 0}, 90.0f, shapeColor);
+            case PhysicsShapeType::Circle: {
+                // Use minimum visible radius if the actual radius is too small
+                float drawRadius = std::max(phys.circle.radius, MIN_DEBUG_RADIUS);
+                DrawCircle3D(center, drawRadius, {1, 0, 0}, 90.0f, shapeColor);
                 break;
+            }
             case PhysicsShapeType::Box: {
-                // Draw box outline
-                float hw = phys.box.width / 2.0f;
-                float hh = phys.box.height / 2.0f;
+                // Draw box outline with minimum size
+                float hw = std::max(phys.box.width / 2.0f, MIN_DEBUG_RADIUS);
+                float hh = std::max(phys.box.height / 2.0f, MIN_DEBUG_RADIUS);
                 float cosR = std::cos(section->worldRotation);
                 float sinR = std::sin(section->worldRotation);
 
@@ -504,9 +568,16 @@ void UnitManager::renderSectionDebug(SectionInstance* section) {
 
     // Draw joint connection to parent
     if (section->parent) {
+        // Get parent height with offset
+        float parentHeight = section->parent->definition->height;
+        int parentIdx = getSectionIndex(section->parent, allSections);
+        if (heightOffsets && parentIdx >= 0 && parentIdx < (int)heightOffsets->size()) {
+            parentHeight += (*heightOffsets)[parentIdx];
+        }
+
         Vector3 from = {
             section->parent->worldPosition.x,
-            section->parent->definition->height + 0.1f,
+            parentHeight + 0.1f,
             section->parent->worldPosition.y
         };
         Vector3 to = {
@@ -520,6 +591,6 @@ void UnitManager::renderSectionDebug(SectionInstance* section) {
 
     // Render children debug
     for (auto& child : section->children) {
-        renderSectionDebug(child.get());
+        renderSectionDebug(child.get(), heightOffsets, allSections);
     }
 }
