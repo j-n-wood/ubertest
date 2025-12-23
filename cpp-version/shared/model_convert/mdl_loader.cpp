@@ -571,6 +571,65 @@ MDLLoadResult LoadMDL(const char* filepath, MDLLoadOptions options) {
     CalculateBoneWorldMatrices(result.model, boneWorldMatrices);
     TransformVerticesToModelSpace(result.model, boneWorldMatrices);
 
+    // Apply 180° Y rotation to flip from -Z forward to +Z forward (glTF convention)
+    // For skinned meshes, we need to:
+    // 1. Rotate all vertex positions and normals
+    // 2. Rotate root bone transforms (position and rotation)
+    // 3. Rotate animation keyframes for root bones
+    if (options.swap_yz) {
+        // 180° rotation around Y: (x, y, z) -> (-x, y, -z)
+        // Quaternion for 180° Y rotation: (0, 1, 0, 0)
+        Quaternion rot180Y = { 0.0f, 1.0f, 0.0f, 0.0f };
+
+        // Rotate all vertices
+        for (auto& mesh : result.model.meshes) {
+            for (auto& v : mesh.vertices) {
+                // Rotate position: (x, y, z) -> (-x, y, -z)
+                v.position.x = -v.position.x;
+                v.position.z = -v.position.z;
+                // Rotate normal
+                v.normal.x = -v.normal.x;
+                v.normal.z = -v.normal.z;
+            }
+        }
+
+        // Update bounds
+        float oldMinX = result.model.boundsMin.x;
+        float oldMaxX = result.model.boundsMax.x;
+        float oldMinZ = result.model.boundsMin.z;
+        float oldMaxZ = result.model.boundsMax.z;
+        result.model.boundsMin.x = -oldMaxX;
+        result.model.boundsMax.x = -oldMinX;
+        result.model.boundsMin.z = -oldMaxZ;
+        result.model.boundsMax.z = -oldMinZ;
+
+        // Rotate root bone transforms
+        for (auto& bone : result.model.bones) {
+            if (bone.parent < 0) {
+                // Root bone - rotate position and combine rotations
+                bone.position.x = -bone.position.x;
+                bone.position.z = -bone.position.z;
+                bone.rotation = QuaternionMultiply(rot180Y, bone.rotation);
+            }
+        }
+
+        // Rotate animation keyframes for root bones
+        for (auto& anim : result.model.animations) {
+            for (auto& track : anim.tracks) {
+                if (track.boneIndex >= 0 && track.boneIndex < (int)result.model.bones.size()) {
+                    if (result.model.bones[track.boneIndex].parent < 0) {
+                        // Root bone animation track
+                        for (auto& kf : track.keyframes) {
+                            kf.translation.x = -kf.translation.x;
+                            kf.translation.z = -kf.translation.z;
+                            kf.rotation = QuaternionMultiply(rot180Y, kf.rotation);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Now calculate inverse bind matrices
     CalculateInverseBindMatrices(result.model);
 
