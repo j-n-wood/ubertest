@@ -17,6 +17,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${SHARED_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/shared/model_convert
+    ${tinygltf_SOURCE_DIR}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_json)

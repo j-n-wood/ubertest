@@ -2,6 +2,8 @@
 #include "rlgl.h"
 #include "model_convert/asc_loader.h"
 #include "model_convert/gltf_export.h"
+#include "model_convert/mdl_loader.h"
+#include "model_convert/gltf_skeletal_export.h"
 #include "rendering/scene_renderer.h"
 #include "utils/string_utils.h"
 #include <cstdio>
@@ -263,6 +265,84 @@ static Model load_model_with_shader(const std::string& path, SceneRenderer* rend
                      bounds_max.x, bounds_max.y, bounds_max.z);
         } else {
             TraceLog(LOG_ERROR, "ASC load failed: %s (line %d)", result.error_msg, result.error_line);
+        }
+    } else if (has_extension(path, ".mdl")) {
+        // MDL file (Half-Life model format)
+        TraceLog(LOG_INFO, "Loading MDL file: %s", path.c_str());
+
+        // Use MDL-specific defaults (inches->meters, Z-up->Y-up)
+        MDLLoadOptions mdl_opts = MDLDefaultOptions();
+
+        MDLLoadResult result = LoadMDL(path.c_str(), mdl_opts);
+
+        if (result.success) {
+            bounds_min = result.model.boundsMin;
+            bounds_max = result.model.boundsMax;
+            has_bounds = true;
+
+            // Convert skeletal model to Raylib model for viewing
+            // Note: This is a static conversion - animations handled separately
+            // For now, create simple mesh from the skeletal data
+            if (!result.model.meshes.empty()) {
+                // Count total vertices and triangles
+                int total_verts = 0;
+                for (const auto& mesh : result.model.meshes) {
+                    total_verts += (int)mesh.vertices.size();
+                }
+
+                if (total_verts > 0) {
+                    model.meshCount = (int)result.model.meshes.size();
+                    model.meshes = (Mesh*)RL_CALLOC(model.meshCount, sizeof(Mesh));
+                    model.materialCount = std::max(1, (int)result.model.materials.size());
+                    model.materials = (Material*)RL_CALLOC(model.materialCount, sizeof(Material));
+                    model.meshMaterial = (int*)RL_CALLOC(model.meshCount, sizeof(int));
+
+                    // Initialize default material
+                    for (int i = 0; i < model.materialCount; i++) {
+                        model.materials[i] = LoadMaterialDefault();
+                    }
+
+                    // Convert each mesh
+                    for (int m = 0; m < model.meshCount; m++) {
+                        const SkinnedMesh& src = result.model.meshes[m];
+                        Mesh& dst = model.meshes[m];
+
+                        dst.vertexCount = (int)src.vertices.size();
+                        dst.triangleCount = dst.vertexCount / 3;
+
+                        dst.vertices = (float*)RL_MALLOC(dst.vertexCount * 3 * sizeof(float));
+                        dst.normals = (float*)RL_MALLOC(dst.vertexCount * 3 * sizeof(float));
+                        dst.texcoords = (float*)RL_MALLOC(dst.vertexCount * 2 * sizeof(float));
+
+                        for (int v = 0; v < dst.vertexCount; v++) {
+                            const SkinnedVertex& sv = src.vertices[v];
+                            dst.vertices[v * 3 + 0] = sv.position.x;
+                            dst.vertices[v * 3 + 1] = sv.position.y;
+                            dst.vertices[v * 3 + 2] = sv.position.z;
+                            dst.normals[v * 3 + 0] = sv.normal.x;
+                            dst.normals[v * 3 + 1] = sv.normal.y;
+                            dst.normals[v * 3 + 2] = sv.normal.z;
+                            dst.texcoords[v * 2 + 0] = sv.texcoord.x;
+                            dst.texcoords[v * 2 + 1] = sv.texcoord.y;
+                        }
+
+                        // Upload to GPU
+                        UploadMesh(&dst, false);
+
+                        model.meshMaterial[m] = std::min(src.materialIndex, model.materialCount - 1);
+                    }
+                }
+            }
+
+            TraceLog(LOG_INFO, "MDL loaded: %d bones, %d meshes, %d animations",
+                     (int)result.model.bones.size(),
+                     (int)result.model.meshes.size(),
+                     (int)result.model.animations.size());
+            TraceLog(LOG_INFO, "MDL bounds: min(%.3f, %.3f, %.3f) max(%.3f, %.3f, %.3f)",
+                     bounds_min.x, bounds_min.y, bounds_min.z,
+                     bounds_max.x, bounds_max.y, bounds_max.z);
+        } else {
+            TraceLog(LOG_ERROR, "MDL load failed: %s", result.error_msg);
         }
     } else {
         // Use Raylib's native loader for GLTF/GLB/OBJ etc
@@ -575,12 +655,12 @@ static void parse_args(int argc, char** argv, AppState* app) {
             printf("  --model-a <path>   Load model into slot A (bottom-left)\n");
             printf("  --model-b <path>   Load model into slot B (bottom-right)\n\n");
             printf("Conversion Mode (single file):\n");
-            printf("  --convert <file>     Convert input ASC file to GLTF\n");
-            printf("  -o, --output <path>  Output GLTF file path\n\n");
+            printf("  --convert <file>     Convert input ASC or MDL file to GLTF/GLB\n");
+            printf("  -o, --output <path>  Output file path (.glb default for MDL, .gltf for ASC)\n\n");
             printf("Batch Conversion Mode:\n");
-            printf("  --convert <dir>      Convert all .asc files in directory\n");
+            printf("  --convert <dir>      Convert all .asc/.mdl files in directory\n");
             printf("  --convert \"<pattern>\" Convert files matching pattern (quote to prevent\n");
-            printf("                       shell expansion, e.g., \"*.asc\")\n");
+            printf("                       shell expansion, e.g., \"*.asc\" or \"*.mdl\")\n");
             printf("  -o, --output <dir>   Output directory (created if needed)\n\n");
             printf("Conversion Options:\n");
             printf("  --texture-path <dir> Override source path for texture files\n");
@@ -653,14 +733,55 @@ static void parse_args(int argc, char** argv, AppState* app) {
 }
 
 //------------------------------------------------------------------------------
-// Convert a single ASC file to GLTF
+// Convert a single ASC or MDL file to GLTF/GLB
 // Returns 0 on success, 1 on failure
 //------------------------------------------------------------------------------
 static int convert_single_file(const std::string& input_path, const std::string& output_path,
                                AppState* app) {
     printf("Converting: %s -> %s\n", input_path.c_str(), output_path.c_str());
 
-    // Load the model (skip GPU upload for headless conversion)
+    // Check for MDL file - use skeletal export
+    if (has_extension(input_path, ".mdl")) {
+        // Use MDL-specific defaults (inches->meters, Z-up->Y-up)
+        // Only override if user explicitly specified different values
+        MDLLoadOptions mdl_opts = MDLDefaultOptions();
+        // Note: MDLDefaultOptions already sets scale=0.0254 and swap_yz=true
+        // which are correct for MDL->glTF conversion
+
+        MDLLoadResult load_result = LoadMDL(input_path.c_str(), mdl_opts);
+
+        if (!load_result.success) {
+            fprintf(stderr, "Error: Failed to load %s: %s\n",
+                    input_path.c_str(), load_result.error_msg);
+            return 1;
+        }
+
+        printf("Loaded MDL: %d bones, %d meshes, %d animations\n",
+               (int)load_result.model.bones.size(),
+               (int)load_result.model.meshes.size(),
+               (int)load_result.model.animations.size());
+        printf("Bounds: min(%.3f, %.3f, %.3f) max(%.3f, %.3f, %.3f)\n",
+               load_result.model.boundsMin.x, load_result.model.boundsMin.y, load_result.model.boundsMin.z,
+               load_result.model.boundsMax.x, load_result.model.boundsMax.y, load_result.model.boundsMax.z);
+
+        // Export using skeletal GLTF exporter
+        SkeletalExportOptions export_opts = SkeletalExportDefaultOptions();
+        // Default to GLB, use .gltf extension to trigger non-binary output
+        export_opts.binary = !has_extension(output_path, ".gltf");
+
+        SkeletalExportResult export_result = ExportSkeletalGLTF(load_result.model, output_path.c_str(), export_opts);
+
+        if (!export_result.success) {
+            fprintf(stderr, "Error: Failed to export %s: %s\n",
+                    output_path.c_str(), export_result.error_msg);
+            return 1;
+        }
+
+        printf("Success: Exported to %s\n", output_path.c_str());
+        return 0;
+    }
+
+    // ASC file - use existing static mesh export
     ASCLoadOptions opts = app->asc_options;
     opts.skip_gpu_upload = true;  // No OpenGL context available
     Model model = {0};
@@ -822,14 +943,17 @@ static int run_conversion(AppState* app) {
     fs::path input_path(app->convert_input);
     fs::path output_path(app->convert_output);
 
+    // Determine default output extension based on input type
+    std::string default_ext = has_extension(app->convert_input, ".mdl") ? ".glb" : ".gltf";
+
     if (app->convert_output.empty()) {
-        // No output specified - replace extension with .gltf
+        // No output specified - replace extension with default
         app->convert_output = app->convert_input;
         size_t dot_pos = app->convert_output.rfind('.');
         if (dot_pos != std::string::npos) {
-            app->convert_output = app->convert_output.substr(0, dot_pos) + ".gltf";
+            app->convert_output = app->convert_output.substr(0, dot_pos) + default_ext;
         } else {
-            app->convert_output += ".gltf";
+            app->convert_output += default_ext;
         }
     } else {
         // Check if output is a directory (ends with / or is existing directory)
@@ -852,9 +976,9 @@ static int run_conversion(AppState* app) {
                     return 1;
                 }
             }
-            // Generate output filename: output_dir / input_stem.gltf
+            // Generate output filename: output_dir / input_stem.glb or .gltf
             fs::path out_file = output_path / input_path.stem();
-            out_file.replace_extension(".gltf");
+            out_file.replace_extension(default_ext);
             app->convert_output = out_file.string();
         }
     }
