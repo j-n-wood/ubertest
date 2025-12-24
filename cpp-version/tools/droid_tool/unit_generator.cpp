@@ -3,6 +3,8 @@
 #include "asc_loader.h"
 #include "gltf_bounds.h"
 #include "gltf_export.h"
+#include "mdl_loader.h"
+#include "gltf_skeletal_export.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -109,10 +111,12 @@ void writeSectionJson(
 
     const RenderObject* ro = findRenderObject(renderObjects, node.section->renderIndex);
     std::string modelPath;
-    if (ro && !ro->modelPath.empty() && ro->type == RenderObjectType::ModelASC) {
-        // Extract filename from path and change extension to .gltf
+    if (ro && !ro->modelPath.empty() &&
+        (ro->type == RenderObjectType::ModelASC || ro->type == RenderObjectType::ModelMDL)) {
+        // Extract filename from path and change extension to .gltf/.glb
         fs::path p(ro->modelPath);
-        modelPath = modelPathPrefix + "/" + p.stem().string() + ".gltf";
+        std::string ext = (ro->type == RenderObjectType::ModelMDL) ? ".glb" : ".gltf";
+        modelPath = modelPathPrefix + "/" + p.stem().string() + ext;
     }
 
     writeIndent(f, depth);
@@ -269,7 +273,65 @@ UnitGeneratorResult generateUnits(
                     convertedModels.insert(srcKey);
                     result.modelsConverted++;
                 }
-                else if (ro->type == RenderObjectType::ModelMDL || ro->type == RenderObjectType::ModelMD2) {
+                else if (ro->type == RenderObjectType::ModelMDL && !ro->modelPath.empty()) {
+                    // MDL file conversion using skeletal exporter
+                    fs::path srcPath = options.sourceModelsDir / ro->modelPath;
+                    fs::path outPath = options.modelsOutputDir / (fs::path(ro->modelPath).stem().string() + ".glb");
+
+                    std::string srcKey = srcPath.string();
+                    if (convertedModels.count(srcKey)) {
+                        result.modelsSkipped++;
+                        continue;
+                    }
+
+                    if (options.skipExisting && fs::exists(outPath)) {
+                        std::cout << "  Skipping " << outPath.filename().string() << " (already exists)\n";
+                        convertedModels.insert(srcKey);
+                        result.modelsSkipped++;
+                        continue;
+                    }
+
+                    if (!fs::exists(srcPath)) {
+                        std::cout << "  Warning: Model not found: " << srcPath.string() << "\n";
+                        continue;
+                    }
+
+                    std::cout << "  Converting " << srcPath.filename().string() << " -> " << outPath.filename().string() << "\n";
+
+                    // Load MDL with default options (includes 180° Y rotation for correct orientation)
+                    MDLLoadOptions loadOpts = MDLDefaultOptions();
+                    // MDLDefaultOptions already sets scale=0.0254 and swap_yz=true which handles
+                    // coordinate system conversion and the 180° Y rotation for forward orientation
+
+                    MDLLoadResult loadResult = LoadMDL(srcPath.string().c_str(), loadOpts);
+
+                    if (!loadResult.success) {
+                        std::cout << "  Error loading " << srcPath.filename().string() << ": " << loadResult.error_msg << "\n";
+                        continue;
+                    }
+
+                    std::cout << "    Loaded: " << loadResult.model.bones.size() << " bones, "
+                              << loadResult.model.meshes.size() << " meshes, "
+                              << loadResult.model.animations.size() << " animations\n";
+
+                    // Export skeletal GLTF (GLB format)
+                    fs::create_directories(outPath.parent_path(), ec);
+                    SkeletalExportOptions exportOpts = SkeletalExportDefaultOptions();
+                    exportOpts.binary = true;  // GLB format
+                    exportOpts.export_animations = true;
+
+                    SkeletalExportResult exportResult = ExportSkeletalGLTF(loadResult.model, outPath.string().c_str(), exportOpts);
+
+                    if (!exportResult.success) {
+                        std::cout << "  Error exporting " << outPath.filename().string() << ": " << exportResult.error_msg << "\n";
+                        continue;
+                    }
+
+                    convertedModels.insert(srcKey);
+                    result.modelsConverted++;
+                }
+                else if (ro->type == RenderObjectType::ModelMD2) {
+                    // MD2 not yet supported
                     if (!ro->modelPath.empty() && !unsupportedModelsSet.count(ro->modelPath)) {
                         unsupportedModelsSet.insert(ro->modelPath);
                         result.unsupportedModels.push_back(ro->modelPath);
@@ -324,9 +386,17 @@ UnitGeneratorResult generateUnits(
             // Add physics to root
             const RenderObject* rootRo = findRenderObject(renderObjects, root.section->renderIndex);
             std::string modelPath;
-            if (rootRo && !rootRo->modelPath.empty() && rootRo->type == RenderObjectType::ModelASC) {
-                fs::path p(rootRo->modelPath);
-                modelPath = "models/" + p.stem().string() + ".gltf";
+            std::string modelExt;
+            if (rootRo && !rootRo->modelPath.empty()) {
+                if (rootRo->type == RenderObjectType::ModelASC) {
+                    fs::path p(rootRo->modelPath);
+                    modelExt = ".gltf";
+                    modelPath = "models/" + p.stem().string() + modelExt;
+                } else if (rootRo->type == RenderObjectType::ModelMDL) {
+                    fs::path p(rootRo->modelPath);
+                    modelExt = ".glb";
+                    modelPath = "models/" + p.stem().string() + modelExt;
+                }
             }
 
             fprintf(jsonFile, "{\n");
@@ -344,8 +414,8 @@ UnitGeneratorResult generateUnits(
             // Physics - derive shape from model bounds
             PhysicsShapeInfo physShape;
             if (!modelPath.empty()) {
-                // Construct full path to the GLTF file
-                fs::path gltfPath = options.modelsOutputDir / (fs::path(rootRo->modelPath).stem().string() + ".gltf");
+                // Construct full path to the GLTF/GLB file
+                fs::path gltfPath = options.modelsOutputDir / (fs::path(rootRo->modelPath).stem().string() + modelExt);
                 GLTFBounds bounds = readGLTFBounds(gltfPath.string().c_str());
                 physShape = determinePhysicsShape(bounds, 0.25f);
 

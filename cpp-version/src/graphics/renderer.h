@@ -17,7 +17,7 @@ typedef struct Renderer {
     Model cube_model;  // Shared cube model with lighting shader
 } Renderer;
 
-void renderer_init(Renderer* renderer);
+void renderer_init(Renderer* renderer, const char* asset_path);
 void renderer_destroy(Renderer* renderer);
 
 Model renderer_load_gltf(const char* path);

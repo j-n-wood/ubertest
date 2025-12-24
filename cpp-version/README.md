@@ -15,15 +15,19 @@ A C++ workspace for a top-down game using 2D physics with 3D graphics, plus supp
 cpp-version/
 ├── CMakeLists.txt              # Workspace orchestrator
 ├── cmake/
-│   ├── Dependencies.cmake      # FetchContent for raylib and box2d
+│   ├── Dependencies.cmake      # FetchContent for raylib, box2d, googletest
 │   └── SharedSources.cmake     # Shared code configuration
 ├── shared/                     # Common code for all projects
 │   ├── lighting/               # Light struct and shader utilities
+│   ├── rendering/              # Scene rendering utilities
+│   ├── units/                  # Unit instance and manager
+│   ├── model_convert/          # ASC/MDL loaders, GLTF export
 │   └── utils/                  # String utilities
 ├── assets/                     # Shared assets
 │   ├── models/                 # GLTF/GLB files
 │   ├── textures/
-│   └── shaders/
+│   ├── shaders/
+│   └── units/                  # Unit definition files
 ├── src/                        # Main game
 │   ├── main.cpp                # Entry point, window init, game loop
 │   ├── game.h/cpp              # Central Game struct and lifecycle
@@ -37,14 +41,30 @@ cpp-version/
 │   │   └── entity.h/cpp        # Entity struct and physics sync
 │   └── input/
 │       └── input.h/cpp         # Input handling
+├── tests/                      # GoogleTest unit tests
+│   ├── CMakeLists.txt
+│   └── sanity_test.cpp
 ├── tools/
-│   └── model_tool/             # Model viewer and ASC-to-GLTF converter
+│   ├── model_tool/             # Model viewer and ASC/MDL-to-GLTF converter
+│   ├── unit_test/              # Interactive unit testing tool
+│   └── droid_tool/             # Droid unit generation tool
 ├── docs/
 │   └── entity_system.md        # Entity system documentation
 └── build/
 ```
 
 See [AGENTS.md](AGENTS.md) for workspace organization and coding guidelines.
+
+## Asset organisation
+
+It is generally expected that build will be invoked from the root folder (cpp-version). Tools and executables
+shall have an asset-path argument to override the assets folder path. Otherwise ./assets is assumed.
+If the provided or optional asset location does not exist, raise an error and exit.
+
+This is to allow both tools and game executables to share input assets.
+
+Output asset path will default to the same but can be overridden to an existing or new folder for tools
+that produce output.
 
 ## Build Commands
 
@@ -94,3 +114,18 @@ cmake --build build-debug
 3. Explicit physics-to-graphics sync each frame
 4. GLTF native model loading via Raylib
 5. FetchContent for dependency management
+
+## Testing
+
+Unit tests use **GoogleTest** and are located in the `tests/` directory.
+
+```bash
+# Build and run tests
+cmake --build build --target run_tests
+ctest --test-dir build --output-on-failure
+
+# Or run directly
+./build/tests/run_tests
+```
+
+See [AGENTS.md](AGENTS.md) for detailed testing guidelines.

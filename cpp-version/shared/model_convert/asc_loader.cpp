@@ -322,10 +322,11 @@ static Model build_raylib_model(const std::vector<ASCMesh>& asc_meshes,
     }
 
     // Log transform options
-    TraceLog(LOG_INFO, "ASC: Transform options - scale: %.4f, swap_yz: %s, flip_winding: %s",
+    TraceLog(LOG_INFO, "ASC: Transform options - scale: %.4f, swap_yz: %s, flip_winding: %s, rotate_forward: %s",
              options.scale,
              options.swap_yz ? "yes" : "no",
-             options.flip_winding ? "yes" : "no");
+             options.flip_winding ? "yes" : "no",
+             options.rotate_forward ? "yes" : "no");
 
     // Initialize bounds tracking
     result->bounds_min = (Vector3){ FLT_MAX, FLT_MAX, FLT_MAX };
@@ -501,6 +502,14 @@ static Model build_raylib_model(const std::vector<ASCMesh>& asc_meshes,
                     pz = v.z * options.scale;
                 }
 
+                // Apply -90° Y rotation to convert +X forward to +Z forward (glTF convention)
+                // Rotation: (x, y, z) -> (-z, y, x)
+                if (options.rotate_forward) {
+                    float tmp = px;
+                    px = -pz;
+                    pz = tmp;
+                }
+
                 mesh.vertices[out_idx * 3 + 0] = px;
                 mesh.vertices[out_idx * 3 + 1] = py;
                 mesh.vertices[out_idx * 3 + 2] = pz;
@@ -513,7 +522,7 @@ static Model build_raylib_model(const std::vector<ASCMesh>& asc_meshes,
                 if (py > result->bounds_max.y) result->bounds_max.y = py;
                 if (pz > result->bounds_max.z) result->bounds_max.z = pz;
 
-                // Apply transforms to normal (no scaling, just axis swap)
+                // Apply transforms to normal (no scaling, just axis swap and rotation)
                 float nx, ny, nz;
                 if (options.swap_yz) {
                     nx = n.x;
@@ -523,6 +532,13 @@ static Model build_raylib_model(const std::vector<ASCMesh>& asc_meshes,
                     nx = n.x;
                     ny = n.y;
                     nz = n.z;
+                }
+
+                // Apply -90° Y rotation to normals (same as position)
+                if (options.rotate_forward) {
+                    float tmp = nx;
+                    nx = -nz;
+                    nz = tmp;
                 }
 
                 mesh.normals[out_idx * 3 + 0] = nx;
@@ -577,6 +593,7 @@ ASCLoadOptions ASCDefaultOptions(void) {
     options.swap_yz = false;           // Default: no axis swap
     options.flip_winding = false;      // Default: no winding flip
     options.skip_gpu_upload = false;   // Default: upload to GPU
+    options.rotate_forward = true;     // Default: rotate +X forward to +Z forward (glTF convention)
     return options;
 }
 

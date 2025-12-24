@@ -1,10 +1,14 @@
 #include "renderer.h"
 #include "entities/entity.h"
 #include "lighting/light.h"
+#include <cstdio>
 
-void renderer_init(Renderer* renderer) {
-    // Load lighting shader
-    renderer->lighting_shader = LoadShader("assets/shaders/lighting.vs", "assets/shaders/lighting.fs");
+void renderer_init(Renderer* renderer, const char* asset_path) {
+    // Load lighting shader using asset path
+    char vs_path[512], fs_path[512];
+    snprintf(vs_path, sizeof(vs_path), "%s/shaders/lighting.vs", asset_path);
+    snprintf(fs_path, sizeof(fs_path), "%s/shaders/lighting.fs", asset_path);
+    renderer->lighting_shader = LoadShader(vs_path, fs_path);
 
     // Get shader locations
     renderer->lighting_shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(renderer->lighting_shader, "viewPos");

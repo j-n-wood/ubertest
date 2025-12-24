@@ -1,10 +1,13 @@
 #include "procgen.h"
 #include "game.h"
 #include <stddef.h>
+#include <cstdio>
 
 void procgen_generate_level(Game* game) {
-    // Spawn Suzanne as player
-    game->controlled_entity = procgen_spawn_entity_specular(game, ENTITY_PLAYER, (Vector3){0, 0, 0}, "assets/models/Suzanne.glb", 64.0f, 5.0f);
+    // Spawn Suzanne as player using asset path
+    char model_path[512];
+    snprintf(model_path, sizeof(model_path), "%s/models/Suzanne.glb", game->asset_path);
+    game->controlled_entity = procgen_spawn_entity_specular(game, ENTITY_PLAYER, (Vector3){0, 0, 0}, model_path, 64.0f, 5.0f);
 
     // Spawn some static obstacles
     procgen_spawn_entity(game, ENTITY_OBSTACLE, (Vector3){5, 0, 5}, NULL);

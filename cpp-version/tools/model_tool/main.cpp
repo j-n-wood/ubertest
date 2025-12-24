@@ -142,10 +142,17 @@ static bool is_batch_input(const std::string& path) {
 }
 
 //------------------------------------------------------------------------------
-// Collect .asc files from directory or wildcard pattern
+// Check if a file is a supported model format (.asc or .mdl)
+//------------------------------------------------------------------------------
+static bool is_supported_model(const fs::path& path) {
+    return has_extension(path, ".asc") || has_extension(path, ".mdl");
+}
+
+//------------------------------------------------------------------------------
+// Collect model files (.asc and .mdl) from directory or wildcard pattern
 // Returns vector of paths to input files
 //------------------------------------------------------------------------------
-static std::vector<fs::path> collect_asc_files(const std::string& input_path) {
+static std::vector<fs::path> collect_model_files(const std::string& input_path) {
     std::vector<fs::path> files;
 
     size_t wildcard_pos = input_path.find('*');
@@ -159,6 +166,7 @@ static std::vector<fs::path> collect_asc_files(const std::string& input_path) {
         // Convert glob pattern to simple prefix/suffix matching
         // e.g., "*.asc" -> prefix="", suffix=".asc"
         // e.g., "model*.asc" -> prefix="model", suffix=".asc"
+        // e.g., "*" -> prefix="", suffix="" (matches all supported formats)
         size_t star_in_pattern = pattern.find('*');
         std::string prefix = pattern.substr(0, star_in_pattern);
         std::string suffix = pattern.substr(star_in_pattern + 1);
@@ -182,16 +190,21 @@ static std::vector<fs::path> collect_asc_files(const std::string& input_path) {
                 matches = false;
             }
 
+            // If suffix is empty (e.g., pattern "*"), only include supported model files
+            if (matches && suffix.empty()) {
+                matches = is_supported_model(entry.path());
+            }
+
             if (matches) {
                 files.push_back(entry.path());
             }
         }
     } else {
-        // Directory mode: find all .asc files
+        // Directory mode: find all .asc and .mdl files
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(input_path, ec)) {
             if (!entry.is_regular_file()) continue;
-            if (has_extension(entry.path(), ".asc")) {
+            if (is_supported_model(entry.path())) {
                 files.push_back(entry.path());
             }
         }
@@ -611,8 +624,8 @@ static void parse_args(int argc, char** argv, AppState* app) {
     app->convert_input.clear();
     app->convert_output.clear();
     app->texture_source_path.clear();
-    app->asset_path.clear();
-    app->shaders_path = "shaders/";  // Default: look in current directory
+    app->asset_path = "assets";  // Default per README convention
+    app->shaders_path = "assets/shaders/";  // Default: conventional asset structure
 
     // Initialize ASC options to defaults
     app->asc_options = ASCDefaultOptions();
@@ -648,6 +661,9 @@ static void parse_args(int argc, char** argv, AppState* app) {
         } else if (arg == "--help" || arg == "-h") {
             printf("Model Tool - 3D Model Viewer and Converter\n\n");
             printf("Usage: model_tool [options]\n\n");
+            printf("Supported Formats:\n");
+            printf("  Input:  .asc (MilkShape ASCII), .mdl (Half-Life/GoldSrc)\n");
+            printf("  Output: .gltf/.glb (ASC -> .gltf, MDL -> .glb with animations)\n\n");
             printf("Asset Path Mode:\n");
             printf("  --asset-path <dir>   Base path for assets (conventional structure)\n");
             printf("                       Assumes: models/, textures/, shaders/ subdirs\n\n");
@@ -658,14 +674,18 @@ static void parse_args(int argc, char** argv, AppState* app) {
             printf("  --convert <file>     Convert input ASC or MDL file to GLTF/GLB\n");
             printf("  -o, --output <path>  Output file path (.glb default for MDL, .gltf for ASC)\n\n");
             printf("Batch Conversion Mode:\n");
-            printf("  --convert <dir>      Convert all .asc/.mdl files in directory\n");
-            printf("  --convert \"<pattern>\" Convert files matching pattern (quote to prevent\n");
-            printf("                       shell expansion, e.g., \"*.asc\" or \"*.mdl\")\n");
-            printf("  -o, --output <dir>   Output directory (created if needed)\n\n");
+            printf("  --convert <dir>      Convert all .asc and .mdl files in directory\n");
+            printf("  --convert \"<pat>\"    Convert files matching pattern (quote to prevent\n");
+            printf("                       shell expansion). Patterns:\n");
+            printf("                         \"*.asc\"  - all ASC files\n");
+            printf("                         \"*.mdl\"  - all MDL files\n");
+            printf("                         \"*\"      - all supported files (.asc and .mdl)\n");
+            printf("  -o, --output <dir>   Output directory (created if needed)\n");
+            printf("                       Output extensions set automatically per input type\n\n");
             printf("Conversion Options:\n");
             printf("  --texture-path <dir> Override source path for texture files\n");
             printf("                       (used if textures not found relative to input)\n\n");
-            printf("ASC Loader Options:\n");
+            printf("ASC Loader Options (MDL uses fixed defaults):\n");
             printf("  --scale <factor>   Scale factor (default: 0.0254 for inches to meters)\n");
             printf("  --swap-yz          Enable Y/Z axis swap (Z-up to Y-up conversion)\n");
             printf("  --flip-winding     Enable triangle winding flip\n\n");
@@ -684,14 +704,17 @@ static void parse_args(int argc, char** argv, AppState* app) {
             printf("    shaders/    - Shader files\n");
             printf("    units/      - Unit definition JSON files\n\n");
             printf("Examples:\n");
-            printf("  # Viewer with asset path\n");
-            printf("  model_tool --asset-path ./assets --model-a models/robot.gltf\n\n");
             printf("  # Single file conversion\n");
-            printf("  model_tool --convert model.asc -o out/model.gltf --swap-yz\n\n");
-            printf("  # Batch conversion (all .asc files in directory)\n");
-            printf("  model_tool --convert ./models/ -o ./output/ --swap-yz\n\n");
+            printf("  model_tool --convert model.asc -o out/model.gltf\n");
+            printf("  model_tool --convert character.mdl -o out/character.glb\n\n");
+            printf("  # Batch convert all models in a directory\n");
+            printf("  model_tool --convert ./models/ -o ./output/\n\n");
+            printf("  # Batch convert only ASC files\n");
+            printf("  model_tool --convert \"./models/*.asc\" -o ./output/\n\n");
+            printf("  # Batch convert only MDL files\n");
+            printf("  model_tool --convert \"./models/*.mdl\" -o ./output/\n\n");
             printf("  # Viewer mode\n");
-            printf("  model_tool --model-a model.asc --swap-yz\n");
+            printf("  model_tool --model-a model.asc --model-b model.gltf\n");
             exit(0);
         }
     }
@@ -851,16 +874,23 @@ static int convert_single_file(const std::string& input_path, const std::string&
 // Run batch conversion mode
 //------------------------------------------------------------------------------
 static int run_batch_conversion(AppState* app) {
-    // Collect input files
-    auto files = collect_asc_files(app->convert_input);
+    // Collect input files (.asc and .mdl)
+    auto files = collect_model_files(app->convert_input);
 
     if (files.empty()) {
-        fprintf(stderr, "Error: No .asc files found matching '%s'\n",
+        fprintf(stderr, "Error: No model files (.asc/.mdl) found matching '%s'\n",
                 app->convert_input.c_str());
         return 1;
     }
 
-    printf("Found %zu file(s) to convert\n", files.size());
+    // Count file types
+    int asc_count = 0, mdl_count = 0;
+    for (const auto& f : files) {
+        if (has_extension(f, ".asc")) asc_count++;
+        else if (has_extension(f, ".mdl")) mdl_count++;
+    }
+
+    printf("Found %zu file(s) to convert (%d .asc, %d .mdl)\n", files.size(), asc_count, mdl_count);
     printf("Options: scale=%.6f swap_yz=%s flip_winding=%s\n",
            app->asc_options.scale,
            app->asc_options.swap_yz ? "yes" : "no",
@@ -896,9 +926,14 @@ static int run_batch_conversion(AppState* app) {
     for (size_t i = 0; i < files.size(); i++) {
         const auto& input_file = files[i];
 
-        // Generate output path: output_dir / stem.gltf
+        // Generate output path with appropriate extension
+        // MDL -> .glb (binary, with animations), ASC -> .gltf
         fs::path output_file = output_dir / input_file.stem();
-        output_file.replace_extension(".gltf");
+        if (has_extension(input_file, ".mdl")) {
+            output_file.replace_extension(".glb");
+        } else {
+            output_file.replace_extension(".gltf");
+        }
 
         printf("\n[%zu/%zu] %s\n", i + 1, files.size(),
                input_file.filename().string().c_str());
@@ -1006,6 +1041,12 @@ int main(int argc, char** argv) {
     // Handle conversion mode (headless)
     if (app.convert_mode) {
         return run_conversion(&app);
+    }
+
+    // Validate asset path exists (required for viewer mode - shaders)
+    if (!fs::exists(app.asset_path) || !fs::is_directory(app.asset_path)) {
+        fprintf(stderr, "Error: Asset path does not exist: %s\n", app.asset_path.c_str());
+        return 1;
     }
 
     // Initialize window for viewer mode

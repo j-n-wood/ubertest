@@ -1,6 +1,6 @@
 # Model Tool - Debug Viewer & Converter
 
-A C++ tool using Raylib for viewing and converting 3D models, specifically MilkShape 3D ASCII (.asc) files to GLTF 2.0 format.
+A C++ tool using Raylib for viewing and converting 3D models, including MilkShape 3D ASCII (.asc) and Half-Life MDL (.mdl) files to GLTF 2.0 format.
 
 ## Project Structure
 
@@ -65,8 +65,15 @@ Options:
 - **Units**: Typically inches
 - **Triangle winding**: Clockwise (CW)
 
+### Half-Life MDL (.mdl)
+- **Axis convention**: Z-up, X-forward (right-handed)
+- **Units**: Game units (typically treated as inches)
+- **Triangle winding**: Clockwise (CW)
+- **Vertex space**: Bone-local (vertices stored relative to their assigned bone)
+- **Animation**: Absolute bone transforms per frame (not relative to rest pose)
+
 ### Raylib / GLTF
-- **Axis convention**: Y-up (right-handed)
+- **Axis convention**: Y-up, +Z-forward (right-handed)
 - **Units**: Meters
 - **Triangle winding**: Counter-clockwise (CCW)
 
@@ -85,6 +92,39 @@ When loading ASC files, the following transforms can be applied via CLI options:
    ```
 
 Note: By default these transforms are disabled. Enable them based on your source content.
+
+### MDL Coordinate Axis Correction
+
+When loading MDL files with `--swap-yz`, a multi-stage coordinate transformation is applied to convert from MDL's Z-up/X-forward system to glTF's Y-up/+Z-forward system:
+
+**Stage 1: Basic Axis Swap**
+
+Converts Z-up to Y-up for positions and quaternion rotations:
+```
+Position: (x, y, z) → (-y, z, -x)
+Quaternion: (qx, qy, qz, qw) → (-qy, qz, -qx, qw)
+```
+
+**Stage 2: Vertex Space Conversion**
+
+MDL stores vertices in bone-local space. Before export, vertices are transformed to model space using the bone hierarchy world matrices. This is required because glTF skinning expects vertices in model space with inverse bind matrices.
+
+**Stage 3: Bind Pose Correction**
+
+MDL animation frame 0 often differs from the bone rest pose. To ensure animations play correctly, the bind pose is updated from animation frame 0 before calculating inverse bind matrices.
+
+**Stage 4: Forward Direction Correction (180° Y Rotation)**
+
+After the axis swap, the model faces -Z instead of glTF's +Z forward convention. A 180° rotation around the Y axis is applied to correct this:
+
+```
+Vertices: (x, y, z) → (-x, y, -z)
+Normals: (nx, ny, nz) → (-nx, ny, -nz)
+Root bones: position (x, y, z) → (-x, y, -z), rotation *= Quaternion(0, 1, 0, 0)
+Animation keyframes (root bones only): same transforms as root bones
+```
+
+This rotation is baked directly into the vertex data and root bone transforms because glTF skinned meshes ignore parent node transforms during animation.
 
 ## Texture Path Handling
 

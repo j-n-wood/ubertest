@@ -9,6 +9,7 @@ typedef struct ASCLoadOptions {
     bool swap_yz;           // Swap Y and Z axes (default: false)
     bool flip_winding;      // Flip triangle winding order (default: false)
     bool skip_gpu_upload;   // Skip GPU upload (for headless conversion)
+    bool rotate_forward;    // Rotate 90° around Y to convert +X forward to +Z forward (glTF convention)
 } ASCLoadOptions;
 
 // Maximum materials/textures supported

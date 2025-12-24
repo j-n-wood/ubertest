@@ -12,12 +12,25 @@ A C++ workspace for a top-down game engine with supporting tools, built with Ray
 cpp-version/
 ├── CMakeLists.txt              # Workspace orchestrator (builds all projects)
 ├── cmake/
-│   ├── Dependencies.cmake      # Shared dependency fetching (raylib, box2d)
+│   ├── Dependencies.cmake      # Shared dependency fetching (raylib, box2d, googletest)
 │   └── SharedSources.cmake     # Defines SHARED_SOURCES, SHARED_INCLUDE_DIR
 ├── shared/                     # Common code for all projects
 │   ├── lighting/
 │   │   ├── light.h             # Light struct, MAX_LIGHTS, LIGHT_* constants
 │   │   └── light.cpp           # create_light() implementation
+│   ├── rendering/
+│   │   ├── scene_renderer.h    # Scene rendering utilities
+│   │   └── scene_renderer.cpp
+│   ├── units/
+│   │   ├── unit_instance.h/cpp # Unit instance management
+│   │   ├── unit_manager.h/cpp  # Unit manager
+│   │   └── unit_json.h/cpp     # Unit JSON serialization
+│   ├── model_convert/
+│   │   ├── asc_loader.h/cpp    # MilkShape ASCII format loader
+│   │   ├── mdl_loader.h/cpp    # Half-Life MDL format loader
+│   │   ├── gltf_export.h/cpp   # GLTF 2.0 exporter
+│   │   ├── gltf_bounds.h/cpp   # GLTF bounds calculation
+│   │   └── gltf_skeletal_export.h/cpp  # Skeletal animation export
 │   └── utils/
 │       ├── string_utils.h      # to_lower(), has_extension()
 │       └── string_utils.cpp
@@ -32,15 +45,26 @@ cpp-version/
 ├── assets/                     # Shared assets for all projects
 │   ├── models/                 # GLTF/GLB model files
 │   ├── textures/               # Texture files
-│   └── shaders/                # GLSL shaders (lighting.vs/fs)
+│   ├── shaders/                # GLSL shaders (lighting.vs/fs)
+│   └── units/                  # Unit definition files
+├── tests/                      # GoogleTest unit tests
+│   ├── CMakeLists.txt          # Test configuration
+│   └── sanity_test.cpp         # Basic sanity tests
 └── tools/
-    └── model_tool/             # Model viewer and converter tool
+    ├── model_tool/             # Model viewer and converter tool
+    │   ├── CMakeLists.txt
+    │   ├── main.cpp
+    │   └── AGENTS.md           # Tool-specific documentation
+    ├── unit_test/              # Interactive unit testing tool
+    │   ├── CMakeLists.txt
+    │   ├── main.cpp
+    │   └── test_scene.cpp
+    └── droid_tool/             # Droid unit generation tool
         ├── CMakeLists.txt
         ├── main.cpp
-        ├── asc_loader.h/cpp    # MilkShape ASCII format loader
-        ├── gltf_export.h/cpp   # GLTF 2.0 exporter
-        ├── AGENTS.md           # Tool-specific documentation
-        └── PROJECT_PROMPT_TEMPLATE.md  # C++ project template guidelines
+        ├── droidclass_parser.h/cpp    # Droid class parsing
+        ├── renderobject_parser.h/cpp  # Render object parsing
+        └── unit_generator.h/cpp       # Unit definition generation
 ```
 
 ## Build System
@@ -55,7 +79,10 @@ cmake --build build --parallel
 
 This builds:
 - `build/topdown_game` - Main game executable
-- `build/tools/model_tool/model_tool` - Model tool executable
+- `build/tools/model_tool/model_tool` - Model viewer and converter
+- `build/tools/unit_test/unit_test` - Interactive unit testing tool
+- `build/tools/droid_tool/droid_tool` - Droid unit generator
+- `build/tests/run_tests` - GoogleTest test runner
 
 ### CMake Variables
 
@@ -71,6 +98,9 @@ This builds:
 
 - **Raylib 5.5** - Always fetched (all projects need graphics)
 - **Box2D v3.0** - Conditionally fetched when `ENABLE_BOX2D=ON` (main game only)
+- **nlohmann/json v3.11.3** - JSON parsing and serialization
+- **tinygltf v2.9.3** - glTF model format support (header-only)
+- **GoogleTest v1.15.2** - Unit testing framework
 
 ## Code Organization
 
@@ -173,6 +203,70 @@ See [tools/model_tool/PROJECT_PROMPT_TEMPLATE.md](tools/model_tool/PROJECT_PROMP
 - Fixed-size char arrays: `char buffer[256]`
 - Raw `printf` family (use `std::print` or `std::format`)
 - `typedef struct` (use `struct` directly)
+
+## Testing
+
+### Strategy
+
+The project uses **GoogleTest** for unit testing. Tests are located in the `tests/` directory and integrated with CMake's CTest.
+
+### Running Tests
+
+```bash
+# Build and run all tests
+cmake --build build --target run_tests
+ctest --test-dir build --output-on-failure
+
+# Run test executable directly (more verbose output)
+./build/tests/run_tests
+
+# Run specific test
+./build/tests/run_tests --gtest_filter=SanityTest.*
+```
+
+### Writing Tests
+
+Add new test files to `tests/CMakeLists.txt`:
+
+```cmake
+add_executable(run_tests
+    sanity_test.cpp
+    your_new_test.cpp  # Add new test files here
+)
+```
+
+Test file structure:
+
+```cpp
+#include <gtest/gtest.h>
+
+TEST(TestSuiteName, TestName) {
+    EXPECT_EQ(expected, actual);
+    ASSERT_TRUE(condition);  // Fails immediately if false
+}
+```
+
+### Test Categories
+
+- **Unit tests** (`tests/`): Fast, isolated tests for shared code and utilities
+- **Integration tests**: Add to `tests/` with dependencies on shared sources
+- **Interactive tools** (`tools/unit_test/`): Visual/interactive testing with Raylib window
+
+### Adding Tests for Shared Code
+
+To test code from `shared/`, link the sources in `tests/CMakeLists.txt`:
+
+```cmake
+add_executable(run_tests
+    sanity_test.cpp
+    ${SHARED_SOURCES}  # Include shared sources for testing
+)
+
+target_link_libraries(run_tests PRIVATE
+    GTest::gtest_main
+    nlohmann_json::nlohmann_json  # Add dependencies as needed
+)
+```
 
 ## Project-Specific Documentation
 

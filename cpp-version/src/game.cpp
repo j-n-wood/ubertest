@@ -42,7 +42,7 @@ void game_init(Game* game, const char* assetPath) {
     game->asset_path[sizeof(game->asset_path) - 1] = '\0';
 
     physics_world_init(&game->physics);
-    renderer_init(&game->renderer);
+    renderer_init(&game->renderer, game->asset_path);
     input_init(&game->input);
 
     game->entity_count = 0;

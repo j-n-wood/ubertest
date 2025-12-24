@@ -2,6 +2,9 @@
 #include "game.h"
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // Conventional asset directory structure
 constexpr const char* ASSET_MODELS = "models";
@@ -44,6 +47,12 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--asset-path") == 0 && i + 1 < argc) {
             assetPath = argv[++i];
         }
+    }
+
+    // Validate asset path exists
+    if (!fs::exists(assetPath) || !fs::is_directory(assetPath)) {
+        fprintf(stderr, "Error: Asset path does not exist: %s\n", assetPath);
+        return 1;
     }
 
     printf("Asset path: %s\n", assetPath);
