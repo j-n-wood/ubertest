@@ -28,10 +28,13 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     // Get shader locations
     renderer->shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(renderer->shader, "viewPos");
     renderer->shader.locs[SHADER_LOC_COLOR_SPECULAR] = GetShaderLocation(renderer->shader, "colSpecular");
+    renderer->shader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(renderer->shader, "texture2");
     renderer->ambientLoc = GetShaderLocation(renderer->shader, "ambient");
     renderer->debugModeLoc = GetShaderLocation(renderer->shader, "debugMode");
     renderer->specPowerLoc = GetShaderLocation(renderer->shader, "specularPower");
     renderer->specIntensityLoc = GetShaderLocation(renderer->shader, "specularIntensity");
+    renderer->useNormalMapLoc = GetShaderLocation(renderer->shader, "useNormalMap");
+    renderer->bumpIntensityLoc = GetShaderLocation(renderer->shader, "bumpIntensity");
 
     // Set default values
     renderer->debugMode = 0;
@@ -41,6 +44,8 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     renderer->ambient[3] = 1.0f;
     renderer->specularPower = 32.0f;
     renderer->specularIntensity = 0.5f;
+    renderer->useNormalMap = true;
+    renderer->bumpIntensity = 1.0f;
     renderer->lightCount = 0;
 
     // Apply defaults to shader
@@ -48,6 +53,24 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     SetShaderValue(renderer->shader, renderer->debugModeLoc, &renderer->debugMode, SHADER_UNIFORM_INT);
     SetShaderValue(renderer->shader, renderer->specPowerLoc, &renderer->specularPower, SHADER_UNIFORM_FLOAT);
     SetShaderValue(renderer->shader, renderer->specIntensityLoc, &renderer->specularIntensity, SHADER_UNIFORM_FLOAT);
+    int useNormalMapInt = renderer->useNormalMap ? 1 : 0;
+    SetShaderValue(renderer->shader, renderer->useNormalMapLoc, &useNormalMapInt, SHADER_UNIFORM_INT);
+    SetShaderValue(renderer->shader, renderer->bumpIntensityLoc, &renderer->bumpIntensity, SHADER_UNIFORM_FLOAT);
+
+    // Load default flat normal map (derived from shader path)
+    // shaderPath is like "shaders/" so we go up one level to find textures/
+    char normalMapPath[256];
+    snprintf(normalMapPath, sizeof(normalMapPath), "%s../textures/flat_normal.png", shaderPath);
+    if (FileExists(normalMapPath)) {
+        renderer->defaultNormalMap = LoadTexture(normalMapPath);
+        renderer->defaultNormalMapLoaded = IsTextureValid(renderer->defaultNormalMap);
+        if (renderer->defaultNormalMapLoaded) {
+            TraceLog(LOG_INFO, "SceneRenderer: Loaded default normal map from %s", normalMapPath);
+        }
+    } else {
+        renderer->defaultNormalMapLoaded = false;
+        TraceLog(LOG_WARNING, "SceneRenderer: Default normal map not found at %s", normalMapPath);
+    }
 
     renderer->initialized = true;
     return true;
@@ -60,6 +83,12 @@ void sceneRendererDestroy(SceneRenderer* renderer) {
     if (!renderer || !renderer->initialized) return;
 
     UnloadShader(renderer->shader);
+
+    if (renderer->defaultNormalMapLoaded) {
+        UnloadTexture(renderer->defaultNormalMap);
+        renderer->defaultNormalMapLoaded = false;
+    }
+
     renderer->initialized = false;
 }
 
@@ -81,6 +110,15 @@ void sceneRendererApplyShader(SceneRenderer* renderer, Model* model) {
 
     for (int i = 0; i < model->materialCount; i++) {
         model->materials[i].shader = renderer->shader;
+
+        // If no normal map assigned and we have a default, apply the flat normal map
+        // This ensures consistent rendering for models without bump textures
+        if (renderer->defaultNormalMapLoaded) {
+            Texture2D currentNormalMap = model->materials[i].maps[MATERIAL_MAP_NORMAL].texture;
+            if (!IsTextureValid(currentNormalMap)) {
+                model->materials[i].maps[MATERIAL_MAP_NORMAL].texture = renderer->defaultNormalMap;
+            }
+        }
     }
 }
 
@@ -117,6 +155,27 @@ void sceneRendererSetDebugMode(SceneRenderer* renderer, int mode) {
 
     renderer->debugMode = mode;
     SetShaderValue(renderer->shader, renderer->debugModeLoc, &renderer->debugMode, SHADER_UNIFORM_INT);
+}
+
+//------------------------------------------------------------------------------
+// Enable/disable normal/bump mapping
+//------------------------------------------------------------------------------
+void sceneRendererSetNormalMapEnabled(SceneRenderer* renderer, bool enabled) {
+    if (!renderer || !renderer->initialized) return;
+
+    renderer->useNormalMap = enabled;
+    int useNormalMapInt = enabled ? 1 : 0;
+    SetShaderValue(renderer->shader, renderer->useNormalMapLoc, &useNormalMapInt, SHADER_UNIFORM_INT);
+}
+
+//------------------------------------------------------------------------------
+// Set bump intensity
+//------------------------------------------------------------------------------
+void sceneRendererSetBumpIntensity(SceneRenderer* renderer, float intensity) {
+    if (!renderer || !renderer->initialized) return;
+
+    renderer->bumpIntensity = intensity;
+    SetShaderValue(renderer->shader, renderer->bumpIntensityLoc, &renderer->bumpIntensity, SHADER_UNIFORM_FLOAT);
 }
 
 //------------------------------------------------------------------------------

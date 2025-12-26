@@ -30,6 +30,34 @@ if(VENDOR_DEPENDENCIES)
         GIT_TAG v3.11.3
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(json)
+
+    # tinygltf - for skeletal GLTF export (header-only, uses nlohmann/json)
+    FetchContent_Declare(tinygltf
+        GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+        GIT_TAG v2.9.3
+        GIT_SHALLOW TRUE)
+    # Disable tinygltf's bundled json to use our nlohmann/json
+    set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+    set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tinygltf)
+
+    # tinyxml2 - for parsing geometry XML files
+    FetchContent_Declare(tinyxml2
+        GIT_REPOSITORY https://github.com/leethomason/tinyxml2.git
+        GIT_TAG 10.0.0
+        GIT_SHALLOW TRUE)
+    set(tinyxml2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tinyxml2)
+
+    # GoogleTest - for unit testing
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.15.2
+        GIT_SHALLOW TRUE)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
 else()
     find_package(raylib REQUIRED)
     if(ENABLE_BOX2D)

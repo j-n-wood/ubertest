@@ -44,11 +44,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 add_platform_libraries(${PROJECT_NAME})
 
-# Copy shaders to build directory
+# Copy shaders and textures to build directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CPP_VERSION_ASSETS_DIR}/shaders
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CPP_VERSION_ASSETS_DIR}/textures
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/textures
 )
 
 # Copy models to build directory

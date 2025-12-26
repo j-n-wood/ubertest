@@ -23,8 +23,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_json)
 add_platform_libraries(${PROJECT_NAME})
 
-# Copy shaders from shared assets
+# Copy shaders and textures from shared assets
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CPP_VERSION_ASSETS_DIR}/shaders
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders)
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/shaders
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CPP_VERSION_ASSETS_DIR}/textures
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/textures)

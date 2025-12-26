@@ -18,3 +18,27 @@ cmake --build build --target model_tool
 * shaders folder does not exist in output of droid tool
 * vertical offsets from old droidclasses seem crap. Manual adjustment is possible.
 * add env maps
+
+
+# Convert all models in directory (both .asc and .mdl)
+model_tool --convert ./models/ -o ./output/
+
+# Convert only ASC files  
+model_tool --convert "./models/*.asc" -o ./output/
+
+# Convert only MDL files
+model_tool --convert "./models/*.mdl" -o ./output/
+
+# Convert all supported files with wildcard
+model_tool --convert "./models/*" -o ./output/
+
+
+To run tests:
+
+cd cpp-version
+cmake -B build
+cmake --build build --target run_tests
+ctest --test-dir build --output-on-failure
+Or run the executable directly:
+
+./build/tests/run_tests

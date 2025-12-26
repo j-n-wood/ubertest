@@ -47,6 +47,7 @@ add_custom_command(TARGET topdown_game POST_BUILD
 add_subdirectory(tools/model_tool)
 add_subdirectory(tools/unit_test)
 add_subdirectory(tools/droid_tool)
+add_subdirectory(tools/incremental_viewer)
 
 #------------------------------------------------------------------------------
 # Tests

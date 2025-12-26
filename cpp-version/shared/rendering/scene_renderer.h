@@ -19,12 +19,20 @@ struct SceneRenderer {
     int debugModeLoc;
     int specPowerLoc;
     int specIntensityLoc;
+    int useNormalMapLoc;
+    int bumpIntensityLoc;
 
     // Current settings
     int debugMode;
     float ambient[4];
     float specularPower;
     float specularIntensity;
+    bool useNormalMap;
+    float bumpIntensity;
+
+    // Default normal map for materials without bump textures
+    Texture2D defaultNormalMap;
+    bool defaultNormalMapLoaded;
 
     // State
     bool initialized;
@@ -50,8 +58,15 @@ void sceneRendererSetAmbient(SceneRenderer* renderer, float r, float g, float b,
 // Set specular properties
 void sceneRendererSetSpecular(SceneRenderer* renderer, float power, float intensity);
 
-// Set debug visualization mode (0 = normal, 1-5 = debug modes)
+// Set debug visualization mode (0 = normal, 1-6 = debug modes)
+// Mode 6 shows the raw normal map texture
 void sceneRendererSetDebugMode(SceneRenderer* renderer, int mode);
+
+// Enable/disable normal/bump mapping
+void sceneRendererSetNormalMapEnabled(SceneRenderer* renderer, bool enabled);
+
+// Set bump intensity (default 1.0, higher = stronger bump effect)
+void sceneRendererSetBumpIntensity(SceneRenderer* renderer, float intensity);
 
 // Add a directional light (shining from position toward target)
 // Returns light index or -1 if max lights reached
