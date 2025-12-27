@@ -5,6 +5,7 @@
 #include "scene_convert/scene_json.h"
 #include "rendering/tile_mesh.h"
 #include "rendering/texture_loader.h"
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <set>
@@ -70,6 +71,7 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->toggles.showTiles = true;
     viewer->toggles.showWireframe = false;
     viewer->toggles.showHelp = false;
+    viewer->cameraPreset = CameraPreset::TopDown;  // Default to game mode
 
     // Movement settings
     viewer->moveSpeed = DEFAULT_MOVE_SPEED;
@@ -334,7 +336,79 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
     }
 
     TraceLog(LOG_INFO, "=== READY FOR VIEWING ===");
+
+    // Apply default camera preset
+    viewerSetCameraPreset(viewer, viewer->cameraPreset);
+
     return true;
+}
+
+//------------------------------------------------------------------------------
+// Set camera to preset view
+//------------------------------------------------------------------------------
+void viewerSetCameraPreset(Viewer* viewer, CameraPreset preset) {
+    if (!viewer || !viewer->initialized) return;
+
+    viewer->cameraPreset = preset;
+
+    // Calculate center and size from bounds
+    Vector3 center;
+    float size;
+
+    if (viewer->tileMesh.loaded) {
+        center = {
+            (viewer->tileMesh.boundsMin.x + viewer->tileMesh.boundsMax.x) / 2.0f,
+            (viewer->tileMesh.boundsMin.y + viewer->tileMesh.boundsMax.y) / 2.0f,
+            (viewer->tileMesh.boundsMin.z + viewer->tileMesh.boundsMax.z) / 2.0f
+        };
+        size = Vector3Distance(viewer->tileMesh.boundsMin, viewer->tileMesh.boundsMax);
+    } else {
+        center = {0.0f, 0.0f, 0.0f};
+        size = 10.0f;
+    }
+
+    // Height above the scene
+    float height = size * 0.8f;
+
+    switch (preset) {
+        case CameraPreset::TopDown:
+            // Game mode: looking straight down from above
+            viewer->camera.position = {center.x, center.y + height, center.z};
+            viewer->camera.target = center;
+            viewer->camera.up = {0.0f, 0.0f, -1.0f};  // -Z is "up" on screen
+            viewer->camera.projection = CAMERA_PERSPECTIVE;
+            TraceLog(LOG_INFO, "VIEWER: Camera preset: Top-Down (game mode)");
+            break;
+
+        case CameraPreset::Isometric:
+            // 45 degree isometric view for 3D validation
+            {
+                float offset = height * 0.707f;  // sin(45) = cos(45) ≈ 0.707
+                viewer->camera.position = {
+                    center.x + offset,
+                    center.y + height,
+                    center.z + offset
+                };
+                viewer->camera.target = center;
+                viewer->camera.up = {0.0f, 1.0f, 0.0f};
+                viewer->camera.projection = CAMERA_PERSPECTIVE;
+            }
+            TraceLog(LOG_INFO, "VIEWER: Camera preset: Isometric (45 degree)");
+            break;
+
+        case CameraPreset::Perspective:
+            // Free perspective view (same as old default)
+            viewer->camera.position = {
+                center.x + size * 0.5f,
+                center.y + size * 0.8f,
+                center.z + size * 0.5f
+            };
+            viewer->camera.target = center;
+            viewer->camera.up = {0.0f, 1.0f, 0.0f};
+            viewer->camera.projection = CAMERA_PERSPECTIVE;
+            TraceLog(LOG_INFO, "VIEWER: Camera preset: Perspective");
+            break;
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -348,14 +422,26 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
     float moveAmount = viewer->moveSpeed * speedMult * deltaTime;
 
     // Calculate camera forward/right vectors (in XZ plane)
-    Vector3 forward = Vector3Normalize(Vector3Subtract(viewer->camera.target, viewer->camera.position));
-    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, viewer->camera.up));
+    Vector3 forward = Vector3Subtract(viewer->camera.target, viewer->camera.position);
+    Vector3 right;
 
-    // Flatten to XZ plane for movement
-    forward.y = 0;
-    forward = Vector3Normalize(forward);
-    right.y = 0;
-    right = Vector3Normalize(right);
+    // Handle top-down mode specially (forward vector is nearly vertical)
+    if (fabsf(forward.x) < 0.001f && fabsf(forward.z) < 0.001f) {
+        // Camera looking straight down - use up vector to determine forward
+        // In top-down mode, camera.up is {0, 0, -1} meaning -Z is "up" on screen
+        // So W (forward) should move in -Z direction, which is the camera.up direction
+        forward = viewer->camera.up;
+        forward.y = 0;
+        forward = Vector3Normalize(forward);
+        right = Vector3CrossProduct(forward, (Vector3){0, 1, 0});
+    } else {
+        // Normal camera - flatten forward to XZ plane
+        forward.y = 0;
+        forward = Vector3Normalize(forward);
+        right = Vector3Normalize(Vector3CrossProduct(forward, viewer->camera.up));
+        right.y = 0;
+        right = Vector3Normalize(right);
+    }
 
     // WASD movement
     Vector3 movement = {0, 0, 0};
@@ -389,27 +475,21 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         }
     }
 
-    // Reset camera (R key)
+    // Camera preset keys
+    if (IsKeyPressed(KEY_T)) {
+        viewerSetCameraPreset(viewer, CameraPreset::TopDown);
+    }
+    if (IsKeyPressed(KEY_I)) {
+        viewerSetCameraPreset(viewer, CameraPreset::Isometric);
+    }
+    if (IsKeyPressed(KEY_P)) {
+        viewerSetCameraPreset(viewer, CameraPreset::Perspective);
+    }
+
+    // Reset camera (R key) - reapply current preset
     if (IsKeyPressed(KEY_R)) {
-        if (viewer->tileMesh.loaded) {
-            // Reset to view tile mesh
-            Vector3 center = {
-                (viewer->tileMesh.boundsMin.x + viewer->tileMesh.boundsMax.x) / 2.0f,
-                (viewer->tileMesh.boundsMin.y + viewer->tileMesh.boundsMax.y) / 2.0f,
-                (viewer->tileMesh.boundsMin.z + viewer->tileMesh.boundsMax.z) / 2.0f
-            };
-            float size = Vector3Distance(viewer->tileMesh.boundsMin, viewer->tileMesh.boundsMax);
-            viewer->camera.target = center;
-            viewer->camera.position = (Vector3){
-                center.x + size * 0.5f,
-                center.y + size * 0.8f,
-                center.z + size * 0.5f
-            };
-        } else {
-            viewer->camera.position = (Vector3){5.0f, 8.0f, 5.0f};
-            viewer->camera.target = (Vector3){0.0f, 0.0f, 0.0f};
-        }
-        TraceLog(LOG_INFO, "VIEWER: Camera reset");
+        viewerSetCameraPreset(viewer, viewer->cameraPreset);
+        TraceLog(LOG_INFO, "VIEWER: Camera reset to current preset");
     }
 
     // Debug mode keys (0-5)
@@ -518,11 +598,20 @@ void viewerDrawOverlay(Viewer* viewer) {
         "5: Half Angle"
     };
 
+    // Camera preset labels
+    const char* presetLabels[] = {
+        "Top-Down",
+        "Isometric",
+        "Perspective"
+    };
+
     int y = 10;
     DrawText("Incremental Scene Viewer - Phase 2", 10, y, 20, WHITE);
     y += 30;
 
-    DrawText(TextFormat("Debug: %s", debugLabels[viewer->renderer.debugMode]), 10, y, 16, YELLOW);
+    DrawText(TextFormat("View: %s [T/I/P]  Debug: %s",
+             presetLabels[static_cast<int>(viewer->cameraPreset)],
+             debugLabels[viewer->renderer.debugMode]), 10, y, 16, YELLOW);
     y += 20;
 
     DrawText(TextFormat("Camera: (%.1f, %.1f, %.1f)",
@@ -573,9 +662,9 @@ void viewerDrawOverlay(Viewer* viewer) {
     // Help overlay
     if (viewer->toggles.showHelp) {
         int helpX = 200;
-        int helpY = 100;
+        int helpY = 80;
         int helpW = 400;
-        int helpH = 320;
+        int helpH = 380;
 
         DrawRectangle(helpX, helpY, helpW, helpH, (Color){30, 30, 40, 240});
         DrawRectangleLines(helpX, helpY, helpW, helpH, WHITE);
@@ -589,6 +678,11 @@ void viewerDrawOverlay(Viewer* viewer) {
         DrawText("Shift       Move faster", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("Mouse wheel Zoom", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("R           Reset camera", helpX + 10, ty, 14, LIGHTGRAY); ty += 28;
+
+        DrawText("CAMERA PRESETS", helpX + 10, ty, 16, WHITE); ty += 22;
+        DrawText("T           Top-down (game mode)", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("I           Isometric (45 deg)", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("P           Perspective", helpX + 10, ty, 14, LIGHTGRAY); ty += 28;
 
         DrawText("0-5         Debug modes", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("F1          Toggle grid", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;

@@ -338,17 +338,28 @@ T0: 0 → 2 → 1 (BL → TR → BR) - clockwise from above
 T1: 0 → 3 → 2 (BL → TL → TR) - clockwise from above
 ```
 
-### Normals
+### Normals and Tangents
 
-All floor tiles use a hardcoded UP normal:
+All floor tiles use hardcoded normal and tangent vectors for bump mapping:
+
 ```cpp
+// Normal (facing UP)
 static constexpr Vector3 UP_NORMAL = {0.0f, 1.0f, 0.0f};
+
+// Tangent (aligned with +X / U texture coordinate, w=1 for right-handed)
+static constexpr float FLOOR_TANGENT[4] = {1.0f, 0.0f, 0.0f, 1.0f};
 ```
+
+The TBN (Tangent-Bitangent-Normal) matrix for floor tiles:
+- **T (Tangent)**: (1, 0, 0) - along +X axis, aligned with U texture coordinate
+- **B (Bitangent)**: (0, 0, 1) - along +Z axis, aligned with V texture coordinate (computed as N × T × handedness)
+- **N (Normal)**: (0, 1, 0) - facing UP
 
 This is correct because:
 - Tiles are flat, horizontal surfaces
-- No per-vertex normal calculation needed
-- Cross-product computation is avoided
+- Geometry is known, so tangents can be computed exactly
+- No per-vertex or screen-space derivative calculation needed
+- Enables proper bump/normal mapping on tile surfaces
 
 ### Index Buffers
 
@@ -375,6 +386,7 @@ Each batch becomes a separate `Mesh` with all tiles sharing those texture indice
 | Vertex order | CCW from above: BL(0), BR(1), TR(2), TL(3) |
 | Triangle winding | CW from above (= CCW from normal direction) |
 | Normal | (0, 1, 0) hardcoded UP |
+| Tangent | (1, 0, 0, 1) - +X axis with right-handed |
 | Vertices per tile | 4 |
 | Indices per tile | 6 |
 | Coordinate system | Y-up (render space) |

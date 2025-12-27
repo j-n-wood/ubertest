@@ -39,7 +39,10 @@ static void printHelp() {
     printf("  Q/E           Move up/down\n");
     printf("  Shift         Move faster\n");
     printf("  Mouse wheel   Zoom\n");
-    printf("  R             Reset camera\n");
+    printf("  R             Reset camera to current preset\n");
+    printf("  T             Top-down camera (game mode)\n");
+    printf("  I             Isometric camera (45 degree)\n");
+    printf("  P             Perspective camera (free view)\n");
     printf("  0-5           Debug visualization modes\n");
     printf("  F1            Toggle grid\n");
     printf("  F2            Toggle reference model\n");

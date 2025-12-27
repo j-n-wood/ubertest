@@ -20,6 +20,10 @@
 // Up normal for all floor tiles
 static constexpr Vector3 UP_NORMAL = {0.0f, 1.0f, 0.0f};
 
+// Tangent for floor tiles (aligned with +X / U texture coordinate)
+// vec4 format: xyz = tangent direction, w = handedness (+1 for right-handed)
+static constexpr float FLOOR_TANGENT[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+
 //------------------------------------------------------------------------------
 // Create a single mesh from a batch of tiles using index buffer
 //------------------------------------------------------------------------------
@@ -40,13 +44,15 @@ static Mesh createMeshFromTiles(const std::vector<const Tile*>& tiles) {
     mesh.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
     mesh.texcoords = (float*)MemAlloc(vertexCount * 2 * sizeof(float));
     mesh.normals = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
+    mesh.tangents = (float*)MemAlloc(vertexCount * 4 * sizeof(float));  // vec4: xyz + handedness
     mesh.colors = (unsigned char*)MemAlloc(vertexCount * 4 * sizeof(unsigned char));
     mesh.indices = (unsigned short*)MemAlloc(indexCount * sizeof(unsigned short));
 
-    if (!mesh.vertices || !mesh.texcoords || !mesh.normals || !mesh.colors || !mesh.indices) {
+    if (!mesh.vertices || !mesh.texcoords || !mesh.normals || !mesh.tangents || !mesh.colors || !mesh.indices) {
         if (mesh.vertices) MemFree(mesh.vertices);
         if (mesh.texcoords) MemFree(mesh.texcoords);
         if (mesh.normals) MemFree(mesh.normals);
+        if (mesh.tangents) MemFree(mesh.tangents);
         if (mesh.colors) MemFree(mesh.colors);
         if (mesh.indices) MemFree(mesh.indices);
         return {0};
@@ -81,6 +87,12 @@ static Mesh createMeshFromTiles(const std::vector<const Tile*>& tiles) {
             mesh.normals[(vi + i) * 3 + 0] = UP_NORMAL.x;
             mesh.normals[(vi + i) * 3 + 1] = UP_NORMAL.y;
             mesh.normals[(vi + i) * 3 + 2] = UP_NORMAL.z;
+
+            // Tangent for bump mapping (aligned with +X / U coordinate)
+            mesh.tangents[(vi + i) * 4 + 0] = FLOOR_TANGENT[0];
+            mesh.tangents[(vi + i) * 4 + 1] = FLOOR_TANGENT[1];
+            mesh.tangents[(vi + i) * 4 + 2] = FLOOR_TANGENT[2];
+            mesh.tangents[(vi + i) * 4 + 3] = FLOOR_TANGENT[3];  // handedness
 
             mesh.colors[(vi + i) * 4 + 0] = r;
             mesh.colors[(vi + i) * 4 + 1] = g;

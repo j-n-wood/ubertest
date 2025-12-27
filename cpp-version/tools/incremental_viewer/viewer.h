@@ -13,6 +13,13 @@
 // Incremental Scene Viewer - validates scene data conversion with GLTF reference
 //------------------------------------------------------------------------------
 
+// Camera preset modes
+enum class CameraPreset {
+    TopDown,    // Game mode - looking straight down
+    Isometric,  // 45 degree angle for 3D validation
+    Perspective // Free perspective view
+};
+
 // Display toggles
 struct ViewerToggles {
     bool showGrid;
@@ -73,6 +80,7 @@ struct Viewer {
 
     // Display state
     ViewerToggles toggles;
+    CameraPreset cameraPreset;
 
     // Camera movement
     float moveSpeed;
@@ -111,6 +119,10 @@ bool viewerConvertAndLoad(Viewer* viewer, const char* sourcePath,
 // jsonPath: path to domain JSON file
 // Returns true on success
 bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath);
+
+// Set camera to a preset view
+// preset: TopDown (game mode), Isometric (45 degree), or Perspective
+void viewerSetCameraPreset(Viewer* viewer, CameraPreset preset);
 
 // Update viewer state (camera controls, input handling)
 // deltaTime: frame time in seconds
