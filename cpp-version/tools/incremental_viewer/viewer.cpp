@@ -4,6 +4,7 @@
 #include "scene_convert/domain_parser.h"
 #include "scene_convert/scene_json.h"
 #include "rendering/tile_mesh.h"
+#include "rendering/geometry_mesh.h"
 #include "rendering/texture_loader.h"
 #include <cmath>
 #include <cstdio>
@@ -69,9 +70,15 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->toggles.showGrid = true;
     viewer->toggles.showReference = true;
     viewer->toggles.showTiles = true;
+    viewer->toggles.showGeometry = true;
     viewer->toggles.showWireframe = false;
     viewer->toggles.showHelp = false;
+    viewer->toggles.showTileIndices = false;  // Debug tile index overlay
+    viewer->toggles.backfaceCulling = true;   // Start with culling enabled
     viewer->cameraPreset = CameraPreset::TopDown;  // Default to game mode
+
+    // Initialize geometry mesh state
+    viewer->geometryMesh = {};
 
     // Movement settings
     viewer->moveSpeed = DEFAULT_MOVE_SPEED;
@@ -209,9 +216,8 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
 
     TraceLog(LOG_INFO, "Loading domain from: %s", jsonPath);
 
-    // Unload previous meshes
+    // Unload previous tile meshes
     if (viewer->tileMesh.loaded) {
-        // Unload batched models
         for (auto& batch : viewer->tileMesh.batches) {
             if (batch.valid) {
                 UnloadModel(batch.model);
@@ -219,11 +225,21 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
         }
         viewer->tileMesh.batches.clear();
 
-        // Unload legacy model if used
         if (viewer->tileMesh.model.meshCount > 0) {
             UnloadModel(viewer->tileMesh.model);
         }
         viewer->tileMesh = {};
+    }
+
+    // Unload previous geometry meshes
+    if (viewer->geometryMesh.loaded) {
+        for (auto& batch : viewer->geometryMesh.batches) {
+            if (batch.valid) {
+                UnloadModel(batch.model);
+            }
+        }
+        viewer->geometryMesh.batches.clear();
+        viewer->geometryMesh = {};
     }
 
     // Load from JSON using shared loader
@@ -316,6 +332,69 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
     TraceLog(LOG_INFO, "Bounds: min(%.2f, %.2f, %.2f) max(%.2f, %.2f, %.2f)",
              viewer->tileMesh.boundsMin.x, viewer->tileMesh.boundsMin.y, viewer->tileMesh.boundsMin.z,
              viewer->tileMesh.boundsMax.x, viewer->tileMesh.boundsMax.y, viewer->tileMesh.boundsMax.z);
+
+    // =========================================
+    // Generate geometry meshes from PathGeometry areas
+    // =========================================
+    TraceLog(LOG_INFO, "Generating geometry meshes from PathGeometry...");
+
+    GeometryMeshCollection geoCollection = createDomainGeometryMeshes(viewer->loadedDomain, viewer->scale);
+    if (geoCollection.success && !geoCollection.meshes.empty()) {
+        // Load textures for geometry materials
+        if (viewer->texturesLoaded) {
+            // Load floor texture (default material texture0=79, texture1=1)
+            textureCacheLoad(viewer->textureCache, viewer->textureLookup, DEFAULT_FLOOR_MATERIAL.diffuseTextureIndex);
+            textureCacheLoad(viewer->textureCache, viewer->textureLookup, DEFAULT_FLOOR_MATERIAL.normalTextureIndex);
+        }
+
+        // Convert geometry meshes to models
+        for (const auto& geoMesh : geoCollection.meshes) {
+            if (geoMesh.vertices.empty()) continue;
+
+            GeometryBatchState state = {};
+            Mesh raylibMesh = geometryMeshToRaylibMesh(geoMesh);
+            if (raylibMesh.vertexCount == 0) continue;
+
+            state.model = LoadModelFromMesh(raylibMesh);
+            state.materialId = geoMesh.materialId;
+            state.triangleCount = raylibMesh.triangleCount;
+            state.valid = true;
+
+            // Apply lighting shader
+            sceneRendererApplyShader(&viewer->renderer, &state.model);
+
+            // Set diffuse color to white
+            state.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+
+            // Apply textures based on material
+            if (viewer->texturesLoaded) {
+                // Use default floor material textures for now
+                Texture2D diffuse = textureCacheGetDiffuse(viewer->textureCache, DEFAULT_FLOOR_MATERIAL.diffuseTextureIndex);
+                if (diffuse.id > 0) {
+                    state.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = diffuse;
+                }
+
+                Texture2D bump = textureCacheGetBump(viewer->textureCache, DEFAULT_FLOOR_MATERIAL.normalTextureIndex);
+                if (bump.id > 0) {
+                    state.model.materials[0].maps[MATERIAL_MAP_NORMAL].texture = bump;
+                }
+            }
+
+            viewer->geometryMesh.batches.push_back(state);
+            viewer->geometryMesh.totalTriangles += state.triangleCount;
+        }
+
+        viewer->geometryMesh.boundsMin = geoCollection.totalBounds.min;
+        viewer->geometryMesh.boundsMax = geoCollection.totalBounds.max;
+        viewer->geometryMesh.loaded = !viewer->geometryMesh.batches.empty();
+
+        TraceLog(LOG_INFO, "Created %zu geometry meshes, %d total triangles",
+                 viewer->geometryMesh.batches.size(), viewer->geometryMesh.totalTriangles);
+    } else {
+        TraceLog(LOG_INFO, "No geometry meshes generated (no PathGeometry areas found)");
+    }
+
+    freeGeometryMeshCollection(&geoCollection);
 
     // Position camera to view the mesh
     if (viewer->tileMesh.loaded) {
@@ -526,8 +605,20 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         TraceLog(LOG_INFO, "VIEWER: Tiles %s", viewer->toggles.showTiles ? "ON" : "OFF");
     }
     if (IsKeyPressed(KEY_F4)) {
+        viewer->toggles.showGeometry = !viewer->toggles.showGeometry;
+        TraceLog(LOG_INFO, "VIEWER: Geometry %s", viewer->toggles.showGeometry ? "ON" : "OFF");
+    }
+    if (IsKeyPressed(KEY_F5)) {
         viewer->toggles.showWireframe = !viewer->toggles.showWireframe;
         TraceLog(LOG_INFO, "VIEWER: Wireframe %s", viewer->toggles.showWireframe ? "ON" : "OFF");
+    }
+    if (IsKeyPressed(KEY_F6)) {
+        viewer->toggles.showTileIndices = !viewer->toggles.showTileIndices;
+        TraceLog(LOG_INFO, "VIEWER: Tile indices %s", viewer->toggles.showTileIndices ? "ON" : "OFF");
+    }
+    if (IsKeyPressed(KEY_F7)) {
+        viewer->toggles.backfaceCulling = !viewer->toggles.backfaceCulling;
+        TraceLog(LOG_INFO, "VIEWER: Backface culling %s", viewer->toggles.backfaceCulling ? "ON" : "OFF");
     }
     if (IsKeyPressed(KEY_H)) {
         viewer->toggles.showHelp = !viewer->toggles.showHelp;
@@ -542,6 +633,13 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
 //------------------------------------------------------------------------------
 void viewerRender(Viewer* viewer) {
     if (!viewer || !viewer->initialized) return;
+
+    // Control backface culling
+    if (viewer->toggles.backfaceCulling) {
+        rlEnableBackfaceCulling();
+    } else {
+        rlDisableBackfaceCulling();
+    }
 
     BeginMode3D(viewer->camera);
 
@@ -574,6 +672,20 @@ void viewerRender(Viewer* viewer) {
                 // Draw wireframe overlay if enabled
                 if (viewer->toggles.showWireframe) {
                     DrawModelWires(batch.model, (Vector3){0, 0, 0}, 1.0f, YELLOW);
+                }
+            }
+        }
+    }
+
+    // Draw geometry meshes (floor polygons from PathGeometry)
+    if (viewer->toggles.showGeometry && viewer->geometryMesh.loaded) {
+        for (const auto& batch : viewer->geometryMesh.batches) {
+            if (batch.valid) {
+                DrawModel(batch.model, (Vector3){0, 0, 0}, 1.0f, WHITE);
+
+                // Draw wireframe overlay if enabled
+                if (viewer->toggles.showWireframe) {
+                    DrawModelWires(batch.model, (Vector3){0, 0, 0}, 1.0f, MAGENTA);
                 }
             }
         }
@@ -631,6 +743,15 @@ void viewerDrawOverlay(Viewer* viewer) {
         y += 20;
     }
 
+    // Geometry info
+    if (viewer->geometryMesh.loaded) {
+        DrawText(TextFormat("Geometry: %d triangles, %zu meshes",
+                 viewer->geometryMesh.totalTriangles,
+                 viewer->geometryMesh.batches.size()),
+                 10, y, 16, MAGENTA);
+        y += 20;
+    }
+
     // Texture info
     if (viewer->texturesLoaded) {
         DrawText(TextFormat("Textures: %zu cached",
@@ -649,11 +770,14 @@ void viewerDrawOverlay(Viewer* viewer) {
     }
 
     // Toggle states
-    DrawText(TextFormat("Grid[F1]:%s  Ref[F2]:%s  Tiles[F3]:%s  Wire[F4]:%s",
+    DrawText(TextFormat("Grid[F1]:%s Ref[F2]:%s Tiles[F3]:%s Geo[F4]:%s Wire[F5]:%s Idx[F6]:%s Cull[F7]:%s",
              viewer->toggles.showGrid ? "ON" : "OFF",
              viewer->toggles.showReference ? "ON" : "OFF",
              viewer->toggles.showTiles ? "ON" : "OFF",
-             viewer->toggles.showWireframe ? "ON" : "OFF"),
+             viewer->toggles.showGeometry ? "ON" : "OFF",
+             viewer->toggles.showWireframe ? "ON" : "OFF",
+             viewer->toggles.showTileIndices ? "ON" : "OFF",
+             viewer->toggles.backfaceCulling ? "ON" : "OFF"),
              10, y, 14, GRAY);
     y += 20;
 
@@ -688,7 +812,10 @@ void viewerDrawOverlay(Viewer* viewer) {
         DrawText("F1          Toggle grid", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("F2          Toggle reference", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("F3          Toggle tiles", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
-        DrawText("F4          Toggle wireframe", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("F4          Toggle geometry", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("F5          Toggle wireframe", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("F6          Toggle tile indices", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("F7          Toggle backface cull", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("H           Toggle this help", helpX + 10, ty, 14, LIGHTGRAY); ty += 28;
 
         DrawText("ESC         Quit", helpX + 10, ty, 14, LIGHTGRAY);
@@ -696,6 +823,60 @@ void viewerDrawOverlay(Viewer* viewer) {
 
     // FPS
     DrawFPS(GetScreenWidth() - 100, 10);
+
+    // Tile index debug overlay - draw tile indices at centroids
+    if (viewer->toggles.showTileIndices && viewer->domainLoaded) {
+        int tileIndex = 0;
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& tile : area.tiles) {
+                // Calculate centroid of tile vertices
+                Vector3 centroid = {0, 0, 0};
+                for (const auto& v : tile.vertices) {
+                    centroid.x += v.position.x;
+                    centroid.y += v.position.y;
+                    centroid.z += v.position.z;
+                }
+                if (!tile.vertices.empty()) {
+                    float n = static_cast<float>(tile.vertices.size());
+                    centroid.x /= n;
+                    centroid.y /= n;
+                    centroid.z /= n;
+                }
+
+                // Lift centroid slightly above the floor for visibility
+                centroid.y += 0.1f;
+
+                // Project 3D centroid to 2D screen position
+                Vector2 screenPos = GetWorldToScreen(centroid, viewer->camera);
+
+                // Only draw if on screen
+                if (screenPos.x >= 0 && screenPos.x <= GetScreenWidth() &&
+                    screenPos.y >= 0 && screenPos.y <= GetScreenHeight()) {
+
+                    // Draw background for readability
+                    const char* label = TextFormat("%d", tileIndex);
+                    int textWidth = MeasureText(label, 14);
+                    DrawRectangle(
+                        static_cast<int>(screenPos.x) - textWidth/2 - 2,
+                        static_cast<int>(screenPos.y) - 8,
+                        textWidth + 4,
+                        16,
+                        (Color){0, 0, 0, 180}
+                    );
+
+                    // Color based on vertex count (4 = green, other = red)
+                    Color textColor = (tile.vertices.size() == 4) ? GREEN : RED;
+
+                    DrawText(label,
+                             static_cast<int>(screenPos.x) - textWidth/2,
+                             static_cast<int>(screenPos.y) - 7,
+                             14, textColor);
+                }
+
+                tileIndex++;
+            }
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -706,7 +887,6 @@ void viewerCleanup(Viewer* viewer) {
 
     // Cleanup tile meshes
     if (viewer->tileMesh.loaded) {
-        // Unload batched models
         for (auto& batch : viewer->tileMesh.batches) {
             if (batch.valid) {
                 UnloadModel(batch.model);
@@ -714,11 +894,21 @@ void viewerCleanup(Viewer* viewer) {
         }
         viewer->tileMesh.batches.clear();
 
-        // Unload legacy model if used
         if (viewer->tileMesh.model.meshCount > 0) {
             UnloadModel(viewer->tileMesh.model);
         }
         viewer->tileMesh = {};
+    }
+
+    // Cleanup geometry meshes
+    if (viewer->geometryMesh.loaded) {
+        for (auto& batch : viewer->geometryMesh.batches) {
+            if (batch.valid) {
+                UnloadModel(batch.model);
+            }
+        }
+        viewer->geometryMesh.batches.clear();
+        viewer->geometryMesh = {};
     }
 
     // Cleanup texture cache

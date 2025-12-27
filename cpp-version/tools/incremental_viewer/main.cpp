@@ -27,9 +27,12 @@ static void printHelp() {
     printf("Incremental Scene Viewer - validates scene data conversion\n\n");
     printf("Usage: incremental_viewer [options] [source_path]\n\n");
     printf("Options:\n");
+    printf("  --source <path>        Path to source file (xmapfile0.txt)\n");
     printf("  -o, --output <dir>     Output directory (default: ./output)\n");
     printf("  -t, --tiles <path>     Path to tiles.txt (default: %s)\n", DEFAULT_TILES_PATH);
     printf("  -x, --textures <path>  Path to textures.txt (default: %s)\n", DEFAULT_TEXTURES_PATH);
+    printf("  --textures-base <dir>  Base directory for texture files\n");
+    printf("  --shaders <dir>        Path to shaders directory (default: assets/shaders/)\n");
     printf("  -s, --scale <factor>   Scale factor override (default: 0.0254)\n");
     printf("  --no-reference         Don't load reference model\n");
     printf("  --no-textures          Don't load textures\n");
@@ -47,7 +50,8 @@ static void printHelp() {
     printf("  F1            Toggle grid\n");
     printf("  F2            Toggle reference model\n");
     printf("  F3            Toggle tiles\n");
-    printf("  F4            Toggle wireframe\n");
+    printf("  F4            Toggle geometry\n");
+    printf("  F5            Toggle wireframe\n");
     printf("  H             Toggle help overlay\n");
     printf("  ESC           Quit\n\n");
     printf("Examples:\n");
@@ -66,6 +70,7 @@ int main(int argc, char* argv[]) {
     const char* tilesPath = DEFAULT_TILES_PATH;
     const char* texturesPath = DEFAULT_TEXTURES_PATH;
     const char* texturesBasePath = DEFAULT_TEXTURES_BASE;
+    const char* shadersPath = "assets/shaders/";
     float scale = 0.0254f;  // inches to meters
     bool loadReference = true;
     bool loadTextures = true;
@@ -80,6 +85,12 @@ int main(int argc, char* argv[]) {
             tilesPath = argv[++i];
         } else if ((strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "--textures") == 0) && i + 1 < argc) {
             texturesPath = argv[++i];
+        } else if (strcmp(argv[i], "--textures-base") == 0 && i + 1 < argc) {
+            texturesBasePath = argv[++i];
+        } else if (strcmp(argv[i], "--shaders") == 0 && i + 1 < argc) {
+            shadersPath = argv[++i];
+        } else if (strcmp(argv[i], "--source") == 0 && i + 1 < argc) {
+            sourcePath = argv[++i];
         } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--scale") == 0) && i + 1 < argc) {
             scale = (float)atof(argv[++i]);
         } else if (strcmp(argv[i], "--no-reference") == 0) {
@@ -107,7 +118,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize viewer
     Viewer viewer = {};
-    if (!viewerInit(&viewer, "assets/shaders/")) {
+    if (!viewerInit(&viewer, shadersPath)) {
         fprintf(stderr, "Error: Failed to initialize viewer\n");
         CloseWindow();
         return 1;

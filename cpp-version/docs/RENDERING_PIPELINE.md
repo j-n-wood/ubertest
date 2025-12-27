@@ -367,6 +367,74 @@ Each tile uses 4 vertices and 6 indices (2 triangles):
 - Memory: 4 vertices instead of 6 (33% reduction)
 - Index buffer: 6 × sizeof(unsigned short) = 12 bytes per tile
 
+### Tile Types and Variable Vertex Counts
+
+The original game supports three tile rendering modes, stored in `tileType`:
+
+| Value | Name | Description |
+|-------|------|-------------|
+| 0 | `tt_fan` | Triangle fan - vertex 0 shared, triangles radiate out |
+| 1 | `tt_strip` | Triangle strip - consecutive vertices form triangles |
+| 2 | `tt_tris` | Explicit triangles - every 3 vertices is a triangle |
+| ≥3 | (material) | Archetile material index - treated as fan |
+
+**Triangle count calculation:**
+```cpp
+if (tileType == 2) {
+    triangles = vertexCount / 3;  // Explicit triangles
+} else {
+    triangles = vertexCount - 2;  // Fan or strip
+}
+```
+
+**Important:** Values ≥ 3 are material indices from archetile expansion, not actual tile types. These should be treated as triangle fans.
+
+### Winding Order for Variable Tiles
+
+The source data uses CW winding (when viewed from above). For correct rendering with backface culling:
+
+**Fan triangles** (vertex 0 shared):
+```cpp
+// Original CW: (0, i+1, i+2)
+// Reversed for CCW from above: (0, i+2, i+1)
+mesh.indices[ii + 0] = baseVertex;
+mesh.indices[ii + 1] = baseVertex + t + 2;
+mesh.indices[ii + 2] = baseVertex + t + 1;
+```
+
+**Strip triangles** (alternating winding):
+```cpp
+if (t % 2 == 0) {
+    // Even: reversed from (i, i+1, i+2)
+    mesh.indices[ii + 0] = baseVertex + t;
+    mesh.indices[ii + 1] = baseVertex + t + 2;
+    mesh.indices[ii + 2] = baseVertex + t + 1;
+} else {
+    // Odd: reversed from (i+1, i, i+2)
+    mesh.indices[ii + 0] = baseVertex + t + 1;
+    mesh.indices[ii + 1] = baseVertex + t + 2;
+    mesh.indices[ii + 2] = baseVertex + t;
+}
+```
+
+**Explicit triangles:**
+```cpp
+// Reversed from (i*3, i*3+1, i*3+2)
+mesh.indices[ii + 0] = baseVertex + t * 3;
+mesh.indices[ii + 1] = baseVertex + t * 3 + 2;
+mesh.indices[ii + 2] = baseVertex + t * 3 + 1;
+```
+
+### Common Pitfalls
+
+1. **Wrong winding order**: If tiles don't render with backface culling ON but appear with culling OFF, the winding order is reversed. The camera looks from +Y down toward Y=0, so CCW winding when viewed from +Y is required.
+
+2. **Assuming 4-vertex tiles**: Not all tiles have exactly 4 vertices. Strip tiles (tileType=1) commonly have more vertices. Always check `tile.vertices.size()` and use the correct triangle generation algorithm.
+
+3. **Treating tileType ≥ 3 as special**: Values ≥ 3 are material indices from archetile expansion, not rendering modes. Always clamp: `if (tileType > 2) tileType = 0;`
+
+4. **Strip winding alternation**: Triangle strips require alternating winding to maintain consistent face direction. Forgetting to alternate produces half the triangles facing backwards.
+
 ### Texture Batching
 
 Tiles are grouped by texture indices for efficient rendering:
@@ -383,11 +451,13 @@ Each batch becomes a separate `Mesh` with all tiles sharing those texture indice
 
 | Property | Value |
 |----------|-------|
-| Vertex order | CCW from above: BL(0), BR(1), TR(2), TL(3) |
-| Triangle winding | CW from above (= CCW from normal direction) |
+| Vertex order | Variable - depends on tile type |
+| Source winding | CW from above (original game) |
+| Output winding | CCW from above (reversed for OpenGL) |
 | Normal | (0, 1, 0) hardcoded UP |
 | Tangent | (1, 0, 0, 1) - +X axis with right-handed |
-| Vertices per tile | 4 |
-| Indices per tile | 6 |
+| Vertices per tile | Variable (minimum 3) |
+| Triangles per tile | Fan/Strip: n-2, Triangles: n/3 |
 | Coordinate system | Y-up (render space) |
 | Scale factor | 0.0254 (inches to meters) |
+| tileType values | 0=fan, 1=strip, 2=triangles, ≥3=fan |

@@ -20,9 +20,11 @@ static std::string trim(const std::string& str) {
 //------------------------------------------------------------------------------
 
 bool parseArchetilesFile(std::string_view path, std::vector<Archetile>& outArchetiles) {
+    std::cout << "ARCHETILE_PARSER: Opening file: " << path << std::endl;
+
     std::ifstream file{std::string{path}};
     if (!file.is_open()) {
-        std::cerr << "Failed to open archetiles file: " << path << std::endl;
+        std::cerr << "ARCHETILE_PARSER: Failed to open archetiles file: " << path << std::endl;
         return false;
     }
 

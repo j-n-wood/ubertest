@@ -10,6 +10,7 @@ set(VIEWER_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/lighting/light.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/scene_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/tile_mesh.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/utils/string_utils.cpp
 )

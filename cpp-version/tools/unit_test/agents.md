@@ -2,6 +2,8 @@
 
 This document provides context for AI agents working on the unit_test tool.
 
+> **See also:** [docs/agents.md](../../docs/agents.md) for project-wide patterns and [docs/DATA_CONVERSION_GUIDE.md](../../docs/DATA_CONVERSION_GUIDE.md) for data conversion best practices.
+
 ## Overview
 
 The unit_test tool is a standalone application for testing the Unit system. It loads unit definitions from JSON, creates physics-enabled instances, and provides interactive controls for testing behavior.

@@ -5,6 +5,7 @@
 #include "rendering/scene_renderer.h"
 #include "rendering/texture_loader.h"
 #include "rendering/tile_mesh.h"
+#include "rendering/geometry_mesh.h"
 #include "scene_convert/scene_types.h"
 #include <string>
 #include <vector>
@@ -25,8 +26,11 @@ struct ViewerToggles {
     bool showGrid;
     bool showReference;
     bool showTiles;
+    bool showGeometry;
     bool showWireframe;
     bool showHelp;
+    bool showTileIndices;  // Debug: show tile index at centroid
+    bool backfaceCulling;  // Debug: toggle backface culling
 };
 
 // Batched tile mesh state (one model per texture group)
@@ -62,6 +66,9 @@ struct Viewer {
 
     // Tile mesh from converted data
     TileMeshState tileMesh;
+
+    // Geometry mesh from PathGeometry areas (floor polygons)
+    GeometryMeshState geometryMesh;
 
     // Loaded domain data (after JSON reload)
     Domain loadedDomain;

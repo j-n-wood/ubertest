@@ -9,10 +9,17 @@ set(SCENE_CONVERT_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/scene_convert/scene_json.cpp
 )
 
+# Level tool sources needed for tests
+set(LEVEL_TOOL_SOURCES
+    ${CMAKE_SOURCE_DIR}/tools/level_tool/paradroid_parser.cpp
+)
+
 add_executable(run_tests
     sanity_test.cpp
     tile_conversion_test.cpp
+    paradroid_parser_test.cpp
     ${SCENE_CONVERT_SOURCES}
+    ${LEVEL_TOOL_SOURCES}
 )
 
 target_link_libraries(run_tests PRIVATE
@@ -25,6 +32,7 @@ target_link_libraries(run_tests PRIVATE
 target_include_directories(run_tests PRIVATE
     ${SHARED_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/shared
+    ${CMAKE_SOURCE_DIR}/tools/level_tool
 )
 
 include(GoogleTest)

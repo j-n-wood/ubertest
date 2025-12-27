@@ -50,19 +50,23 @@ bool ensureArchetilesLoaded(const fs::path& tilesPath) {
 // Tile Parser
 //------------------------------------------------------------------------------
 
-static bool parseTile(std::istream& stream, Tile& outTile) {
+// Parse a Tile when vertex count is already known
+static bool parseTileWithCount(std::istream& stream, Tile& outTile, int vertexCount) {
     std::string line;
 
-    // First line after "Tile": vertex count
-    if (!std::getline(stream, line)) return false;
-    line = trim(line);
-    int vertexCount = std::stoi(line);
+    if (vertexCount <= 0) {
+        std::cerr << "TILE_PARSER: Invalid vertex count: " << vertexCount << std::endl;
+        return false;
+    }
 
     outTile.vertices.resize(vertexCount);
 
     // Read vertex positions
     for (int i = 0; i < vertexCount; ++i) {
-        if (!std::getline(stream, line)) return false;
+        if (!std::getline(stream, line)) {
+            std::cerr << "TILE_PARSER: Failed to read position line " << i << std::endl;
+            return false;
+        }
         line = trim(line);
         std::istringstream vss(line);
         vss >> outTile.vertices[i].position.x
@@ -72,7 +76,10 @@ static bool parseTile(std::istream& stream, Tile& outTile) {
 
     // Read first UV set
     for (int i = 0; i < vertexCount; ++i) {
-        if (!std::getline(stream, line)) return false;
+        if (!std::getline(stream, line)) {
+            std::cerr << "TILE_PARSER: Failed to read UV1 line " << i << std::endl;
+            return false;
+        }
         line = trim(line);
         std::istringstream uvss(line);
         uvss >> outTile.vertices[i].uv1.x
@@ -81,23 +88,25 @@ static bool parseTile(std::istream& stream, Tile& outTile) {
 
     // Read second UV set
     for (int i = 0; i < vertexCount; ++i) {
-        if (!std::getline(stream, line)) return false;
+        if (!std::getline(stream, line)) {
+            std::cerr << "TILE_PARSER: Failed to read UV2 line " << i << std::endl;
+            return false;
+        }
         line = trim(line);
         std::istringstream uvss(line);
         uvss >> outTile.vertices[i].uv2.x
              >> outTile.vertices[i].uv2.y;
     }
 
-    // Texture indices and tile type line
-    if (!std::getline(stream, line)) return false;
+    // Texture indices line: texindex bumpindex specularIndex
+    if (!std::getline(stream, line)) {
+        std::cerr << "TILE_PARSER: Failed to read texture indices line" << std::endl;
+        return false;
+    }
     line = trim(line);
     std::istringstream texIss(line);
-    texIss >> outTile.textureIndex1 >> outTile.textureIndex2;
-    // tileType might be on same line or handled by properties
-    int tileType = 0;
-    if (texIss >> tileType) {
-        outTile.properties.tileType = tileType;
-    }
+    int specularIndex = 0;
+    texIss >> outTile.textureIndex1 >> outTile.textureIndex2 >> specularIndex;
 
     // Read optional properties until "End"
     while (std::getline(stream, line)) {
@@ -453,14 +462,17 @@ static void parseDomainFooter(std::istream& stream, Domain& domain) {
 
 bool parseDomainFile(std::string_view path, Domain& outDomain,
                      const fs::path& basePath, const fs::path& tilesPath) {
+    std::cout << "DOMAIN_PARSER: Opening file: " << path << std::endl;
+
     std::ifstream file{std::string{path}};
     if (!file.is_open()) {
-        std::cerr << "Failed to open domain file: " << path << std::endl;
+        std::cerr << "DOMAIN_PARSER: Failed to open domain file: " << path << std::endl;
         return false;
     }
 
     fs::path filePath(path);
     fs::path resolveBase = basePath.empty() ? filePath.parent_path() : basePath;
+    std::cout << "DOMAIN_PARSER: Resolve base path: " << resolveBase << std::endl;
 
     // Try to load archetiles if path provided
     if (!tilesPath.empty()) {
@@ -521,8 +533,12 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
             currentArea->bounds.max.z = std::max({v1.z, v2.z, v3.z, v4.z});
         }
         else if (keyword == "Tile" && currentArea) {
+            // Tile format: "Tile N" where N is vertex count on same line
+            int vertexCount = 0;
+            iss >> vertexCount;
+
             Tile tile;
-            if (parseTile(file, tile)) {
+            if (parseTileWithCount(file, tile, vertexCount)) {
                 currentArea->tiles.push_back(std::move(tile));
             }
         }
@@ -550,9 +566,23 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
             iss >> geomPath;
             geomPath = normalizePathSeparators(geomPath);
 
-            fs::path fullPath = resolveBase / geomPath;
+            // Geometry paths in xmapfile are relative to the data root (parent of ship directories)
+            // e.g., "ship1/lvl0section0.xml" when xmapfile is in ship1/
+            // So we go up one level from the xmapfile's directory
+            fs::path dataRoot = resolveBase.parent_path();
+            fs::path fullPath = dataRoot / geomPath;
+
+            // Fallback: if not found, try relative to xmapfile directory
+            if (!fs::exists(fullPath)) {
+                fullPath = resolveBase / geomPath;
+            }
+
+            std::cout << "DOMAIN_PARSER: Loading geometry from: " << fullPath << std::endl;
+
             PathGeometry geom;
             if (parseGeometryXml(fullPath.string(), geom)) {
+                std::cout << "DOMAIN_PARSER: Loaded geometry with " << geom.areas.size() << " areas, "
+                          << geom.nodes.size() << " nodes, " << geom.links.size() << " links" << std::endl;
                 currentArea->geometry.push_back(std::move(geom));
 
                 // Generate collision from geometry

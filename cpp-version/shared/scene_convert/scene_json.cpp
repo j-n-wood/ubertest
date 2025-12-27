@@ -254,6 +254,8 @@ static json tileToJson(const Tile& t) {
     return result;
 }
 
+static int tileLoadCounter = 0;
+
 static Tile jsonToTile(const json& j) {
     Tile t;
     for (const auto& v : j["vertices"]) {
@@ -263,6 +265,19 @@ static Tile jsonToTile(const json& j) {
     if (j.contains("properties")) t.properties = jsonToTileProperties(j["properties"]);
     t.textureIndex1 = j.value("textureIndex1", 0);
     t.textureIndex2 = j.value("textureIndex2", 0);
+
+    // Log first few tiles for debugging
+    if (tileLoadCounter < 3) {
+        std::cout << "JSON_LOADER: Tile " << tileLoadCounter << " loaded with "
+                  << t.vertices.size() << " vertices:" << std::endl;
+        for (size_t i = 0; i < t.vertices.size(); ++i) {
+            std::cout << "  v[" << i << "] = (" << t.vertices[i].position.x << ", "
+                      << t.vertices[i].position.y << ", " << t.vertices[i].position.z << ")"
+                      << std::endl;
+        }
+    }
+    tileLoadCounter++;
+
     return t;
 }
 
