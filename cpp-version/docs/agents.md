@@ -80,6 +80,13 @@ Converts FreedroidClassic Paradroid.maps to Tiled TMX format. See [tools/level_t
 
 **Output:** TMX files + tileset assets in `./output/ships/ship1/levels/`
 
+**Features:**
+- Converts 16 levels with tile data (CSV encoding)
+- Exports waypoints as object layer with link-n properties
+- Copies tileset assets (default.tsx, map_blocks.png) for standalone use
+
+**Data:** 233 waypoints, 553 links across all levels
+
 ## Directory Structure
 
 ```

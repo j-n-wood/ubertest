@@ -165,5 +165,4 @@ level_tool/
 ## Future Work
 
 - `--view` mode for visual preview using shared rendering code
-- Export waypoints as TMX object layer
 - Support for other Freedroid map files
