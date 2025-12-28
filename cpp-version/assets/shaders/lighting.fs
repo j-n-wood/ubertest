@@ -161,8 +161,11 @@ void main() {
         // Directional light (type 0)
         // lightDir points TOWARD the light source (standard Blinn-Phong convention)
         if (light0_type == 0) {
-            lightDir = normalize(light0_target - light0_position);
+            // For directional: light shines from position toward target
+            // lightDir = direction TO light = opposite of light ray direction
+            lightDir = normalize(light0_position - light0_target);
         } else {
+            // Point light: direction from fragment toward light position
             lightDir = normalize(light0_position - fragPosition);
         }
 
@@ -187,8 +190,8 @@ void main() {
         finalColor = vec4(normal * 0.5 + 0.5, 1.0);
         return;
     } else if (debugMode == 2) {
-        // Show lightDir as color
-        vec3 lightDir = normalize(light0_target - light0_position);
+        // Show lightDir as color (direction toward light source)
+        vec3 lightDir = normalize(light0_position - light0_target);
         finalColor = vec4(lightDir * 0.5 + 0.5, 1.0);
         return;
     } else if (debugMode == 3) {
@@ -201,7 +204,7 @@ void main() {
         return;
     } else if (debugMode == 5) {
         // Show halfDir as color
-        vec3 lightDir = normalize(light0_target - light0_position);
+        vec3 lightDir = normalize(light0_position - light0_target);
         vec3 halfDir = normalize(lightDir + viewDir);
         finalColor = vec4(halfDir * 0.5 + 0.5, 1.0);
         return;

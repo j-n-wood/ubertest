@@ -140,6 +140,121 @@ Vector3 transform(const OldVec& v) {
 }
 ```
 
+## Coordinate Systems and Conventions
+
+### World Coordinate System (OpenGL/Raylib)
+```
+        +Y (up)
+         |
+         |
+         +------ +X (right)
+        /
+       /
+     +Z (forward, into screen)
+```
+
+- **X-axis**: Right (positive = right)
+- **Y-axis**: Up (positive = up, used for height)
+- **Z-axis**: Forward (positive = into screen / away from viewer)
+
+### TMX to World Coordinate Transform
+
+TMX files use a 2D coordinate system with origin at top-left:
+- TMX X: Columns (0 = left, increases right)
+- TMX Y: Rows (0 = top, increases down)
+
+**Conversion:**
+```cpp
+// TMX grid to world coordinates (centered on origin)
+float worldX = (col + 0.5f) * worldScale - halfWidth;   // TMX X → World X
+float worldY = 0.0f;                                     // Floor plane
+float worldZ = (row + 0.5f) * worldScale - halfHeight;  // TMX Y → World Z
+```
+
+This places TMX row 0 at -Z (back) and the last row at +Z (front), so when viewed from above (+Y looking down), the level appears as it does in Tiled.
+
+### Camera Modes
+
+**Perspective** (default):
+- Standard orbit camera at configurable height and distance
+- Orbit angle rotates camera position around target on XZ plane
+
+**Top-down** (orthographic):
+- Camera positioned directly above target (+Y)
+- Up vector points toward -Z so TMX row 0 appears at top of screen
+- Orbit angle rotates the up vector (rotates the view)
+
+**Isometric** (orthographic):
+- Camera at 45 degrees from horizontal
+- Standard Y-up orientation
+
+### Lighting System
+
+**Blinn-Phong Shader Convention:**
+The shader expects `lightDir` to point **toward** the light source (standard Blinn-Phong):
+```glsl
+// Directional light: lightDir points from surface toward light
+lightDir = normalize(light0_position - light0_target);
+
+// Diffuse: surfaces facing the light are bright
+float diff = max(dot(normal, lightDir), 0.0);
+```
+
+**Configuring Directional Lights:**
+```cpp
+// Light shining DOWN from above:
+// - position: where light originates (above scene)
+// - target: where light rays aim (below position)
+sceneRendererAddDirectionalLight(&renderer,
+    (Vector3){0, 50, 0},   // Position (above)
+    (Vector3){0, 0, 0},    // Target (below)
+    WHITE);
+```
+
+The light direction (ray direction) is `normalize(target - position)`, but the shader uses `normalize(position - target)` for the Blinn-Phong `lightDir` (direction toward light).
+
+### UV Mapping for Floor Tiles
+
+Floor tiles are quads on the XZ plane (Y=0) with normals pointing +Y (up).
+
+**Vertex layout** (viewed from above, CCW winding):
+```
+TL(3)----TR(2)
+  |        |
+  |   +Z   |
+  |   ↑    |
+BL(0)----BR(1)
+     →+X
+```
+
+**UV assignment** (texture V increases downward):
+```cpp
+float uvs[4][2] = {
+    {u0, v0},  // BL - maps to texture top
+    {u1, v0},  // BR
+    {u1, v1},  // TR - maps to texture bottom
+    {u0, v1},  // TL
+};
+```
+
+This maps texture row 0 (top) to world -Z and texture bottom to world +Z, matching TMX orientation.
+
+### Triangle Winding Order
+
+OpenGL uses CCW winding for front faces (when backface culling is enabled):
+```cpp
+// Indices for two triangles forming a quad (CCW from above)
+// Triangle 0: BL, TR, BR
+// Triangle 1: BL, TL, TR
+mesh.indices[ii++] = baseVert + 0;  // BL
+mesh.indices[ii++] = baseVert + 2;  // TR
+mesh.indices[ii++] = baseVert + 1;  // BR
+
+mesh.indices[ii++] = baseVert + 0;  // BL
+mesh.indices[ii++] = baseVert + 3;  // TL
+mesh.indices[ii++] = baseVert + 2;  // TR
+```
+
 ## Troubleshooting
 
 | Symptom | Likely Cause | Fix |

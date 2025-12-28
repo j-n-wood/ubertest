@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="48" height="16" tilewidth="64" tileheight="64" infinite="0" nextlayerid="3" nextobjectid="15">
+    <tileset firstgid="1" source="default.tsx"/>
+    <layer id="1" name="Tile Layer 1" width="48" height="16">
+        <data encoding="csv">
+34,34,34,34,8,11,11,11,11,11,11,11,11,11,11,11,11,11,11,9,11,11,11,11,11,10,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+8,11,11,11,7,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+12,39,26,1,12,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+12,1,1,1,12,1,1,1,1,1,1,1,1,1,1,1,1,1,1,28,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+12,1,1,1,28,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,14,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+2,11,11,11,3,11,9,11,11,11,10,1,1,1,1,1,1,1,39,12,1,1,16,15,1,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+34,34,34,34,34,34,12,1,1,1,5,19,11,11,11,11,11,11,11,7,1,1,15,15,18,12,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,
+34,34,34,34,34,34,12,24,1,1,28,1,1,1,1,1,1,33,1,28,1,25,14,16,1,12,34,34,34,34,34,34,34,34,34,34,34,34,8,11,11,11,11,10,34,34,34,34,
+34,34,34,34,34,34,12,1,1,1,5,19,11,11,11,11,11,11,11,7,1,1,1,16,1,12,34,34,34,34,34,34,34,34,34,34,34,34,12,33,1,1,1,12,34,34,34,34,
+8,11,11,11,9,11,3,11,11,11,4,1,1,1,1,1,1,1,39,12,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,5,11,11,11,19,6,11,11,11,10,
+12,1,1,1,28,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,14,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,12,39,1,1,1,12,1,1,1,12,
+12,1,1,1,12,1,1,1,1,1,1,1,1,1,1,1,1,1,1,28,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,12,1,1,1,1,28,1,1,1,12,
+12,39,27,1,12,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,12,1,1,1,1,12,1,1,1,12,
+2,11,11,11,7,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,1,1,1,1,1,12,34,34,34,34,34,34,34,34,34,34,34,34,12,1,1,1,1,5,11,11,11,4,
+34,34,34,34,2,11,11,11,11,11,11,11,11,11,11,11,11,11,11,3,11,11,11,11,11,4,34,34,34,34,34,34,34,34,34,34,34,34,12,1,1,1,1,12,34,34,34,34,
+34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,2,11,11,11,11,4,34,34,34,34
+</data>
+    </layer>
+    <objectgroup id="2" name="waypoints">
+        <object id="1" x="1312" y="96">
+            <properties>
+                <property name="link-0" type="object" value="2"/>
+                <property name="link-1" type="object" value="8"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="2" x="1568" y="96">
+            <properties>
+                <property name="link-0" type="object" value="11"/>
+                <property name="link-1" type="object" value="1"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="3" x="160" y="224">
+            <properties>
+                <property name="link-0" type="object" value="4"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="4" x="224" y="288">
+            <properties>
+                <property name="link-0" type="object" value="3"/>
+                <property name="link-1" type="object" value="5"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="5" x="736" y="288">
+            <properties>
+                <property name="link-0" type="object" value="4"/>
+                <property name="link-1" type="object" value="7"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="6" x="544" y="480">
+            <properties>
+                <property name="link-0" type="object" value="7"/>
+                <property name="link-1" type="object" value="8"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="7" x="736" y="480">
+            <properties>
+                <property name="link-0" type="object" value="8"/>
+                <property name="link-1" type="object" value="5"/>
+                <property name="link-2" type="object" value="6"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="8" x="1312" y="480">
+            <properties>
+                <property name="link-0" type="object" value="1"/>
+                <property name="link-1" type="object" value="7"/>
+                <property name="link-2" type="object" value="10"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="9" x="2720" y="544">
+            <properties>
+                <property name="link-0" type="object" value="12"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="10" x="1312" y="736">
+            <properties>
+                <property name="link-0" type="object" value="8"/>
+                <property name="link-1" type="object" value="11"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="11" x="1568" y="736">
+            <properties>
+                <property name="link-0" type="object" value="10"/>
+                <property name="link-1" type="object" value="2"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="12" x="2720" y="736">
+            <properties>
+                <property name="link-0" type="object" value="14"/>
+                <property name="link-1" type="object" value="13"/>
+                <property name="link-2" type="object" value="9"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="13" x="2976" y="736">
+            <properties>
+                <property name="link-0" type="object" value="12"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="14" x="2528" y="928">
+            <properties>
+                <property name="link-0" type="object" value="12"/>
+            </properties>
+            <point/>
+        </object>
+    </objectgroup>
+</map>

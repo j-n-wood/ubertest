@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="22" height="5" tilewidth="64" tileheight="64" infinite="0" nextlayerid="3" nextobjectid="6">
+    <tileset firstgid="1" source="default.tsx"/>
+    <layer id="1" name="Tile Layer 1" width="22" height="5">
+        <data encoding="csv">
+8,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,10,
+12,1,1,1,1,1,1,1,18,1,18,1,26,1,1,1,1,1,35,1,35,12,
+12,33,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,12,
+12,1,1,1,1,1,1,1,18,1,18,1,39,1,1,1,1,1,35,1,35,12,
+2,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,11,4
+</data>
+    </layer>
+    <objectgroup id="2" name="waypoints">
+        <object id="1" x="864" y="96">
+            <properties>
+                <property name="link-0" type="object" value="4"/>
+                <property name="link-1" type="object" value="2"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="2" x="1120" y="96">
+            <properties>
+                <property name="link-0" type="object" value="1"/>
+                <property name="link-1" type="object" value="5"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="3" x="160" y="160">
+            <properties>
+                <property name="link-0" type="object" value="4"/>
+                <property name="link-1" type="object" value="5"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="4" x="800" y="160">
+            <properties>
+                <property name="link-0" type="object" value="3"/>
+                <property name="link-1" type="object" value="5"/>
+                <property name="link-2" type="object" value="1"/>
+            </properties>
+            <point/>
+        </object>
+        <object id="5" x="1184" y="160">
+            <properties>
+                <property name="link-0" type="object" value="2"/>
+                <property name="link-1" type="object" value="4"/>
+                <property name="link-2" type="object" value="3"/>
+            </properties>
+            <point/>
+        </object>
+    </objectgroup>
+</map>
