@@ -25,11 +25,15 @@ struct LevelViewerState {
     // Tileset (shared across levels)
     TmxTileset tileset;
     Texture2D atlasTexture = {0};
-    Texture2D bumpTexture = {0};
+    Texture2D bumpTexture = {0};          // Flat normal (for Tilemap mode)
+    Texture2D bumpAtlasTexture = {0};     // Bump atlas (for CustomTiles mode)
+
+    // Custom tile properties (from tiles.json)
+    TilePropertiesConfig tileProperties;
 
     // Rendering
     SceneRenderer renderer;
-    LevelRenderMode renderMode = LevelRenderMode::TilesetAtlas;
+    LevelRenderMode renderMode = LevelRenderMode::CustomTiles;
     float worldScale = 1.0f;
 
     // Reference geometry
@@ -40,12 +44,16 @@ struct LevelViewerState {
     Camera3D camera = {0};
     float cameraOrbitAngle = 0.0f;
     float cameraOrbitDistance = 20.0f;
-    float cameraHeight = 15.0f;
+    float cameraHeight = 5.0f;
     Vector3 cameraTarget = {0, 0, 0};
 
     // Camera view modes
     enum class CameraMode { Perspective, Topdown, Isometric };
-    CameraMode cameraMode = CameraMode::Perspective;
+    CameraMode cameraMode = CameraMode::Topdown;
+
+    // Effective eye height for specular calculations
+    // Allows top-down camera to simulate lighting as seen from within the scene
+    float effectiveEyeHeight = 1.0f;  // Default: 1 tile width above ground
 
     // Debug visualization
     int debugMode = 0;
@@ -54,7 +62,7 @@ struct LevelViewerState {
     bool showGrid = false;
     bool showBounds = false;
     bool backfaceCulling = true;
-    bool showRefSphere = true;
+    bool showRefSphere = false;
 
     // UI
     bool showHUD = true;
@@ -85,6 +93,12 @@ bool viewerStateBuildRenderData(LevelViewerState* state);
 
 // Switch to a different level
 bool viewerStateSwitchLevel(LevelViewerState* state, int levelIndex);
+
+// Switch render mode (rebuilds geometry for current level)
+void viewerStateSwitchRenderMode(LevelViewerState* state, LevelRenderMode mode);
+
+// Cycle to next render mode
+void viewerStateCycleRenderMode(LevelViewerState* state);
 
 //------------------------------------------------------------------------------
 // Rendering

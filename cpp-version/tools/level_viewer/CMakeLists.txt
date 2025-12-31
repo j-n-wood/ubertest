@@ -10,6 +10,7 @@ set(LEVEL_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/tileset_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/level_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/tile_properties_loader.cpp
 )
 
 set(RENDER_SHARED_SOURCES
@@ -33,6 +34,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     raylib
     tinyxml2
+    nlohmann_json::nlohmann_json
 )
 
 add_platform_libraries(${PROJECT_NAME})

@@ -27,6 +27,7 @@ static void printUsage(const char* progName) {
     printf("  --asset-path <path>  Base path for assets (default: assets)\n");
     printf("  --level <n>          Start at level N (default: 0)\n");
     printf("  --scale <factor>     World units per tile (default: 1.0)\n");
+    printf("  --render-mode <mode> Initial render mode: tilemap, custom (default: tilemap)\n");
     printf("  -h, --help           Show this help message\n\n");
     printf("Controls:\n");
     printf("  [/]        Previous/Next level\n");
@@ -39,6 +40,8 @@ static void printUsage(const char* progName) {
     printf("  C          Center camera on level\n");
     printf("  Space      Toggle auto-rotate\n");
     printf("  0-6        Shader debug modes\n");
+    printf("  M          Cycle render mode (Tilemap/Custom Tiles)\n");
+    printf("  Ctrl +/-   Adjust effective eye height for specular\n");
     printf("  G          Toggle grid\n");
     printf("  P          Toggle waypoints\n");
     printf("  L          Toggle waypoint links\n");
@@ -59,6 +62,7 @@ static void printUsage(const char* progName) {
 struct AppConfig {
     std::string inputPath;
     std::string assetPath = "assets";
+    std::string renderMode = "tilemap";  // "tilemap" or "custom"
     int startLevel = 0;
     float worldScale = 1.0f;
     bool showHelp = false;
@@ -83,6 +87,13 @@ static bool parseArgs(int argc, char* argv[], AppConfig& config) {
         }
         else if (arg == "--scale" && i + 1 < argc) {
             config.worldScale = std::stof(argv[++i]);
+        }
+        else if (arg == "--render-mode" && i + 1 < argc) {
+            config.renderMode = argv[++i];
+            if (config.renderMode != "tilemap" && config.renderMode != "custom") {
+                fprintf(stderr, "Invalid render mode: %s (use 'tilemap' or 'custom')\n", config.renderMode.c_str());
+                return false;
+            }
         }
         else {
             fprintf(stderr, "Unknown option: %s\n", arg.c_str());
@@ -166,6 +177,27 @@ static void handleInput(LevelViewerState* state) {
         state->cameraMode = static_cast<LevelViewerState::CameraMode>(mode);
         viewerStateUpdateCamera(state);
     }
+    if (IsKeyPressed(KEY_M)) {
+        // Cycle render mode: Tilemap -> Custom Tiles -> Tilemap
+        viewerStateCycleRenderMode(state);
+    }
+
+    // Effective eye height controls (Ctrl + +/- keys)
+    bool ctrlHeld = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    if (ctrlHeld) {
+        float eyeHeightStep = 0.25f;
+        if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) {  // Ctrl + +
+            state->effectiveEyeHeight += eyeHeightStep;
+            sceneRendererSetEffectiveEyeHeight(&state->renderer, state->effectiveEyeHeight);
+        }
+        if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) {  // Ctrl + -
+            state->effectiveEyeHeight -= eyeHeightStep;
+            if (state->effectiveEyeHeight < 0.0f) {
+                state->effectiveEyeHeight = 0.0f;
+            }
+            sceneRendererSetEffectiveEyeHeight(&state->renderer, state->effectiveEyeHeight);
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -227,8 +259,13 @@ int main(int argc, char* argv[]) {
         viewerStateSwitchLevel(&state, config.startLevel);
     }
 
+    // Apply initial render mode from CLI
+    if (config.renderMode == "custom") {
+        viewerStateSwitchRenderMode(&state, LevelRenderMode::CustomTiles);
+    }
+
     printf("Level Viewer ready. Loaded %zu levels.\n", state.levels.size());
-    printf("Press H to toggle HUD, Esc to quit.\n");
+    printf("Press H to toggle HUD, M to cycle render mode, Esc to quit.\n");
 
     // Main loop
     while (!WindowShouldClose()) {

@@ -1,4 +1,5 @@
 #include "viewer_state.h"
+#include "level/tile_properties_loader.h"
 #include "rlgl.h"
 #include <filesystem>
 #include <cmath>
@@ -36,6 +37,9 @@ bool viewerStateInit(LevelViewerState* state, const std::string& inputPath,
     state->camera.fovy = 45.0f;
     state->camera.projection = CAMERA_PERSPECTIVE;
 
+    // Set effective eye height for specular calculations (default: 1 tile = 1 world unit)
+    sceneRendererSetEffectiveEyeHeight(&state->renderer, state->effectiveEyeHeight);
+
     // Create reference sphere (1m diameter)
     Mesh sphereMesh = GenMeshSphere(0.5f, 16, 16);
     state->refSphereModel = LoadModelFromMesh(sphereMesh);
@@ -62,6 +66,10 @@ void viewerStateDestroy(LevelViewerState* state) {
     if (state->bumpTexture.id > 0) {
         UnloadTexture(state->bumpTexture);
         state->bumpTexture = {0};
+    }
+    if (state->bumpAtlasTexture.id > 0) {
+        UnloadTexture(state->bumpAtlasTexture);
+        state->bumpAtlasTexture = {0};
     }
 
     // Unload reference sphere
@@ -114,16 +122,41 @@ bool viewerStateLoadLevels(LevelViewerState* state) {
             // Load atlas texture
             state->atlasTexture = loadTilesetTexture(state->tileset, state->inputPath);
 
-            // Load bump texture (flat normal for now)
+            // Load flat normal bump texture (for Tilemap mode)
             fs::path bumpPath = fs::path(state->assetPath) / "textures" / "flat_normal.png";
             if (fs::exists(bumpPath)) {
                 state->bumpTexture = LoadTexture(bumpPath.string().c_str());
-                TraceLog(LOG_INFO, "Loaded bump texture: %s", bumpPath.string().c_str());
+                TraceLog(LOG_INFO, "Loaded flat normal texture: %s", bumpPath.string().c_str());
             }
         } else {
             TraceLog(LOG_ERROR, "Failed to load tileset: %s", tsxResult.errorMsg.c_str());
             return false;
         }
+    }
+
+    // Load tile properties (tiles.json) for CustomTiles mode
+    fs::path tilesJsonPath = fs::path(state->inputPath) / "tiles.json";
+    if (fs::exists(tilesJsonPath)) {
+        state->tileProperties = loadTileProperties(tilesJsonPath.string());
+        if (state->tileProperties.valid) {
+            // Load bump atlas texture
+            // The texture path in tiles.json is relative to assets folder
+            fs::path bumpAtlasPath = fs::path(state->assetPath) / state->tileProperties.bumpAtlas.texture;
+            if (fs::exists(bumpAtlasPath)) {
+                state->bumpAtlasTexture = LoadTexture(bumpAtlasPath.string().c_str());
+                if (state->bumpAtlasTexture.id > 0) {
+                    TraceLog(LOG_INFO, "Loaded bump atlas: %s (%dx%d)",
+                             bumpAtlasPath.string().c_str(),
+                             state->bumpAtlasTexture.width, state->bumpAtlasTexture.height);
+                } else {
+                    TraceLog(LOG_ERROR, "Failed to load bump atlas texture: %s", bumpAtlasPath.string().c_str());
+                }
+            } else {
+                TraceLog(LOG_WARNING, "Bump atlas file not found: %s", bumpAtlasPath.string().c_str());
+            }
+        }
+    } else {
+        TraceLog(LOG_INFO, "No tiles.json found, CustomTiles mode unavailable");
     }
 
     // Initialize render data vector
@@ -155,15 +188,30 @@ bool viewerStateBuildRenderData(LevelViewerState* state) {
     // Create new render data
     data = createLevelRenderData(level, state->tileset, state->renderMode, state->worldScale);
 
-    // Create mesh
-    data.tileMesh = createLevelTileMesh(level, state->tileset, state->worldScale);
+    // Create mesh based on render mode
+    if (state->renderMode == LevelRenderMode::CustomTiles && state->tileProperties.valid) {
+        // Custom tiles mode: generate mesh with per-tile bump UVs
+        int atlasW = state->bumpAtlasTexture.width > 0 ? state->bumpAtlasTexture.width : 128;
+        int atlasH = state->bumpAtlasTexture.height > 0 ? state->bumpAtlasTexture.height : 128;
+        data.tileMesh = createLevelTileMeshCustom(
+            level, state->tileset, state->tileProperties, atlasW, atlasH, state->worldScale);
+    } else {
+        // Tilemap mode: standard mesh generation
+        data.tileMesh = createLevelTileMesh(level, state->tileset, state->worldScale);
+    }
 
     if (data.tileMesh.vertexCount > 0) {
+        // Select bump texture based on render mode
+        Texture2D bumpTex = state->bumpTexture;  // Default: flat normal
+        if (state->renderMode == LevelRenderMode::CustomTiles && state->bumpAtlasTexture.id > 0) {
+            bumpTex = state->bumpAtlasTexture;
+        }
+
         // Create model with textures
         data.tileModel = createLevelTileModel(
             data.tileMesh,
             state->atlasTexture,
-            state->bumpTexture,
+            bumpTex,
             &state->renderer
         );
         data.meshValid = true;
@@ -328,9 +376,10 @@ void viewerStateDrawHUD(LevelViewerState* state) {
     y += lineHeight;
 
     // Render mode
-    const char* modeNames[] = {"Tileset Atlas", "Extended Bump", "3D Objects"};
+    const char* modeNames[] = {"Tilemap", "Custom Tiles", "3D Objects"};
     int modeIdx = static_cast<int>(state->renderMode);
-    DrawText(TextFormat("Render Mode: %s", modeNames[modeIdx]), 10, y, 14, LIGHTGRAY);
+    Color modeColor = (state->renderMode == LevelRenderMode::CustomTiles && state->tileProperties.valid) ? GREEN : LIGHTGRAY;
+    DrawText(TextFormat("Render Mode: %s [M]", modeNames[modeIdx]), 10, y, 14, modeColor);
     y += lineHeight;
 
     // Backface culling
@@ -348,6 +397,10 @@ void viewerStateDrawHUD(LevelViewerState* state) {
     DrawText(TextFormat("Camera: (%.1f, %.1f, %.1f)",
              state->camera.position.x, state->camera.position.y, state->camera.position.z),
              10, y, 14, GRAY);
+    y += lineHeight;
+
+    // Effective eye height for specular calculations
+    DrawText(TextFormat("Eye Height: %.2f [Ctrl +/-]", state->effectiveEyeHeight), 10, y, 14, GRAY);
     y += lineHeight + 10;
 
     // Controls help
@@ -377,12 +430,12 @@ void viewerStateUpdateCamera(LevelViewerState* state) {
             break;
 
         case LevelViewerState::CameraMode::Topdown:
-            // Orthographic top-down view (directly above, looking down)
+            // Perspective top-down view (directly above, looking down)
             // Camera up vector points toward -Z so TMX row 0 appears at top of screen
-            state->camera.projection = CAMERA_ORTHOGRAPHIC;
-            state->camera.fovy = state->cameraOrbitDistance * 2.0f;  // Ortho uses fovy as viewport height
+            state->camera.projection = CAMERA_PERSPECTIVE;
+            state->camera.fovy = 45.0f;
             state->camera.position.x = state->cameraTarget.x;
-            state->camera.position.y = state->cameraTarget.y + 50.0f;  // High above
+            state->camera.position.y = state->cameraTarget.y + state->cameraHeight;
             state->camera.position.z = state->cameraTarget.z;
             // Up vector rotates with orbit angle, base direction is -Z (toward TMX row 0)
             state->camera.up = (Vector3){-sinf(angle), 0, -cosf(angle)};
@@ -429,4 +482,44 @@ void viewerStateCenterCamera(LevelViewerState* state) {
     state->cameraHeight = maxSize * 0.5f;
 
     viewerStateUpdateCamera(state);
+}
+
+//------------------------------------------------------------------------------
+// Render Mode
+//------------------------------------------------------------------------------
+
+void viewerStateSwitchRenderMode(LevelViewerState* state, LevelRenderMode mode) {
+    if (state->renderMode == mode) {
+        return;  // No change
+    }
+
+    // Check if CustomTiles mode is available
+    if (mode == LevelRenderMode::CustomTiles && !state->tileProperties.valid) {
+        TraceLog(LOG_WARNING, "CustomTiles mode unavailable - no valid tiles.json");
+        return;
+    }
+
+    state->renderMode = mode;
+
+    // Invalidate all render data - geometry needs to be rebuilt for new mode
+    for (auto& data : state->renderData) {
+        if (data.meshValid) {
+            freeLevelRenderData(&data);
+        }
+    }
+
+    // Rebuild current level
+    viewerStateBuildRenderData(state);
+
+    const char* modeNames[] = {"Tilemap", "Custom Tiles", "3D Objects"};
+    TraceLog(LOG_INFO, "Switched to render mode: %s", modeNames[static_cast<int>(mode)]);
+}
+
+void viewerStateCycleRenderMode(LevelViewerState* state) {
+    // Cycle: Tilemap -> CustomTiles -> Tilemap (skip Objects3D for now)
+    if (state->renderMode == LevelRenderMode::Tilemap) {
+        viewerStateSwitchRenderMode(state, LevelRenderMode::CustomTiles);
+    } else {
+        viewerStateSwitchRenderMode(state, LevelRenderMode::Tilemap);
+    }
 }

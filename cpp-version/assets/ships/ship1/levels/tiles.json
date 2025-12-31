@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "bumpAtlas": {
+    "texture": "textures/bump_atlas.png",
+    "tileWidth": 128,
+    "tileHeight": 128,
+    "columns": 1
+  },
+  "defaults": {
+    "bumpTileIndex": 0,
+    "specularIntensity": 0.5,
+    "albedoMultiplier": [1.0, 1.0, 1.0]
+  },
+  "tiles": {
+    "1": {
+      "bumpTileIndex": 12,
+      "specularIntensity": 0.6,
+      "comment": "Floor tile - charger ring"
+    },    
+    "14": {
+      "bumpTileIndex": 0,
+      "specularIntensity": 0.8,
+      "comment": "Block pillar"
+    },
+    "15": {
+      "bumpTileIndex": 0,
+      "specularIntensity": 0.7,
+      "comment": "Crate 1"
+    },
+    "16": {
+      "bumpTileIndex": 0,
+      "specularIntensity": 0.7,
+      "comment": "Crate 2"
+    },
+    "17": {
+      "bumpTileIndex": 21,
+      "specularIntensity": 0.5,
+      "comment": "Small round plate"
+    },
+    "25": {
+      "bumpTileIndex": 22,
+      "specularIntensity": 0.6,
+      "comment": "Large round plate"
+    }
+  }
+}

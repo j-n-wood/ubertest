@@ -170,6 +170,210 @@ Mesh createLevelTileMesh(
 }
 
 //------------------------------------------------------------------------------
+// Custom Tiles Mesh Generation (with separate bump atlas UVs)
+//------------------------------------------------------------------------------
+
+namespace {
+
+// Calculate UV coordinates for a tile in the bump atlas
+// atlasWidth/atlasHeight are the actual texture dimensions
+void getBumpAtlasUV(const BumpAtlasConfig& atlas, int atlasWidth, int atlasHeight,
+                    int bumpTileIndex, float* u0, float* v0, float* u1, float* v1) {
+    // Calculate tile position in atlas
+    int col = bumpTileIndex % atlas.columns;
+    int row = bumpTileIndex / atlas.columns;
+
+    // Calculate normalized UV coordinates with 0.5px inset to sample at pixel centers
+    float pixelU0 = col * atlas.tileWidth + 0.5f;
+    float pixelV0 = row * atlas.tileHeight + 0.5f;
+    float pixelU1 = pixelU0 + atlas.tileWidth - 1.0f;
+    float pixelV1 = pixelV0 + atlas.tileHeight - 1.0f;
+
+    *u0 = pixelU0 / atlasWidth;
+    *u1 = pixelU1 / atlasWidth;
+
+    // Invert V coordinates (OpenGL texture origin is bottom-left, image origin is top-left)
+    // Keep the same tile, just flip the V range within that tile
+    *v1 = (pixelV0 / atlasHeight);
+    *v0 = (pixelV1 / atlasHeight);
+
+    /*
+    //debug - sample center of first tile to avoid edge/corner artifacts
+    float halfTileU = (atlas.tileWidth * 0.5f) / atlasWidth;
+    float halfTileV = (atlas.tileHeight * 0.5f) / atlasHeight;
+    *u0 = halfTileU;
+    *u1 = halfTileU;
+    *v0 = halfTileV;
+    *v1 = halfTileV;
+    */
+}
+
+} // namespace
+
+Mesh createLevelTileMeshCustom(
+    const TmxLevel& level,
+    const TmxTileset& tileset,
+    const TilePropertiesConfig& tileProps,
+    int bumpAtlasWidth,
+    int bumpAtlasHeight,
+    float worldScale
+) {
+    Mesh mesh = {0};
+
+    // Count non-empty tiles and track override statistics
+    int tileCount = 0;
+    int tilesWithOverrides = 0;
+    int tilesUsingDefaults = 0;
+
+    for (int id : level.tiles) {
+        if (id > 0) {
+            tileCount++;
+            if (tileProps.tiles.count(id) > 0) {
+                tilesWithOverrides++;
+            } else {
+                tilesUsingDefaults++;
+            }
+        }
+    }
+
+    if (tileCount == 0) {
+        TraceLog(LOG_WARNING, "Level has no tiles to render");
+        return mesh;
+    }
+
+    TraceLog(LOG_INFO, "CustomTiles: %d tiles total, %d with overrides, %d using defaults (bumpIdx=%d)",
+             tileCount, tilesWithOverrides, tilesUsingDefaults, tileProps.defaults.bumpTileIndex);
+    TraceLog(LOG_INFO, "CustomTiles: bump atlas %dx%d, tile size %dx%d, columns=%d",
+             bumpAtlasWidth, bumpAtlasHeight,
+             tileProps.bumpAtlas.tileWidth, tileProps.bumpAtlas.tileHeight,
+             tileProps.bumpAtlas.columns);
+
+    // Each tile = 4 vertices, 6 indices (2 triangles)
+    int vertexCount = tileCount * 4;
+    int triangleCount = tileCount * 2;
+
+    // Allocate mesh data (including texcoords2 for bump atlas UVs)
+    mesh.vertexCount = vertexCount;
+    mesh.triangleCount = triangleCount;
+
+    mesh.vertices = (float*)RL_MALLOC(vertexCount * 3 * sizeof(float));
+    mesh.texcoords = (float*)RL_MALLOC(vertexCount * 2 * sizeof(float));
+    mesh.texcoords2 = (float*)RL_MALLOC(vertexCount * 2 * sizeof(float));  // Bump atlas UVs
+    mesh.normals = (float*)RL_MALLOC(vertexCount * 3 * sizeof(float));
+    mesh.tangents = (float*)RL_MALLOC(vertexCount * 4 * sizeof(float));
+    mesh.indices = (unsigned short*)RL_MALLOC(triangleCount * 3 * sizeof(unsigned short));
+
+    // Half tile size in world units
+    float halfTile = worldScale * 0.5f;
+
+    // Fill mesh data
+    int vi = 0;  // Vertex index
+    int ii = 0;  // Index index
+
+    for (int row = 0; row < level.height; row++) {
+        for (int col = 0; col < level.width; col++) {
+            int tileIdx = row * level.width + col;
+            int tileId = level.tiles[tileIdx];
+
+            if (tileId <= 0) continue;  // Skip empty tiles
+
+            // Get tile center in world space
+            Vector3 center = tmxGridToWorld(col, row, level, worldScale);
+
+            // Get diffuse UV coordinates from tileset atlas
+            float u0, v0, u1, v1;
+            getTileUV(tileset, tileId, &u0, &v0, &u1, &v1);
+
+            // Get bump atlas UV coordinates based on tile properties
+            const TileRenderProperties& props = tileProps.getProperties(tileId);
+            float bu0, bv0, bu1, bv1;
+            getBumpAtlasUV(tileProps.bumpAtlas, bumpAtlasWidth, bumpAtlasHeight,
+                           props.bumpTileIndex, &bu0, &bv0, &bu1, &bv1);
+
+            // Vertex base index for this tile
+            int baseVert = vi;
+
+            // Generate 4 vertices (CCW from above when looking down +Y to -Y)
+            // BL, BR, TR, TL
+            float positions[4][3] = {
+                {center.x - halfTile, 0.0f, center.z - halfTile},  // BL (0)
+                {center.x + halfTile, 0.0f, center.z - halfTile},  // BR (1)
+                {center.x + halfTile, 0.0f, center.z + halfTile},  // TR (2)
+                {center.x - halfTile, 0.0f, center.z + halfTile},  // TL (3)
+            };
+
+            // Diffuse UV coordinates (matching vertex order)
+            float diffuseUVs[4][2] = {
+                {u0, v0},  // BL
+                {u1, v0},  // BR
+                {u1, v1},  // TR
+                {u0, v1},  // TL
+            };
+
+            // Bump atlas UV coordinates (matching vertex order)
+            float bumpUVs[4][2] = {
+                {bu0, bv0},  // BL
+                {bu1, bv0},  // BR
+                {bu1, bv1},  // TR
+                {bu0, bv1},  // TL
+            };
+
+            // All floor tiles face up
+            float normal[3] = {0.0f, 1.0f, 0.0f};
+            float tangent[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+
+            for (int v = 0; v < 4; v++) {
+                int idx = vi * 3;
+                mesh.vertices[idx + 0] = positions[v][0];
+                mesh.vertices[idx + 1] = positions[v][1];
+                mesh.vertices[idx + 2] = positions[v][2];
+
+                // Diffuse UVs (texcoords)
+                idx = vi * 2;
+                mesh.texcoords[idx + 0] = diffuseUVs[v][0];
+                mesh.texcoords[idx + 1] = diffuseUVs[v][1];
+
+                // Bump atlas UVs (texcoords2)
+                mesh.texcoords2[idx + 0] = bumpUVs[v][0];
+                mesh.texcoords2[idx + 1] = bumpUVs[v][1];
+
+                idx = vi * 3;
+                mesh.normals[idx + 0] = normal[0];
+                mesh.normals[idx + 1] = normal[1];
+                mesh.normals[idx + 2] = normal[2];
+
+                idx = vi * 4;
+                mesh.tangents[idx + 0] = tangent[0];
+                mesh.tangents[idx + 1] = tangent[1];
+                mesh.tangents[idx + 2] = tangent[2];
+                mesh.tangents[idx + 3] = tangent[3];
+
+                vi++;
+            }
+
+            // Triangle indices (CW when viewed from above for correct backface culling)
+            // Triangle 0: BL(0), TR(2), BR(1)
+            // Triangle 1: BL(0), TL(3), TR(2)
+            mesh.indices[ii++] = baseVert + 0;
+            mesh.indices[ii++] = baseVert + 2;
+            mesh.indices[ii++] = baseVert + 1;
+
+            mesh.indices[ii++] = baseVert + 0;
+            mesh.indices[ii++] = baseVert + 3;
+            mesh.indices[ii++] = baseVert + 2;
+        }
+    }
+
+    // Upload to GPU
+    UploadMesh(&mesh, false);
+
+    TraceLog(LOG_INFO, "Created custom tiles mesh: %d tiles, %d vertices, %d triangles (with texcoords2)",
+             tileCount, vertexCount, triangleCount);
+
+    return mesh;
+}
+
+//------------------------------------------------------------------------------
 // Model Creation
 //------------------------------------------------------------------------------
 

@@ -16,12 +16,12 @@
 //------------------------------------------------------------------------------
 
 // Create render data from a TMX level and tileset
-// mode: Rendering mode (TilesetAtlas, ExtendedBump, Objects3D)
+// mode: Rendering mode (Tilemap, CustomTiles, Objects3D)
 // worldScale: World units per tile (default 1.0 = 1 tile = 1 unit)
 LevelRenderData createLevelRenderData(
     const TmxLevel& level,
     const TmxTileset& tileset,
-    LevelRenderMode mode = LevelRenderMode::TilesetAtlas,
+    LevelRenderMode mode = LevelRenderMode::Tilemap,
     float worldScale = 1.0f
 );
 
@@ -32,13 +32,25 @@ void freeLevelRenderData(LevelRenderData* data);
 // Mesh Generation
 //------------------------------------------------------------------------------
 
-// Create a mesh for all tiles in the level
+// Create a mesh for all tiles in the level (Tilemap mode)
 // Uses tileset UV coordinates for texture mapping
-// atlasTexture: The tileset atlas texture (for material assignment)
-// bumpTexture: Normal map texture (flat_normal.png or custom)
+// Both diffuse and bump textures use the same UVs
 Mesh createLevelTileMesh(
     const TmxLevel& level,
     const TmxTileset& tileset,
+    float worldScale = 1.0f
+);
+
+// Create a mesh for all tiles with custom bump UVs (CustomTiles mode)
+// Diffuse UVs from tileset atlas, bump UVs from tiles.json bumpTileIndex
+// Uses mesh.texcoords2 for bump atlas coordinates
+// bumpAtlasWidth/Height: actual texture dimensions for UV calculation
+Mesh createLevelTileMeshCustom(
+    const TmxLevel& level,
+    const TmxTileset& tileset,
+    const TilePropertiesConfig& tileProps,
+    int bumpAtlasWidth,
+    int bumpAtlasHeight,
     float worldScale = 1.0f
 );
 

@@ -35,6 +35,7 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     renderer->specIntensityLoc = GetShaderLocation(renderer->shader, "specularIntensity");
     renderer->useNormalMapLoc = GetShaderLocation(renderer->shader, "useNormalMap");
     renderer->bumpIntensityLoc = GetShaderLocation(renderer->shader, "bumpIntensity");
+    renderer->effectiveEyeHeightLoc = GetShaderLocation(renderer->shader, "effectiveEyeHeight");
 
     // Set default values
     renderer->debugMode = 0;
@@ -46,6 +47,7 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     renderer->specularIntensity = 0.5f;
     renderer->useNormalMap = true;
     renderer->bumpIntensity = 1.0f;
+    renderer->effectiveEyeHeight = -1.0f;  // Default: use actual camera Y
     renderer->lightCount = 0;
 
     // Apply defaults to shader
@@ -56,6 +58,7 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     int useNormalMapInt = renderer->useNormalMap ? 1 : 0;
     SetShaderValue(renderer->shader, renderer->useNormalMapLoc, &useNormalMapInt, SHADER_UNIFORM_INT);
     SetShaderValue(renderer->shader, renderer->bumpIntensityLoc, &renderer->bumpIntensity, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(renderer->shader, renderer->effectiveEyeHeightLoc, &renderer->effectiveEyeHeight, SHADER_UNIFORM_FLOAT);
 
     // Load default flat normal map (derived from shader path)
     // shaderPath is like "shaders/" so we go up one level to find textures/
@@ -176,6 +179,16 @@ void sceneRendererSetBumpIntensity(SceneRenderer* renderer, float intensity) {
 
     renderer->bumpIntensity = intensity;
     SetShaderValue(renderer->shader, renderer->bumpIntensityLoc, &renderer->bumpIntensity, SHADER_UNIFORM_FLOAT);
+}
+
+//------------------------------------------------------------------------------
+// Set effective eye height for specular calculations
+//------------------------------------------------------------------------------
+void sceneRendererSetEffectiveEyeHeight(SceneRenderer* renderer, float height) {
+    if (!renderer || !renderer->initialized) return;
+
+    renderer->effectiveEyeHeight = height;
+    SetShaderValue(renderer->shader, renderer->effectiveEyeHeightLoc, &renderer->effectiveEyeHeight, SHADER_UNIFORM_FLOAT);
 }
 
 //------------------------------------------------------------------------------

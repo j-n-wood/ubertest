@@ -4,11 +4,16 @@
 //
 // Inputs from vertex shader:
 //   - fragPosition:  World-space position for lighting calculations
-//   - fragTexCoord:  UV coordinates for texture sampling
+//   - fragTexCoord:  UV coordinates for diffuse texture sampling
+//   - fragTexCoord2: UV coordinates for normal/bump texture (separate for custom tiles)
 //   - fragColor:     Per-vertex color (typically unused, passed through)
 //   - fragNormal:    World-space normal vector (normalized)
-//   - fragTangent:   World-space tangent vector (for normal mapping)
-//   - fragBitangent: World-space bitangent vector (for normal mapping)
+//   - fragTangent:   World-space tangent vector (required for normal mapping)
+//   - fragBitangent: World-space bitangent vector (computed from cross(N,T) in vertex shader)
+//
+// NOTE: All geometry is expected to have precomputed tangent data. For procedural
+// geometry (e.g., flat tiles), tangents are defined by convention based on known
+// geometry orientation (Normal=+Y, Tangent=+X for floor tiles).
 //
 // Material uniforms (provided by Raylib):
 //   - texture0:   Diffuse texture map (MATERIAL_MAP_DIFFUSE)
@@ -30,7 +35,10 @@
 //   - bumpIntensity: Strength of the normal perturbation (typical: 0.5-2.0)
 //
 // Lighting uniforms:
-//   - viewPos: Camera/eye position in world space for specular calculations
+//   - viewPos: Camera/eye position in world space (used for rendering)
+//   - effectiveEyeHeight: Height above ground plane for specular calculations
+//                         Allows top-down camera to simulate lighting as seen from
+//                         a viewpoint within the scene (e.g., a character's eye level)
 //   - ambient: Global ambient light color (RGBA, typical: 0.1-0.2 for RGB)
 //
 // Light uniforms (per-light, indexed):
@@ -42,6 +50,7 @@
 
 in vec3 fragPosition;
 in vec2 fragTexCoord;
+in vec2 fragTexCoord2;  // Bump atlas UVs (separate from diffuse UVs for custom tiles)
 in vec4 fragColor;
 in vec3 fragNormal;
 in vec3 fragTangent;
@@ -53,6 +62,7 @@ uniform vec4 colDiffuse;
 uniform vec4 colSpecular;  // RGB = specular color, A = normalized shininess (0-1)
 
 uniform vec3 viewPos;
+uniform float effectiveEyeHeight;  // Height above ground for specular calculations (-1 = use viewPos.y)
 uniform vec4 ambient;
 
 // Light uniforms
@@ -76,22 +86,6 @@ uniform int debugMode;
 
 out vec4 finalColor;
 
-// Compute tangent-space basis from screen-space derivatives (for geometry without tangents)
-mat3 computeTBN(vec3 N, vec3 pos, vec2 uv) {
-    vec3 dp1 = dFdx(pos);
-    vec3 dp2 = dFdy(pos);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
-
-    vec3 dp2perp = cross(dp2, N);
-    vec3 dp1perp = cross(N, dp1);
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-    return mat3(T * invmax, B * invmax, N);
-}
-
 vec3 getNormal() {
     vec3 N = normalize(fragNormal);
 
@@ -99,8 +93,9 @@ vec3 getNormal() {
         return N;
     }
 
-    // Sample normal map (stored as RGB in 0-1 range)
-    vec3 normalMapSample = texture(texture2, fragTexCoord).rgb;
+    // Sample normal map using fragTexCoord2 (bump atlas UVs)
+    // For custom tiles mode, this allows different UVs for diffuse and normal textures
+    vec3 normalMapSample = texture(texture2, fragTexCoord2).rgb;
 
     // Check if normal map is valid (not black/empty)
     if (normalMapSample == vec3(0.0)) {
@@ -114,19 +109,11 @@ vec3 getNormal() {
     tangentNormal.xy *= bumpIntensity;
     tangentNormal = normalize(tangentNormal);
 
-    // Build TBN matrix
-    mat3 TBN;
-
-    // Check if we have valid tangent data from vertex shader
-    if (length(fragTangent) > 0.5) {
-        // Use vertex tangent/bitangent (more accurate for authored models)
-        vec3 T = normalize(fragTangent);
-        vec3 B = normalize(fragBitangent);
-        TBN = mat3(T, B, N);
-    } else {
-        // Compute TBN from screen-space derivatives (fallback for procedural geometry)
-        TBN = computeTBN(N, fragPosition, fragTexCoord);
-    }
+    // Build TBN matrix from vertex tangent/bitangent
+    // All geometry is expected to have precomputed tangents
+    vec3 T = normalize(fragTangent);
+    vec3 B = normalize(fragBitangent);
+    mat3 TBN = mat3(T, B, N);
 
     // Transform tangent-space normal to world space
     return normalize(TBN * tangentNormal);
@@ -146,7 +133,15 @@ void main() {
 
     // Get the final normal (with bump mapping applied if enabled)
     vec3 normal = getNormal();
-    vec3 viewDir = normalize(viewPos - fragPosition);
+
+    // Calculate effective view position for specular calculations
+    // If effectiveEyeHeight >= 0, use it instead of actual camera Y
+    // This allows top-down cameras to show lighting as seen from within the scene
+    vec3 effectiveViewPos = viewPos;
+    if (effectiveEyeHeight >= 0.0) {
+        effectiveViewPos.y = effectiveEyeHeight;
+    }
+    vec3 viewDir = normalize(effectiveViewPos - fragPosition);
 
     // Ambient
     vec3 ambientLight = ambient.rgb;
@@ -199,18 +194,18 @@ void main() {
         finalColor = vec4(specularLight, 1.0);
         return;
     } else if (debugMode == 4) {
-        // Show viewDir as color
+        // Show viewDir as color (using effective eye position)
         finalColor = vec4(viewDir * 0.5 + 0.5, 1.0);
         return;
     } else if (debugMode == 5) {
-        // Show halfDir as color
+        // Show halfDir as color (using effective eye position)
         vec3 lightDir = normalize(light0_position - light0_target);
         vec3 halfDir = normalize(lightDir + viewDir);
         finalColor = vec4(halfDir * 0.5 + 0.5, 1.0);
         return;
     } else if (debugMode == 6) {
-        // Show raw normal map sample (tangent-space normal)
-        vec3 normalMapSample = texture(texture2, fragTexCoord).rgb;
+        // Show raw normal map sample (tangent-space normal, using bump atlas UVs)
+        vec3 normalMapSample = texture(texture2, fragTexCoord2).rgb;
         finalColor = vec4(normalMapSample, 1.0);
         return;
     }

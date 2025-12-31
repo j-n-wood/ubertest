@@ -25,16 +25,21 @@ void cameraControllerUpdate(LevelViewerState* state, float deltaTime) {
     while (state->cameraOrbitAngle < 0) state->cameraOrbitAngle += 360.0f;
     while (state->cameraOrbitAngle >= 360.0f) state->cameraOrbitAngle -= 360.0f;
 
-    // Zoom controls (Up/Down arrows or +/-)
+    // Zoom controls (Up/Down arrows or +/- without Ctrl)
+    // Note: Ctrl + +/- is used for effective eye height adjustment
     float zoomSpeed = 15.0f;  // units per second
     float minDist = 5.0f;
     float maxDist = 100.0f;
+    bool ctrlHeld = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
 
-    if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_EQUAL) || IsKeyDown(KEY_KP_ADD)) {
+    bool zoomIn = IsKeyDown(KEY_UP) || (!ctrlHeld && (IsKeyDown(KEY_EQUAL) || IsKeyDown(KEY_KP_ADD)));
+    bool zoomOut = IsKeyDown(KEY_DOWN) || (!ctrlHeld && (IsKeyDown(KEY_MINUS) || IsKeyDown(KEY_KP_SUBTRACT)));
+
+    if (zoomIn) {
         state->cameraOrbitDistance -= zoomSpeed * deltaTime;
         if (state->cameraOrbitDistance < minDist) state->cameraOrbitDistance = minDist;
     }
-    if (IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_MINUS) || IsKeyDown(KEY_KP_SUBTRACT)) {
+    if (zoomOut) {
         state->cameraOrbitDistance += zoomSpeed * deltaTime;
         if (state->cameraOrbitDistance > maxDist) state->cameraOrbitDistance = maxDist;
     }

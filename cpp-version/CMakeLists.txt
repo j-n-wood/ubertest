@@ -48,6 +48,8 @@ add_subdirectory(tools/model_tool)
 add_subdirectory(tools/unit_test)
 add_subdirectory(tools/droid_tool)
 add_subdirectory(tools/incremental_viewer)
+add_subdirectory(tools/level_tool)
+add_subdirectory(tools/level_viewer)
 
 #------------------------------------------------------------------------------
 # Tests

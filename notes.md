@@ -42,3 +42,8 @@ ctest --test-dir build --output-on-failure
 Or run the executable directly:
 
 ./build/tests/run_tests
+
+## level viewer
+cmake --build build --target level_viewer 
+
+ ./build/tools/level_viewer/level_viewer --input ./output/ships/ship1/levels 

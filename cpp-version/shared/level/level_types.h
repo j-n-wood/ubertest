@@ -82,9 +82,46 @@ struct TmxLevel {
 //------------------------------------------------------------------------------
 
 enum class LevelRenderMode {
-    TilesetAtlas,    // Mode 1: Direct tileset atlas rendering
-    ExtendedBump,    // Mode 2: Per-tile bump texture coordinates (future)
+    Tilemap,         // Mode 1: Direct tileset atlas rendering (flat normal map)
+    CustomTiles,     // Mode 2: Per-tile bump maps and material properties
     Objects3D        // Mode 3: 3D object replacement for some tiles (future)
+};
+
+// Legacy alias for backwards compatibility
+constexpr LevelRenderMode TilesetAtlas = LevelRenderMode::Tilemap;
+
+//------------------------------------------------------------------------------
+// Custom Tile Rendering Properties (from tiles.json)
+//------------------------------------------------------------------------------
+
+struct TileRenderProperties {
+    int bumpTileIndex = 0;              // Index into bump atlas (0 = flat normal)
+    float specularIntensity = 0.5f;     // Specular highlight strength (0.0-1.0)
+    float albedoMultiplier[3] = {1.0f, 1.0f, 1.0f};  // RGB multiplier for diffuse
+};
+
+struct BumpAtlasConfig {
+    std::string texture;                // Filename (relative to assets/textures/)
+    int tileWidth = 128;
+    int tileHeight = 128;
+    int columns = 8;
+};
+
+struct TilePropertiesConfig {
+    int version = 1;
+    BumpAtlasConfig bumpAtlas;
+    std::map<int, TileRenderProperties> tiles;  // Keyed by tile ID
+    TileRenderProperties defaults;
+    bool valid = false;                 // True if successfully loaded
+
+    // Get properties for a tile ID, falling back to defaults
+    const TileRenderProperties& getProperties(int tileId) const {
+        auto it = tiles.find(tileId);
+        if (it != tiles.end()) {
+            return it->second;
+        }
+        return defaults;
+    }
 };
 
 //------------------------------------------------------------------------------

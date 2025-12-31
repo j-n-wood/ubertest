@@ -21,6 +21,7 @@ struct SceneRenderer {
     int specIntensityLoc;
     int useNormalMapLoc;
     int bumpIntensityLoc;
+    int effectiveEyeHeightLoc;
 
     // Current settings
     int debugMode;
@@ -29,6 +30,7 @@ struct SceneRenderer {
     float specularIntensity;
     bool useNormalMap;
     float bumpIntensity;
+    float effectiveEyeHeight;  // Height above ground for specular calc (-1 = use camera Y)
 
     // Default normal map for materials without bump textures
     Texture2D defaultNormalMap;
@@ -67,6 +69,11 @@ void sceneRendererSetNormalMapEnabled(SceneRenderer* renderer, bool enabled);
 
 // Set bump intensity (default 1.0, higher = stronger bump effect)
 void sceneRendererSetBumpIntensity(SceneRenderer* renderer, float intensity);
+
+// Set effective eye height for specular calculations
+// height >= 0: Use this height above ground plane instead of camera Y
+// height < 0: Use actual camera Y position (default behavior)
+void sceneRendererSetEffectiveEyeHeight(SceneRenderer* renderer, float height);
 
 // Add a directional light (shining from position toward target)
 // Returns light index or -1 if max lights reached
