@@ -2,6 +2,8 @@
 #include "tileset_loader.h"
 #include "rlgl.h"
 #include <cmath>
+#include <algorithm>
+#include <set>
 
 //------------------------------------------------------------------------------
 // Coordinate Transforms
@@ -493,4 +495,229 @@ void freeLevelRenderData(LevelRenderData* data) {
     data->tiles.clear();
     data->waypointPositions.clear();
     data->waypointLinks.clear();
+}
+
+//------------------------------------------------------------------------------
+// Collision Data Generation
+//------------------------------------------------------------------------------
+
+namespace {
+
+// Helper struct for tracking collision rectangles during merging
+struct WorkRect {
+    float minX, minZ, maxX, maxZ;
+    bool merged = false;
+
+    float width() const { return maxX - minX; }
+    float height() const { return maxZ - minZ; }
+    float centerX() const { return (minX + maxX) * 0.5f; }
+    float centerZ() const { return (minZ + maxZ) * 0.5f; }
+
+    bool canMergeX(const WorkRect& other, float epsilon = 0.001f) const {
+        // Can merge horizontally if same height and adjacent
+        return std::abs(minZ - other.minZ) < epsilon &&
+               std::abs(maxZ - other.maxZ) < epsilon &&
+               (std::abs(maxX - other.minX) < epsilon || std::abs(other.maxX - minX) < epsilon);
+    }
+
+    bool canMergeZ(const WorkRect& other, float epsilon = 0.001f) const {
+        // Can merge vertically if same width and adjacent
+        return std::abs(minX - other.minX) < epsilon &&
+               std::abs(maxX - other.maxX) < epsilon &&
+               (std::abs(maxZ - other.minZ) < epsilon || std::abs(other.maxZ - minZ) < epsilon);
+    }
+
+    void mergeWith(const WorkRect& other) {
+        minX = std::min(minX, other.minX);
+        minZ = std::min(minZ, other.minZ);
+        maxX = std::max(maxX, other.maxX);
+        maxZ = std::max(maxZ, other.maxZ);
+    }
+};
+
+// Merge adjacent rectangles into larger shapes
+std::vector<WorkRect> mergeRectangles(std::vector<WorkRect>& rects) {
+    if (rects.empty()) return {};
+
+    bool merged = true;
+    while (merged) {
+        merged = false;
+
+        // Try to merge along X axis first (horizontal merging)
+        for (size_t i = 0; i < rects.size() && !merged; i++) {
+            if (rects[i].merged) continue;
+
+            for (size_t j = i + 1; j < rects.size() && !merged; j++) {
+                if (rects[j].merged) continue;
+
+                if (rects[i].canMergeX(rects[j])) {
+                    rects[i].mergeWith(rects[j]);
+                    rects[j].merged = true;
+                    merged = true;
+                }
+            }
+        }
+
+        // Then try Z axis (vertical merging)
+        for (size_t i = 0; i < rects.size() && !merged; i++) {
+            if (rects[i].merged) continue;
+
+            for (size_t j = i + 1; j < rects.size() && !merged; j++) {
+                if (rects[j].merged) continue;
+
+                if (rects[i].canMergeZ(rects[j])) {
+                    rects[i].mergeWith(rects[j]);
+                    rects[j].merged = true;
+                    merged = true;
+                }
+            }
+        }
+    }
+
+    // Collect non-merged rectangles
+    std::vector<WorkRect> result;
+    for (const auto& r : rects) {
+        if (!r.merged) {
+            result.push_back(r);
+        }
+    }
+
+    return result;
+}
+
+} // namespace
+
+LevelCollisionData generateLevelCollision(
+    const TmxLevel& level,
+    const TmxTileset& tileset,
+    float worldScale
+) {
+    LevelCollisionData data;
+
+    // Collect all collision rectangles from tiles
+    std::vector<WorkRect> workRects;
+
+    float tileSize = static_cast<float>(tileset.tileWidth);  // Assume square tiles
+    float halfLevelWidth = level.width * worldScale * 0.5f;
+    float halfLevelHeight = level.height * worldScale * 0.5f;
+
+    int tilesWithCollision = 0;
+
+    for (int row = 0; row < level.height; row++) {
+        for (int col = 0; col < level.width; col++) {
+            int tileIdx = row * level.width + col;
+            int tileId = level.tiles[tileIdx];
+
+            if (tileId <= 0) continue;
+
+            // Get tile properties (local ID is tileId - firstGid, but properties are stored by local ID)
+            int localId = tileId - tileset.firstGid;
+            auto it = tileset.tileProperties.find(localId);
+            if (it == tileset.tileProperties.end() || !it->second.hasCollision()) {
+                continue;
+            }
+
+            tilesWithCollision++;
+
+            // Get tile origin in world space (top-left corner in TMX coords -> world coords)
+            // TMX: origin top-left, X right, Y down
+            // World: X right, Z increases with TMX Y
+            float tileOriginX = col * worldScale - halfLevelWidth;
+            float tileOriginZ = row * worldScale - halfLevelHeight;
+
+            // Process each collision rect in this tile
+            for (const auto& rect : it->second.collisionRects) {
+                // Convert from TMX pixel coords (within tile) to world coords
+                // rect.x, rect.y are offsets from tile top-left in pixels
+                float rectMinX = tileOriginX + (rect.x / tileSize) * worldScale;
+                float rectMinZ = tileOriginZ + (rect.y / tileSize) * worldScale;
+                float rectMaxX = rectMinX + (rect.width / tileSize) * worldScale;
+                float rectMaxZ = rectMinZ + (rect.height / tileSize) * worldScale;
+
+                WorkRect wr;
+                wr.minX = rectMinX;
+                wr.minZ = rectMinZ;
+                wr.maxX = rectMaxX;
+                wr.maxZ = rectMaxZ;
+                workRects.push_back(wr);
+            }
+        }
+    }
+
+    TraceLog(LOG_INFO, "Collision: Found %d tiles with collision shapes, %d raw rectangles",
+             tilesWithCollision, (int)workRects.size());
+
+    // Merge adjacent rectangles
+    std::vector<WorkRect> mergedRects = mergeRectangles(workRects);
+
+    TraceLog(LOG_INFO, "Collision: Merged to %d rectangles", (int)mergedRects.size());
+
+    // Convert to output format
+    for (const auto& wr : mergedRects) {
+        CollisionRect cr;
+        cr.x = wr.centerX();
+        cr.z = wr.centerZ();
+        cr.halfWidth = wr.width() * 0.5f;
+        cr.halfHeight = wr.height() * 0.5f;
+        data.rects.push_back(cr);
+    }
+
+    // Calculate bounds
+    if (!mergedRects.empty()) {
+        data.boundsMin = {mergedRects[0].minX, 0.0f, mergedRects[0].minZ};
+        data.boundsMax = {mergedRects[0].maxX, 0.0f, mergedRects[0].maxZ};
+
+        for (const auto& wr : mergedRects) {
+            data.boundsMin.x = std::min(data.boundsMin.x, wr.minX);
+            data.boundsMin.z = std::min(data.boundsMin.z, wr.minZ);
+            data.boundsMax.x = std::max(data.boundsMax.x, wr.maxX);
+            data.boundsMax.z = std::max(data.boundsMax.z, wr.maxZ);
+        }
+    }
+
+    // Generate debug vertices (4 corners per rectangle, as line loop)
+    for (const auto& wr : mergedRects) {
+        // 4 lines per rectangle = 8 vertices (pairs for DrawLine3D)
+        data.debugVertices.push_back({wr.minX, 0.0f, wr.minZ});
+        data.debugVertices.push_back({wr.maxX, 0.0f, wr.minZ});
+
+        data.debugVertices.push_back({wr.maxX, 0.0f, wr.minZ});
+        data.debugVertices.push_back({wr.maxX, 0.0f, wr.maxZ});
+
+        data.debugVertices.push_back({wr.maxX, 0.0f, wr.maxZ});
+        data.debugVertices.push_back({wr.minX, 0.0f, wr.maxZ});
+
+        data.debugVertices.push_back({wr.minX, 0.0f, wr.maxZ});
+        data.debugVertices.push_back({wr.minX, 0.0f, wr.minZ});
+    }
+    data.debugVertexCount = static_cast<int>(data.debugVertices.size());
+
+    return data;
+}
+
+void freeLevelCollisionData(LevelCollisionData* data) {
+    if (!data) return;
+    data->rects.clear();
+    data->debugVertices.clear();
+    data->debugVertexCount = 0;
+}
+
+//------------------------------------------------------------------------------
+// Debug Visualization
+//------------------------------------------------------------------------------
+
+void drawCollisionDebug(const LevelCollisionData& collision, Color color, float yOffset) {
+    if (collision.debugVertices.empty()) return;
+
+    // Draw lines in pairs
+    for (size_t i = 0; i + 1 < collision.debugVertices.size(); i += 2) {
+        Vector3 start = collision.debugVertices[i];
+        Vector3 end = collision.debugVertices[i + 1];
+
+        // Apply Y offset
+        start.y += yOffset;
+        end.y += yOffset;
+
+        DrawLine3D(start, end, color);
+    }
 }

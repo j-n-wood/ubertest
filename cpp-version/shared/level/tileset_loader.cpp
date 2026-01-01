@@ -48,7 +48,7 @@ TsxLoadResult loadTsxTileset(const std::string& filePath) {
         result.tileset.imageHeight = imageElem->IntAttribute("height", 0);
     }
 
-    // Parse per-tile properties (for future use)
+    // Parse per-tile properties and collision objects
     for (XMLElement* tileElem = tilesetElem->FirstChildElement("tile");
          tileElem != nullptr;
          tileElem = tileElem->NextSiblingElement("tile")) {
@@ -58,6 +58,7 @@ TsxLoadResult loadTsxTileset(const std::string& filePath) {
 
         TmxTileProperties props;
 
+        // Parse custom properties
         XMLElement* propsElem = tileElem->FirstChildElement("properties");
         if (propsElem) {
             for (XMLElement* prop = propsElem->FirstChildElement("property");
@@ -86,6 +87,26 @@ TsxLoadResult loadTsxTileset(const std::string& filePath) {
                     if (val) {
                         props.modelPath = val;
                     }
+                }
+            }
+        }
+
+        // Parse collision objects from objectgroup
+        XMLElement* objGroup = tileElem->FirstChildElement("objectgroup");
+        if (objGroup) {
+            for (XMLElement* objElem = objGroup->FirstChildElement("object");
+                 objElem != nullptr;
+                 objElem = objElem->NextSiblingElement("object")) {
+
+                TileCollisionRect rect;
+                rect.x = objElem->FloatAttribute("x", 0.0f);
+                rect.y = objElem->FloatAttribute("y", 0.0f);
+                rect.width = objElem->FloatAttribute("width", 0.0f);
+                rect.height = objElem->FloatAttribute("height", 0.0f);
+
+                // Only add valid rectangles
+                if (rect.width > 0.0f && rect.height > 0.0f) {
+                    props.collisionRects.push_back(rect);
                 }
             }
         }

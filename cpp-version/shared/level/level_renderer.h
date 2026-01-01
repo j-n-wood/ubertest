@@ -74,12 +74,28 @@ Vector3 tmxGridToWorld(int col, int row, const TmxLevel& level, float worldScale
 Vector3 tmxPixelToWorld(float x, float y, const TmxLevel& level, float worldScale);
 
 //------------------------------------------------------------------------------
-// Physics Data (STUB)
+// Collision Data Generation
 //------------------------------------------------------------------------------
 
-// STUB: Generate collision data from tile properties
-// Returns empty collision data for now
-// CollisionData generateLevelCollision(const TmxLevel& level, const TmxTileset& tileset);
+// Generate collision data from tile collision shapes
+// Combines adjacent rectangles into larger shapes where possible
+// worldScale: World units per tile (default 1.0 = 1 tile = 1 unit)
+LevelCollisionData generateLevelCollision(
+    const TmxLevel& level,
+    const TmxTileset& tileset,
+    float worldScale = 1.0f
+);
+
+// Free collision data resources
+void freeLevelCollisionData(LevelCollisionData* data);
+
+//------------------------------------------------------------------------------
+// Debug Visualization
+//------------------------------------------------------------------------------
+
+// Draw collision shape outlines (call within BeginMode3D/EndMode3D)
+// yOffset: Height offset for visibility above floor plane
+void drawCollisionDebug(const LevelCollisionData& collision, Color color, float yOffset = 0.01f);
 
 //------------------------------------------------------------------------------
 // 3D Objects (STUB)

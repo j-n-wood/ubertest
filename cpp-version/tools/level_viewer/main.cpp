@@ -46,6 +46,7 @@ static void printUsage(const char* progName) {
     printf("  P          Toggle waypoints\n");
     printf("  L          Toggle waypoint links\n");
     printf("  B          Toggle bounds\n");
+    printf("  X          Toggle collision debug outlines\n");
     printf("  K          Toggle backface culling\n");
     printf("  O          Toggle origin reference sphere\n");
     printf("  H          Toggle HUD\n");
@@ -151,6 +152,9 @@ static void handleInput(LevelViewerState* state) {
     }
     if (IsKeyPressed(KEY_B)) {
         state->showBounds = !state->showBounds;
+    }
+    if (IsKeyPressed(KEY_X)) {
+        state->showCollision = !state->showCollision;
     }
     if (IsKeyPressed(KEY_K)) {
         state->backfaceCulling = !state->backfaceCulling;
@@ -291,6 +295,7 @@ int main(int argc, char* argv[]) {
 
         viewerStateDrawWaypoints(&state);
         viewerStateDrawBounds(&state);
+        viewerStateDrawCollision(&state);
         viewerStateDrawRefSphere(&state);
 
         EndMode3D();

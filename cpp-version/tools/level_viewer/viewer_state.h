@@ -20,6 +20,7 @@ struct LevelViewerState {
     // Loaded levels
     std::vector<TmxLevel> levels;
     std::vector<LevelRenderData> renderData;
+    std::vector<LevelCollisionData> collisionData;
     int currentLevel = 0;
 
     // Tileset (shared across levels)
@@ -61,6 +62,7 @@ struct LevelViewerState {
     bool showWaypointLinks = true;
     bool showGrid = false;
     bool showBounds = false;
+    bool showCollision = false;
     bool backfaceCulling = true;
     bool showRefSphere = false;
 
@@ -115,6 +117,9 @@ void viewerStateDrawRefSphere(LevelViewerState* state);
 
 // Draw bounds visualization
 void viewerStateDrawBounds(LevelViewerState* state);
+
+// Draw collision shape outlines
+void viewerStateDrawCollision(LevelViewerState* state);
 
 // Draw HUD overlay
 void viewerStateDrawHUD(LevelViewerState* state);

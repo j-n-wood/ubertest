@@ -25,20 +25,36 @@ struct TmxWaypoint {
 };
 
 //------------------------------------------------------------------------------
+// Tile Collision Shape (from TSX objectgroup)
+//------------------------------------------------------------------------------
+
+struct TileCollisionRect {
+    float x = 0.0f;           // Offset from tile origin (top-left in TMX coords)
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+};
+
+//------------------------------------------------------------------------------
 // Tile Properties (per-tile metadata from TSX)
 //------------------------------------------------------------------------------
 
 struct TmxTileProperties {
-    // Physics properties (STUB for future)
+    // Physics properties
     bool solid = true;        // Blocks movement
     bool floor = true;        // Walkable surface
-    int collisionShape = 0;   // 0=full, 1=half, etc.
+    int collisionShape = 0;   // 0=full, 1=half, etc. (legacy)
+
+    // Collision rectangles from TSX objectgroup
+    std::vector<TileCollisionRect> collisionRects;
 
     // Bump mapping override (future)
     int bumpTileIndex = -1;   // -1 = use default flat normal
 
     // 3D object replacement (future)
     std::string modelPath;    // Empty = render as tile
+
+    bool hasCollision() const { return !collisionRects.empty(); }
 };
 
 //------------------------------------------------------------------------------
@@ -169,6 +185,29 @@ struct TsxLoadResult {
     TmxTileset tileset;
     bool success = false;
     std::string errorMsg;
+};
+
+//------------------------------------------------------------------------------
+// Level Collision Data (generated from tiles with collision shapes)
+//------------------------------------------------------------------------------
+
+struct CollisionRect {
+    float x = 0.0f;           // World X (center)
+    float z = 0.0f;           // World Z (center)
+    float halfWidth = 0.0f;   // Half extent in X
+    float halfHeight = 0.0f;  // Half extent in Z
+};
+
+struct LevelCollisionData {
+    std::vector<CollisionRect> rects;  // Optimized collision rectangles
+
+    // Debug visualization data
+    std::vector<Vector3> debugVertices;  // Line vertices for outline rendering
+    int debugVertexCount = 0;
+
+    // Bounds
+    Vector3 boundsMin = {0, 0, 0};
+    Vector3 boundsMax = {0, 0, 0};
 };
 
 #endif // LEVEL_TYPES_H

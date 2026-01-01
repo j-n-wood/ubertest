@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "bumpAtlas": {
+    "texture": "textures/bump_atlas.png",
+    "tileWidth": 128,
+    "tileHeight": 128,
+    "columns": 1
+  },
+  "defaults": {
+    "bumpTileIndex": 0,
+    "specularIntensity": 0.5,
+    "albedoMultiplier": [1.0, 1.0, 1.0]
+  },
+  "tiles": {
+    "1": {
+      "bumpTileIndex": 12,
+      "specularIntensity": 0.6,
+      "comment": "Floor tile - charger ring"
+    },
+    "2": {
+      "bumpTileIndex": 8,
+      "specularIntensity": 0.4,
+      "comment": "Wall corner bottom-left - norm1"
+    },
+    "3": {
+      "bumpTileIndex": 8,
+      "specularIntensity": 0.4,
+      "comment": "Wall bottom - norm1"
+    },
+    "4": {
+      "bumpTileIndex": 8,
+      "specularIntensity": 0.4,
+      "comment": "Wall corner bottom-right - norm1"
+    },
+    "5": {
+      "bumpTileIndex": 9,
+      "specularIntensity": 0.4,
+      "comment": "Wall T-junction - norm2"
+    },
+    "6": {
+      "bumpTileIndex": 9,
+      "specularIntensity": 0.4,
+      "comment": "Wall cross - norm2"
+    },
+    "7": {
+      "bumpTileIndex": 10,
+      "specularIntensity": 0.4,
+      "comment": "Wall corner top-right - norm3"
+    },
+    "8": {
+      "bumpTileIndex": 10,
+      "specularIntensity": 0.4,
+      "comment": "Wall corner top-left - norm3"
+    },
+    "9": {
+      "bumpTileIndex": 10,
+      "specularIntensity": 0.4,
+      "comment": "Wall T-junction top - norm3"
+    },
+    "10": {
+      "bumpTileIndex": 10,
+      "specularIntensity": 0.4,
+      "comment": "Wall corner - norm3"
+    },
+    "11": {
+      "bumpTileIndex": 11,
+      "specularIntensity": 0.4,
+      "comment": "Wall top - norm4"
+    },
+    "12": {
+      "bumpTileIndex": 11,
+      "specularIntensity": 0.4,
+      "comment": "Wall right - norm4"
+    },
+    "14": {
+      "bumpTileIndex": 12,
+      "specularIntensity": 0.8,
+      "comment": "Charger - norm_charger_128"
+    },
+    "16": {
+      "bumpTileIndex": 14,
+      "specularIntensity": 0.7,
+      "comment": "Lift - norm_lift1_128"
+    },
+    "17": {
+      "bumpTileIndex": 14,
+      "specularIntensity": 0.7,
+      "comment": "Lift variant - norm_lift1_128"
+    },
+    "19": {
+      "bumpTileIndex": 13,
+      "specularIntensity": 0.5,
+      "comment": "Door frame - norm_doorframe1_128"
+    },
+    "25": {
+      "bumpTileIndex": 15,
+      "specularIntensity": 0.6,
+      "comment": "Rounds/pipes - norm_rounds1_128"
+    },
+    "27": {
+      "bumpTileIndex": 16,
+      "specularIntensity": 0.5,
+      "comment": "Studs - norm_stud1"
+    },
+    "28": {
+      "bumpTileIndex": 18,
+      "specularIntensity": 0.55,
+      "comment": "Floor variant - norm_tile1_128"
+    },
+    "33": {
+      "bumpTileIndex": 19,
+      "specularIntensity": 0.5,
+      "comment": "Grate/vent - norm_tile2_128"
+    },
+    "34": {
+      "bumpTileIndex": 0,
+      "specularIntensity": 0.0,
+      "comment": "Empty/void - flat (no bump)"
+    },
+    "35": {
+      "bumpTileIndex": 20,
+      "specularIntensity": 0.6,
+      "comment": "Console/terminal - norm_tile3_128"
+    },
+    "39": {
+      "bumpTileIndex": 23,
+      "specularIntensity": 0.45,
+      "comment": "Tread/track - norm_tread2"
+    }
+  }
+}

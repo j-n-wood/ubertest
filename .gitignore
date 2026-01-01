@@ -2,3 +2,6 @@ build
 **/out*
 uber
 .DS_Store
+cpp-version/droid_output/*
+cpp-version/droid_output_test/*
+cpp-version/tools/scripts/venv/*

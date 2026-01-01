@@ -56,6 +56,13 @@ void viewerStateDestroy(LevelViewerState* state) {
         freeLevelRenderData(&data);
     }
     state->renderData.clear();
+
+    // Free collision data for all levels
+    for (auto& data : state->collisionData) {
+        freeLevelCollisionData(&data);
+    }
+    state->collisionData.clear();
+
     state->levels.clear();
 
     // Unload textures
@@ -159,8 +166,9 @@ bool viewerStateLoadLevels(LevelViewerState* state) {
         TraceLog(LOG_INFO, "No tiles.json found, CustomTiles mode unavailable");
     }
 
-    // Initialize render data vector
+    // Initialize render data and collision data vectors
     state->renderData.resize(state->levels.size());
+    state->collisionData.resize(state->levels.size());
 
     // Build render data for first level
     state->currentLevel = 0;
@@ -180,10 +188,15 @@ bool viewerStateBuildRenderData(LevelViewerState* state) {
     }
 
     LevelRenderData& data = state->renderData[state->currentLevel];
+    LevelCollisionData& collision = state->collisionData[state->currentLevel];
     const TmxLevel& level = state->levels[state->currentLevel];
 
     // Free existing render data
     freeLevelRenderData(&data);
+
+    // Free existing collision data and regenerate
+    freeLevelCollisionData(&collision);
+    collision = generateLevelCollision(level, state->tileset, state->worldScale);
 
     // Create new render data
     data = createLevelRenderData(level, state->tileset, state->renderMode, state->worldScale);
@@ -337,6 +350,19 @@ void viewerStateDrawBounds(LevelViewerState* state) {
     DrawLine3D((Vector3){min.x, 0, max.z}, (Vector3){min.x, 0, min.z}, MAGENTA);
 }
 
+void viewerStateDrawCollision(LevelViewerState* state) {
+    if (!state->showCollision) {
+        return;
+    }
+
+    if (state->currentLevel < 0 || state->currentLevel >= (int)state->collisionData.size()) {
+        return;
+    }
+
+    const LevelCollisionData& collision = state->collisionData[state->currentLevel];
+    drawCollisionDebug(collision, RED, 0.02f);
+}
+
 void viewerStateDrawHUD(LevelViewerState* state) {
     if (!state->showHUD) {
         return;
@@ -362,7 +388,16 @@ void viewerStateDrawHUD(LevelViewerState* state) {
         y += lineHeight;
 
         DrawText(TextFormat("Waypoints: %zu", data.waypointPositions.size()), 10, y, 14, LIGHTGRAY);
-        y += lineHeight + 6;
+        y += lineHeight;
+
+        // Collision info
+        if (state->currentLevel < (int)state->collisionData.size()) {
+            const LevelCollisionData& collision = state->collisionData[state->currentLevel];
+            Color collColor = state->showCollision ? RED : LIGHTGRAY;
+            DrawText(TextFormat("Collision: %zu rects [X]", collision.rects.size()), 10, y, 14, collColor);
+            y += lineHeight;
+        }
+        y += 6;
     }
 
     // Debug mode
@@ -404,11 +439,11 @@ void viewerStateDrawHUD(LevelViewerState* state) {
     y += lineHeight + 10;
 
     // Controls help
-    DrawText("[H]UD [G]rid [P]oints [L]inks [K]ull [O]rigin", 10, y, 12, DARKGRAY);
+    DrawText("[H]UD [G]rid [P]oints [L]inks [X] Collision", 10, y, 12, DARKGRAY);
     y += 14;
-    DrawText("[0-6] Debug  [Space] Rotate  [V] View mode", 10, y, 12, DARKGRAY);
+    DrawText("[0-6] Debug  [Space] Rotate  [V] View  [K]ull", 10, y, 12, DARKGRAY);
     y += 14;
-    DrawText("[/] Level  [WASD] Pan  [Q/E] Orbit", 10, y, 12, DARKGRAY);
+    DrawText("[/] Level  [WASD] Pan  [Q/E] Orbit  [O]rigin", 10, y, 12, DARKGRAY);
 }
 
 //------------------------------------------------------------------------------
