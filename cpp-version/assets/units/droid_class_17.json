@@ -15,14 +15,21 @@
   },
   "rootSection": {
     "name": "section_0",
-    "localOffset": [0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "height": 0.000000,
-    "scale": [1, 1, 1],
+    "localOffset": [
+      0.0,
+      0.0
+    ],
+    "localRotation": 0.0,
+    "height": 0.0,
+    "scale": [
+      1,
+      1,
+      1
+    ],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.011430
+        "radius": 0.01143
       },
       "density": 1.0,
       "friction": 0.3,
@@ -34,45 +41,80 @@
       {
         "name": "section_1",
         "model": "models/torso.gltf",
-        "localOffset": [0.000000, 0.000000],
-        "localRotation": 0.000000,
-        "height": 1.117600,
-        "scale": [1, 1, 1],
+        "localOffset": [
+          0.0,
+          0.0
+        ],
+        "localRotation": 0.0,
+        "height": 1.1176,
+        "scale": [
+          1,
+          1,
+          1
+        ],
         "children": [
           {
             "name": "section_2",
             "model": "models/rightarm.gltf",
-            "localOffset": [-0.050800, 0.317500],
-            "localRotation": 0.000000,
-            "height": 0.127000,
-            "scale": [1, 1, 1],
+            "localOffset": [
+              0.3175,
+              -0.0508
+            ],
+            "localRotation": 0.0,
+            "height": 0.127,
+            "scale": [
+              1,
+              1,
+              1
+            ],
             "children": []
           },
           {
             "name": "section_3",
             "model": "models/leftarm.gltf",
-            "localOffset": [-0.050800, -0.317500],
-            "localRotation": 0.000000,
-            "height": 0.127000,
-            "scale": [1, 1, 1],
+            "localOffset": [
+              -0.3175,
+              -0.0508
+            ],
+            "localRotation": 0.0,
+            "height": 0.127,
+            "scale": [
+              1,
+              1,
+              1
+            ],
             "children": []
           },
           {
             "name": "section_4",
             "model": "models/displacer.gltf",
-            "localOffset": [0.000000, -0.203200],
-            "localRotation": 0.000000,
-            "height": 0.127000,
-            "scale": [1, 1, 1],
+            "localOffset": [
+              -0.2032,
+              0.0
+            ],
+            "localRotation": 0.0,
+            "height": 0.127,
+            "scale": [
+              1,
+              1,
+              1
+            ],
             "children": []
           },
           {
             "name": "section_5",
             "model": "models/ellipsehead.gltf",
-            "localOffset": [0.000000, 0.000000],
-            "localRotation": 0.000000,
-            "height": 0.558800,
-            "scale": [1, 1, 1],
+            "localOffset": [
+              0.0,
+              0.0
+            ],
+            "localRotation": 0.0,
+            "height": 0.5588,
+            "scale": [
+              1,
+              1,
+              1
+            ],
             "children": []
           }
         ]

@@ -176,11 +176,12 @@ SectionInstance* UnitManager::createSectionInstance(
     section->attached = true;
 
     // Calculate world position
+    // Offset rotation uses clockwise direction to match rendering rotation convention
     float cosR = std::cos(parentWorldRot);
     float sinR = std::sin(parentWorldRot);
     section->worldPosition = {
-        parentWorldPos.x + def.localOffset.x * cosR - def.localOffset.y * sinR,
-        parentWorldPos.y + def.localOffset.x * sinR + def.localOffset.y * cosR
+        parentWorldPos.x + def.localOffset.x * cosR + def.localOffset.y * sinR,
+        parentWorldPos.y - def.localOffset.x * sinR + def.localOffset.y * cosR
     };
     section->worldRotation = parentWorldRot + def.localRotation;
 
@@ -401,13 +402,15 @@ void UnitManager::updateSectionTransforms(
 
     if (section->attached && section->parent) {
         // Compute from parent transform
+        // Offset rotation uses clockwise direction to match rendering rotation convention
         const auto& offset = section->definition->localOffset;
         float cosR = std::cos(parentWorldRot);
         float sinR = std::sin(parentWorldRot);
 
+        // Clockwise rotation: negate sinR terms
         section->worldPosition = {
-            parentWorldPos.x + offset.x * cosR - offset.y * sinR,
-            parentWorldPos.y + offset.x * sinR + offset.y * cosR
+            parentWorldPos.x + offset.x * cosR + offset.y * sinR,
+            parentWorldPos.y - offset.x * sinR + offset.y * cosR
         };
         section->worldRotation = parentWorldRot + section->definition->localRotation;
 

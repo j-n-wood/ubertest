@@ -7,7 +7,11 @@
   "rootSection": {
     "name": "hull",
     "model": "models/Suzanne.glb",
-    "scale": [1, 1, 1],
+    "scale": [
+      1,
+      1,
+      1
+    ],
     "physics": {
       "shape": {
         "type": "box",
@@ -27,9 +31,16 @@
       {
         "name": "turret",
         "model": "models/Duck.glb",
-        "localOffset": [0, -1.0],
+        "localOffset": [
+          -1.0,
+          0
+        ],
         "height": 1.0,
-        "scale": [0.5, 0.5, 0.5],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ],
         "physics": {
           "shape": {
             "type": "circle",
@@ -45,9 +56,16 @@
           {
             "name": "barrel",
             "model": "models/ellipsoid.gltf",
-            "localOffset": [0, -1.2],
+            "localOffset": [
+              -1.2,
+              0
+            ],
             "height": 1.2,
-            "scale": [0.3, 0.3, 1.0],
+            "scale": [
+              0.3,
+              0.3,
+              1.0
+            ],
             "physics": {
               "shape": {
                 "type": "box",
@@ -65,8 +83,15 @@
       {
         "name": "left_wing",
         "model": "models/ellipsoid.gltf",
-        "localOffset": [-1.5, 0],
-        "scale": [0.5, 0.3, 1.0],
+        "localOffset": [
+          0,
+          -1.5
+        ],
+        "scale": [
+          0.5,
+          0.3,
+          1.0
+        ],
         "physics": {
           "shape": {
             "type": "box",
@@ -82,8 +107,15 @@
       {
         "name": "right_wing",
         "model": "models/ellipsoid.gltf",
-        "localOffset": [1.5, 0],
-        "scale": [0.5, 0.3, 1.0],
+        "localOffset": [
+          0,
+          1.5
+        ],
+        "scale": [
+          0.5,
+          0.3,
+          1.0
+        ],
         "physics": {
           "shape": {
             "type": "box",

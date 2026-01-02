@@ -130,11 +130,13 @@ void writeSectionJson(
         fprintf(f, "\"model\": \"%s\",\n", modelPath.c_str());
     }
 
-    // localOffset: [x, y] in physics plane (source x, y -> target x, z)
+    // localOffset: [x, y] in physics plane
+    // Source (x, y) -> swapped to (y, x) for new coordinate convention
+    // where X is perpendicular to forward and Y is forward
     writeIndent(f, depth + 1);
     fprintf(f, "\"localOffset\": [%.6f, %.6f],\n",
-            node.section->offset[0] * scale,
-            node.section->offset[1] * scale);
+            node.section->offset[1] * scale,
+            node.section->offset[0] * scale);
 
     // localRotation: yaw only (rz)
     writeIndent(f, depth + 1);
@@ -404,9 +406,10 @@ UnitGeneratorResult generateUnits(
             if (!modelPath.empty()) {
                 fprintf(jsonFile, "    \"model\": \"%s\",\n", modelPath.c_str());
             }
+            // localOffset: swapped (y, x) for new coordinate convention
             fprintf(jsonFile, "    \"localOffset\": [%.6f, %.6f],\n",
-                    root.section->offset[0] * options.scale,
-                    root.section->offset[1] * options.scale);
+                    root.section->offset[1] * options.scale,
+                    root.section->offset[0] * options.scale);
             fprintf(jsonFile, "    \"localRotation\": %.6f,\n", root.section->rotation[2]);
             fprintf(jsonFile, "    \"height\": %.6f,\n", root.section->offset[2] * options.scale);
             fprintf(jsonFile, "    \"scale\": [1, 1, 1],\n");
