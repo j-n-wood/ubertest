@@ -3,27 +3,84 @@
 
 #include "raylib.h"
 #include "physics/physics_world.h"
-#include "graphics/renderer.h"
-#include "entities/entity.h"
 #include "input/input.h"
 
-#define MAX_ENTITIES 1024
+// Shared includes
+#include "level/level_types.h"
+#include "level/tmx_loader.h"
+#include "level/tileset_loader.h"
+#include "level/level_renderer.h"
+#include "level/tile_properties_loader.h"
+#include "rendering/scene_renderer.h"
+#include "units/unit_manager.h"
 
-typedef struct Game {
+#include <vector>
+#include <string>
+
+// Test mode configuration for rotation testing
+struct RotationTestConfig {
+    bool enabled = false;
+    float initialRotation = 0.0f;    // Initial rotation in degrees
+    float targetRotation = 90.0f;    // Target rotation in degrees
+    int testFrames = 300;            // Number of frames to run
+    int sampleInterval = 30;         // Report rotation every N frames
+    std::string unitId = "droid_class_0";  // Unit to test with
+};
+
+struct Game {
+    // Physics
     PhysicsWorld physics;
-    Renderer renderer;
-    Input input;
-    Entity entities[MAX_ENTITIES];
-    int entity_count;
-    Entity* controlled_entity;
-    Camera3D camera;
-    bool running;
-    char asset_path[512];  // Base path for assets
-} Game;
 
-// Initialize game with asset path
-// assetPath: base path for assets (default: "assets")
-void game_init(Game* game, const char* assetPath = "assets");
+    // Rendering (shared scene renderer)
+    SceneRenderer sceneRenderer;
+
+    // Input
+    Input input;
+
+    // Level data (all levels loaded upfront)
+    std::vector<TmxLevel> levels;
+    std::vector<LevelRenderData> levelRenderData;
+    std::vector<LevelCollisionData> levelCollisionData;
+    int currentLevel;
+
+    // Tileset (shared across levels)
+    TmxTileset tileset;
+    Texture2D atlasTexture;
+    Texture2D bumpAtlasTexture;
+    TilePropertiesConfig tileProperties;
+
+    // Collision bodies from tile data
+    std::vector<PhysicsBody> collisionBodies;
+
+    // Unit system
+    UnitManager unitManager;
+    UnitInstance* playerUnit;
+    float playerDesiredRotation;  // For mouse aim
+
+    // Camera
+    Camera3D camera;
+    float cameraHeight;        // Height above ground (Y position)
+    float effectiveEyeHeight;  // For specular lighting calculations
+
+    // State
+    bool running;
+    int debugMode;
+
+    // Paths
+    std::string assetPath;
+    std::string shadersPath;
+    std::string levelsPath;
+
+    // Player unit ID (can be set via command line)
+    std::string playerUnitId;
+
+    // Test mode
+    RotationTestConfig testConfig;
+    int testFrameCount;
+};
+
+// Initialize game with asset path, optional unit ID, and optional test config
+void game_init(Game* game, const char* assetPath = "assets", const char* unitId = nullptr, const RotationTestConfig* testConfig = nullptr);
 void game_update(Game* game, float dt);
 void game_render(Game* game);
 void game_destroy(Game* game);

@@ -12,6 +12,14 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/units/unit_json.cpp
 )
 
+# Level loading sources (TMX/TSX parsing, tile rendering, collision)
+set(LEVEL_SHARED_SOURCES
+    ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/tileset_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/level_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/tile_properties_loader.cpp
+)
+
 # Model conversion sources (ASC->GLTF, MDL->GLTF) - does not require box2d
 set(MODEL_CONVERT_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/model_convert/asc_loader.cpp

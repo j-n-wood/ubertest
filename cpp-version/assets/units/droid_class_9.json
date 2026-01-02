@@ -1,0 +1,45 @@
+{
+  "name": "Class 9",
+  "id": "droid_class_9",
+  "properties": {
+    "classId": 9,
+    "typeCode": 476,
+    "energy": 4,
+    "armour": 40.0,
+    "weapon": 0.0,
+    "droidType": 1,
+    "driveType": 0,
+    "brainType": 1,
+    "hasTurret": true,
+    "description": "General purpose maintenance robot. Multiple grips allow efficient repairs."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.304800,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.005080
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "model": "models/hemihead_med.gltf",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": 0.177800,
+        "scale": [1, 1, 1],
+        "children": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "Class 16",
+  "id": "droid_class_16",
+  "properties": {
+    "classId": 16,
+    "typeCode": 629,
+    "energy": 6,
+    "armour": 100.0,
+    "weapon": 5.0,
+    "droidType": 2,
+    "driveType": 5,
+    "brainType": 2,
+    "hasTurret": true,
+    "description": "Simple sentinel droid used to patrol restricted areas."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/tank_body.gltf",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.304800,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.010160
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": 0.304800,
+        "scale": [1, 1, 1],
+        "children": []
+      },
+      {
+        "name": "section_2",
+        "model": "models/tank_tracks.gltf",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": -0.254000,
+        "scale": [1, 1, 1],
+        "children": []
+      }
+    ]
+  }
+}

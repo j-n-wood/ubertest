@@ -1,0 +1,159 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "model_tool (Raylib ASC Converter)"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Mesh_0",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Mesh_0",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC3",
+      "min": [
+        -0.317499995,
+        0.00634999992,
+        -0.317499995
+      ],
+      "max": [
+        0.317499995,
+        0.0825499967,
+        0.317499995
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 432,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 432,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 864,
+      "byteLength": 288,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1152,
+      "byteLength": 72,
+      "target": 34963
+    }
+  ],
+  "materials": [
+    {
+      "name": "Material_0",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.800000012,
+          0.800000012,
+          0.800000012,
+          1
+        ],
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      },
+      "extras": {
+        "shaderHint": "blinn-phong",
+        "originalFormat": "asc",
+        "blinnPhong": {
+          "diffuse": [
+            0.800000012,
+            0.800000012,
+            0.800000012,
+            1
+          ],
+          "specular": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "emissive": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "shininess": 0,
+          "transparency": 1
+        }
+      }
+    }
+  ],
+  "images": [
+    {
+      "uri": "textures/chrome1.jpg"
+    }
+  ],
+  "textures": [
+    {
+      "source": 0
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 1224,
+      "uri": "data:application/octet-stream;base64,XI+ivvkPqT1cj6I+cayDvqkT0DtxrIM+XI+iPvkPqT1cj6I+cayDvqkT0DtxrIM+cayDPqkT0DtxrIM+XI+iPvkPqT1cj6I+XI+iPvkPqT1cj6I+cayDPqkT0DtxrIM+XI+iPvkPqT1cj6K+cayDPqkT0DtxrIM+cayDPqkT0DtxrIO+XI+iPvkPqT1cj6K+XI+iPvkPqT1cj6K+cayDPqkT0DtxrIO+XI+ivvkPqT1cj6K+cayDPqkT0DtxrIO+cayDvqkT0DtxrIO+XI+ivvkPqT1cj6K+XI+ivvkPqT1cj6K+cayDvqkT0DtxrIO+XI+ivvkPqT1cj6I+cayDvqkT0DtxrIO+cayDvqkT0DtxrIM+XI+ivvkPqT1cj6I+XI+ivvkPqT1cj6K+XI+ivvkPqT1cj6I+XI+iPvkPqT1cj6K+XI+ivvkPqT1cj6I+XI+iPvkPqT1cj6I+XI+iPvkPqT1cj6K+cayDvqkT0DtxrIM+cayDvqkT0DtxrIO+cayDPqkT0DtxrIM+cayDvqkT0DtxrIO+cayDPqkT0DtxrIO+cayDPqkT0DtxrIM+AAAAAGTmHr89t0g/AAAAAGTmHr89t0g/AAAAAGTmHr89t0g/AAAAAGTmHr89t0g/AAAAAGTmHr89t0g/AAAAAGTmHr89t0g/PbdIP2TmHr8AAAAAPbdIP2TmHr8AAAAAPbdIP2TmHr8AAAAAPbdIP2TmHr8AAAAAPbdIP2TmHr8AAAAAPbdIP2TmHr8AAAAAAAAAAGTmHr89t0i/AAAAAGTmHr89t0i/AAAAAGTmHr89t0i/AAAAAGTmHr89t0i/AAAAAGTmHr89t0i/AAAAAGTmHr89t0i/PbdIv2TmHr8AAAAAPbdIv2TmHr8AAAAAPbdIv2TmHr8AAAAAPbdIv2TmHr8AAAAAPbdIv2TmHr8AAAAAPbdIv2TmHr8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAgL8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAABAAIAAwAEAAUABgAHAAgACQAKAAsADAANAA4ADwAQABEAEgATABQAFQAWABcAGAAZABoAGwAcAB0AHgAfACAAIQAiACMA"
+    }
+  ]
+}

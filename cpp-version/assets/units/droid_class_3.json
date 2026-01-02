@@ -1,0 +1,70 @@
+{
+  "id": "droid_class_3",
+  "name": "Class 3",
+  "properties": {
+    "armour": 20.0,
+    "brainType": 1,
+    "classId": 3,
+    "description": "General-purpose service robot, one of the first civilian robots with an anti-grav drive.",
+    "driveType": 1,
+    "droidType": 1,
+    "energy": 2,
+    "hasTurret": true,
+    "typeCode": 247,
+    "weapon": 0.0,
+    "rotationKp": 0.3,
+    "rotationKd": 0.15
+  },
+  "rootSection": {
+    "children": [
+      {
+        "height": 0.24920004606246948,
+        "model": "models/ag_base_small.gltf",
+        "name": "section_1"
+      },
+      {
+        "height": 0.2746000289916992,
+        "model": "models/utility_ring.gltf",
+        "name": "section_2"
+      },
+      {
+        "height": 0.7310000658035278,
+        "model": "models/trap_head_small.gltf",
+        "name": "section_3"
+      },
+      {
+        "height": 0.40320003032684326,
+        "localOffset": [
+          0.0,
+          0.2540000081062317
+        ],
+        "model": "models/servant_arm.gltf",
+        "name": "section_4"
+      },
+      {
+        "height": 0.40320003032684326,
+        "localOffset": [
+          0.0,
+          -0.2540000081062317
+        ],
+        "localRotation": 3.140000104904175,
+        "model": "models/servant_arm.gltf",
+        "name": "section_5"
+      }
+    ],
+    "height": 0.30480000376701355,
+    "model": "models/servant_torso.gltf",
+    "name": "section_0",
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.3,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.22527900338172913,
+        "type": "circle"
+      }
+    }
+  }
+}

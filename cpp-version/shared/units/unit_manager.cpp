@@ -404,11 +404,13 @@ void UnitManager::updateSectionTransforms(
         const auto& offset = section->definition->localOffset;
         float cosR = std::cos(parentWorldRot);
         float sinR = std::sin(parentWorldRot);
+
         section->worldPosition = {
             parentWorldPos.x + offset.x * cosR - offset.y * sinR,
             parentWorldPos.y + offset.x * sinR + offset.y * cosR
         };
         section->worldRotation = parentWorldRot + section->definition->localRotation;
+
     } else if (section->hasPhysics && b2Body_IsValid(section->bodyId)) {
         // Detached: get from physics
         b2Vec2 pos = b2Body_GetPosition(section->bodyId);
@@ -470,12 +472,20 @@ void UnitManager::renderSection(SectionInstance* section, const std::vector<floa
         }
 
         // Map 2D physics to 3D rendering
+        // Physics: X right, Y forward (into screen)
+        // World: X right, Y up (height), Z into screen
+        // Physics Y -> World Z (no negation)
         Vector3 position = {
             section->worldPosition.x,
             height,
             section->worldPosition.y
         };
 
+        // Physics rotation is counterclockwise from +Y
+        // DrawModelEx rotates counterclockwise around Y axis (from +Z toward -X)
+        // Physics angle 0 = +Y = world +Z (model default forward)
+        // Physics angle π = -Y = world -Z (screen top)
+        // Direct mapping works: physics angle → render angle (same value)
         DrawModelEx(
             section->model,
             position,
@@ -525,7 +535,7 @@ void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector
         Vector3 center = {
             section->worldPosition.x,
             y,
-            section->worldPosition.y
+            section->worldPosition.y  // Physics Y -> World Z (no negation)
         };
 
         switch (phys.shapeType) {
@@ -552,7 +562,7 @@ void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector
                     corners[i] = {
                         section->worldPosition.x + rx,
                         y,
-                        section->worldPosition.y + ry
+                        section->worldPosition.y + ry  // Physics Y -> World Z (no negation)
                     };
                 }
 
@@ -578,12 +588,12 @@ void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector
         Vector3 from = {
             section->parent->worldPosition.x,
             parentHeight + 0.1f,
-            section->parent->worldPosition.y
+            section->parent->worldPosition.y  // Physics Y -> World Z (no negation)
         };
         Vector3 to = {
             section->worldPosition.x,
             y,
-            section->worldPosition.y
+            section->worldPosition.y  // Physics Y -> World Z (no negation)
         };
         Color jointColor = section->attached ? LIME : MAROON;
         DrawLine3D(from, to, jointColor);

@@ -1,0 +1,65 @@
+{
+  "name": "Class 5",
+  "id": "droid_class_5",
+  "properties": {
+    "classId": 5,
+    "typeCode": 296,
+    "energy": 2,
+    "armour": 20.0,
+    "weapon": 0.0,
+    "droidType": 1,
+    "driveType": 0,
+    "brainType": 1,
+    "hasTurret": false,
+    "description": "Simple service robot, used mainly for serving food and drinks."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/conic_body_small.gltf",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.304800,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.003048
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "model": "models/ag_base_small.gltf",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": -0.050800,
+        "scale": [1, 1, 1],
+        "children": []
+      },
+      {
+        "name": "section_2",
+        "model": "models/hemihead_small2.gltf",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": 0.304800,
+        "scale": [1, 1, 1],
+        "children": [
+          {
+            "name": "section_3",
+            "model": "models/servant_tray.gltf",
+            "localOffset": [0.000000, 0.000000],
+            "localRotation": 0.000000,
+            "height": 0.152400,
+            "scale": [1, 1, 1],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

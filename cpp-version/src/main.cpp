@@ -2,6 +2,7 @@
 #include "game.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -20,7 +21,19 @@ void printUsage(const char* programName) {
     printf("Options:\n");
     printf("  --asset-path <dir>  Base path for assets (conventional structure)\n");
     printf("                      Default: ./assets\n");
+    printf("  --unit <id>         Unit ID for player (default: droid_class_0)\n");
     printf("  --help, -h          Show this help\n");
+    printf("\n");
+    printf("Rotation Test Mode:\n");
+    printf("  --test-rotation     Enable rotation test mode (headless, exits after test)\n");
+    printf("  --initial-rot <deg> Initial rotation in degrees (default: 0)\n");
+    printf("  --target-rot <deg>  Target rotation in degrees (default: 90)\n");
+    printf("  --test-frames <n>   Number of frames to run (default: 300)\n");
+    printf("  --sample-interval <n> Report rotation every N frames (default: 30)\n");
+    printf("\n");
+    printf("Examples:\n");
+    printf("  %s --unit droid_class_3\n", programName);
+    printf("  %s --test-rotation --initial-rot 0 --target-rot 90 --unit droid_class_1\n", programName);
     printf("\n");
     printf("Conventional asset structure:\n");
     printf("  <asset-path>/\n");
@@ -39,6 +52,8 @@ void printUsage(const char* programName) {
 int main(int argc, char* argv[]) {
     // Parse arguments
     const char* assetPath = "assets";  // Default
+    const char* unitId = nullptr;      // Default (will use droid_class_0)
+    RotationTestConfig testConfig;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -46,6 +61,19 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (strcmp(argv[i], "--asset-path") == 0 && i + 1 < argc) {
             assetPath = argv[++i];
+        } else if (strcmp(argv[i], "--test-rotation") == 0) {
+            testConfig.enabled = true;
+        } else if (strcmp(argv[i], "--initial-rot") == 0 && i + 1 < argc) {
+            testConfig.initialRotation = (float)atof(argv[++i]);
+        } else if (strcmp(argv[i], "--target-rot") == 0 && i + 1 < argc) {
+            testConfig.targetRotation = (float)atof(argv[++i]);
+        } else if (strcmp(argv[i], "--test-frames") == 0 && i + 1 < argc) {
+            testConfig.testFrames = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--sample-interval") == 0 && i + 1 < argc) {
+            testConfig.sampleInterval = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--unit") == 0 && i + 1 < argc) {
+            unitId = argv[++i];
+            testConfig.unitId = unitId;  // Also set in test config for compatibility
         }
     }
 
@@ -55,17 +83,27 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("Asset path: %s\n", assetPath);
-    printf("  Models:   %s/%s\n", assetPath, ASSET_MODELS);
-    printf("  Textures: %s/%s\n", assetPath, ASSET_TEXTURES);
-    printf("  Shaders:  %s/%s\n", assetPath, ASSET_SHADERS);
-    printf("  Units:    %s/%s\n\n", assetPath, ASSET_UNITS);
+    if (testConfig.enabled) {
+        printf("=== ROTATION TEST MODE ===\n");
+        printf("Unit: %s\n", testConfig.unitId.c_str());
+        printf("Initial rotation: %.1f deg\n", testConfig.initialRotation);
+        printf("Target rotation: %.1f deg\n", testConfig.targetRotation);
+        printf("Test frames: %d\n", testConfig.testFrames);
+        printf("Sample interval: %d frames\n", testConfig.sampleInterval);
+        printf("==========================\n\n");
+    } else {
+        printf("Asset path: %s\n", assetPath);
+        printf("  Models:   %s/%s\n", assetPath, ASSET_MODELS);
+        printf("  Textures: %s/%s\n", assetPath, ASSET_TEXTURES);
+        printf("  Shaders:  %s/%s\n", assetPath, ASSET_SHADERS);
+        printf("  Units:    %s/%s\n\n", assetPath, ASSET_UNITS);
+    }
 
-    InitWindow(1280, 720, "Top-Down Game");
+    InitWindow(1280, 720, testConfig.enabled ? "Rotation Test" : "Top-Down Game");
     SetTargetFPS(60);
 
     Game game = {0};
-    game_init(&game, assetPath);
+    game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
 
     while (!WindowShouldClose() && game.running) {
         float dt = GetFrameTime();

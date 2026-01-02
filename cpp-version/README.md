@@ -21,71 +21,84 @@ cpp-version/
 │   ├── lighting/               # Light struct and shader utilities
 │   ├── rendering/              # Scene rendering utilities
 │   ├── units/                  # Unit instance and manager
+│   ├── level/                  # TMX/TSX level loading and rendering
 │   ├── model_convert/          # ASC/MDL loaders, GLTF export
 │   └── utils/                  # String utilities
 ├── assets/                     # Shared assets
 │   ├── models/                 # GLTF/GLB files
-│   ├── textures/
-│   ├── shaders/
-│   └── units/                  # Unit definition files
+│   ├── textures/               # Textures and bump atlases
+│   ├── shaders/                # GLSL shaders
+│   ├── units/                  # Unit definition JSON files
+│   └── ships/                  # Ship level data
+│       └── ship1/levels/       # TMX levels, tileset, tiles.json
 ├── src/                        # Main game
 │   ├── main.cpp                # Entry point, window init, game loop
 │   ├── game.h/cpp              # Central Game struct and lifecycle
 │   ├── physics/
 │   │   └── physics_world.h/cpp # Box2D wrapper (zero gravity top-down)
-│   ├── graphics/
-│   │   └── renderer.h/cpp      # Model loading and entity rendering
-│   ├── generation/
-│   │   └── procgen.h/cpp       # Procedural level generation
-│   ├── entities/
-│   │   └── entity.h/cpp        # Entity struct and physics sync
 │   └── input/
-│       └── input.h/cpp         # Input handling
+│       └── input.h/cpp         # Input handling (WASD/arrows + mouse)
 ├── tests/                      # GoogleTest unit tests
 │   ├── CMakeLists.txt
 │   └── sanity_test.cpp
 ├── tools/
 │   ├── model_tool/             # Model viewer and ASC/MDL-to-GLTF converter
 │   ├── unit_test/              # Interactive unit testing tool
-│   └── droid_tool/             # Droid unit generation tool
+│   ├── droid_tool/             # Droid unit generation tool
+│   ├── level_viewer/           # Level viewer with CustomTiles rendering
+│   └── incremental_viewer/     # Incremental model viewer
 ├── docs/
-│   └── entity_system.md        # Entity system documentation
+│   ├── GAME.md                 # Game design documentation
+│   └── IMPLEMENTATION_PLAN.md  # Implementation plan
 └── build/
 ```
 
 See [AGENTS.md](AGENTS.md) for workspace organization and coding guidelines.
 
-## Asset organisation
-
-It is generally expected that build will be invoked from the root folder (cpp-version). Tools and executables
-shall have an asset-path argument to override the assets folder path. Otherwise ./assets is assumed.
-If the provided or optional asset location does not exist, raise an error and exit.
-
-This is to allow both tools and game executables to share input assets.
-
-Output asset path will default to the same but can be overridden to an existing or new folder for tools
-that produce output.
-
 ## Build Commands
 
 ```bash
-# Configure (fetches dependencies on first run)
+# Configure (from cpp-version directory, fetches dependencies on first run)
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# Build
+# Build all targets
 cmake --build build --parallel
 
-# Run
-./build/topdown_game
+# Build only the game
+cmake --build build --target topdown_game
 
 # Debug build
 cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-debug
 ```
 
+## Run Commands
+
+```bash
+# Run the game (from cpp-version directory)
+./build/topdown_game
+
+# Or from build directory
+cd build && ./topdown_game
+```
+
+The game loads assets from `./assets` relative to working directory. Run from the `cpp-version` or `build` directory where assets are copied.
+
+## Game Features
+
+- **Levels**: 16 TMX levels from ship1 loaded at startup
+- **Rendering**: CustomTiles mode with bump-mapped tiles and specular lighting
+- **Physics**: Box2D collision bodies generated from tile collision data
+- **Player**: droid_class_0 unit with physics-based movement
+
 ## Controls
 
-- **Arrow keys**: Move camera
+- **WASD / Arrow keys**: Move player
+- **Mouse**: Aim direction
+- **0-6**: Debug visualization modes
+- **C**: Show collision shapes
+- **U**: Show unit physics debug
+- **N**: Toggle normal mapping
 - **ESC**: Quit
 
 ## Architecture
@@ -100,20 +113,21 @@ cmake --build build-debug
 | Y     | Z      |
 | —     | Y (height) |
 
-### Entity Types
+### Game Systems
 
-- **PLAYER**: Dynamic circle body, player-controlled
-- **ENEMY**: Dynamic circle body, AI-controlled
-- **OBSTACLE**: Static box body, collision geometry
-- **PROP**: No physics, decorative objects
+- **SceneRenderer**: Shared lighting and material system with bump mapping
+- **UnitManager**: Loads unit definitions from JSON, creates physics instances
+- **Level System**: TMX loading, tileset UV calculation, collision generation
+- **Input**: Movement forces applied to player physics body, mouse aim via torque
 
 ### Key Design Decisions
 
 1. Zero gravity physics with linear damping for top-down friction
-2. Fixed entity pool (1024 max) to avoid runtime allocation
-3. Explicit physics-to-graphics sync each frame
-4. GLTF native model loading via Raylib
-5. FetchContent for dependency management
+2. All levels loaded upfront for fast transitions
+3. CustomTiles rendering with per-tile bump maps from tiles.json
+4. Collision rectangles merged for optimization (88 bodies from 190 tiles)
+5. Shared code between game and level_viewer tool
+6. FetchContent for dependency management
 
 ## Testing
 
@@ -129,3 +143,16 @@ ctest --test-dir build --output-on-failure
 ```
 
 See [AGENTS.md](AGENTS.md) for detailed testing guidelines.
+
+## Tools
+
+```bash
+# Level viewer - preview levels with debug visualization
+./build/tools/level_viewer/level_viewer assets/ships/ship1/levels
+
+# Model tool - view and convert models
+./build/tools/model_tool/model_tool
+
+# Droid tool - generate unit definitions
+./build/tools/droid_tool/droid_tool
+```

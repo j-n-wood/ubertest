@@ -1,0 +1,81 @@
+{
+  "name": "Class 19",
+  "id": "droid_class_19",
+  "properties": {
+    "classId": 19,
+    "typeCode": 751,
+    "energy": 7,
+    "armour": 100.0,
+    "weapon": 7.0,
+    "droidType": 2,
+    "driveType": 2,
+    "brainType": 2,
+    "hasTurret": false,
+    "description": "Heavy-duty battle droid."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.000000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.011938
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "localOffset": [0.050800, 0.000000],
+        "localRotation": 0.000000,
+        "height": 1.117600,
+        "scale": [1, 1, 1],
+        "children": [
+          {
+            "name": "section_2",
+            "model": "models/rightarm.gltf",
+            "localOffset": [-0.091440, 0.393700],
+            "localRotation": 0.000000,
+            "height": 0.203200,
+            "scale": [1, 1, 1],
+            "children": []
+          },
+          {
+            "name": "section_3",
+            "model": "models/leftarm.gltf",
+            "localOffset": [-0.091440, -0.393700],
+            "localRotation": 0.000000,
+            "height": 0.177800,
+            "scale": [1, 1, 1],
+            "children": []
+          },
+          {
+            "name": "section_4",
+            "model": "models/displacer.gltf",
+            "localOffset": [0.000000, -0.241300],
+            "localRotation": 0.000000,
+            "height": 0.152400,
+            "scale": [1, 1, 1],
+            "children": []
+          },
+          {
+            "name": "section_5",
+            "model": "models/ellipsehead.gltf",
+            "localOffset": [0.000000, 0.000000],
+            "localRotation": 0.000000,
+            "height": 0.685800,
+            "scale": [1, 1, 1],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,10 +1,18 @@
 #include "game.h"
-#include "generation/procgen.h"
 #include <cmath>
 #include <cstring>
 
 #define MAX_TORQUE 100.0f
+#define MOVEMENT_FORCE 7.0f
 #define PI 3.14159265358979323846f
+
+// Forward declarations
+static bool game_load_levels(Game* game);
+static bool game_build_level_render_data(Game* game);
+static void game_create_level_collision(Game* game);
+static void game_spawn_player(Game* game);
+static void game_update_player_rotation(Game* game);
+static void game_apply_player_rotation_torque(Game* game);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -13,120 +21,686 @@ static float normalize_angle(float angle) {
     return angle;
 }
 
-// Apply torque to rotate entity towards desired_rotation
-static void apply_rotation_torque(Entity* entity) {
-    if (!entity || !entity->physics.valid) return;
+void game_init(Game* game, const char* assetPath, const char* unitId, const RotationTestConfig* testConfig) {
+    // Store test config if provided
+    if (testConfig) {
+        game->testConfig = *testConfig;
+    }
+    game->testFrameCount = 0;
 
-    float current = entity->rotation;
-    float target = entity->desired_rotation;
+    // Store player unit ID (command line overrides test config which overrides default)
+    if (unitId && unitId[0] != '\0') {
+        game->playerUnitId = unitId;
+    } else if (testConfig && !testConfig->unitId.empty()) {
+        game->playerUnitId = testConfig->unitId;
+    } else {
+        game->playerUnitId = "droid_class_0";
+    }
+
+    // Store paths
+    game->assetPath = assetPath;
+    game->shadersPath = game->assetPath + "/shaders/";
+    game->levelsPath = game->assetPath + "/ships/ship1/levels/";
+
+    // Initialize physics world (zero gravity for top-down)
+    physics_world_init(&game->physics);
+
+    // Initialize SceneRenderer
+    if (!sceneRendererInit(&game->sceneRenderer, game->shadersPath.c_str())) {
+        TraceLog(LOG_ERROR, "Failed to initialize scene renderer");
+        game->running = false;
+        return;
+    }
+
+    // Configure lighting - directional light from above
+    sceneRendererAddDirectionalLight(&game->sceneRenderer,
+        (Vector3){0, 50, 0},   // Position above
+        (Vector3){0, 0, 0},    // Target below
+        WHITE);
+
+    // Set effective eye height for specular calculations
+    game->effectiveEyeHeight = 1.0f;
+    sceneRendererSetEffectiveEyeHeight(&game->sceneRenderer, game->effectiveEyeHeight);
+
+    // Set ambient light
+    sceneRendererSetAmbient(&game->sceneRenderer, 0.15f, 0.15f, 0.15f, 1.0f);
+
+    // Initialize UnitManager with physics world
+    // UnitManager strips "models/" prefix and appends to base path, so use assets/models/
+    std::string modelsPath = game->assetPath + "/models/";
+    game->unitManager.init(game->physics.world_id, modelsPath.c_str());
+
+    // Load all levels
+    if (!game_load_levels(game)) {
+        TraceLog(LOG_ERROR, "Failed to load levels");
+        game->running = false;
+        return;
+    }
+
+    // Build render data for starting level (level_0_maintenance)
+    game->currentLevel = 0;
+    if (!game_build_level_render_data(game)) {
+        TraceLog(LOG_ERROR, "Failed to build render data for level %d", game->currentLevel);
+    }
+
+    // Create collision bodies from tile data
+    game_create_level_collision(game);
+
+    // Setup camera (top-down view)
+    game->cameraHeight = 10.0f;  // May change based on unit type
+    game->camera.position = (Vector3){0, game->cameraHeight, 0};
+    game->camera.target = (Vector3){0, 0, 0};
+    game->camera.up = (Vector3){0, 0, -1};  // -Z up for top-down view
+    game->camera.fovy = 45.0f;
+    game->camera.projection = CAMERA_PERSPECTIVE;
+
+    // Initialize input
+    input_init(&game->input);
+    input_update_screen_cache(&game->input, &game->camera);
+
+    game->running = true;
+    game->debugMode = 0;
+    game->playerDesiredRotation = 0.0f;
+    game->playerUnit = nullptr;
+
+    // Spawn player unit
+    game_spawn_player(game);
+}
+
+//------------------------------------------------------------------------------
+// Level Loading
+//------------------------------------------------------------------------------
+
+static bool game_load_levels(Game* game) {
+    // Load all TMX files from levels directory
+    auto results = loadTmxLevelsFromDirectory(game->levelsPath);
+
+    if (results.empty()) {
+        TraceLog(LOG_ERROR, "No levels found in: %s", game->levelsPath.c_str());
+        return false;
+    }
+
+    game->levels.clear();
+    for (const auto& result : results) {
+        if (result.success) {
+            game->levels.push_back(result.level);
+            TraceLog(LOG_INFO, "Loaded level: %s (%dx%d tiles)",
+                     result.level.name.c_str(),
+                     result.level.width, result.level.height);
+        } else {
+            TraceLog(LOG_WARNING, "Failed to load level: %s", result.errorMsg.c_str());
+        }
+    }
+
+    if (game->levels.empty()) {
+        TraceLog(LOG_ERROR, "No valid levels loaded");
+        return false;
+    }
+
+    // Load tileset from first level's reference
+    if (!game->levels[0].tilesetSource.empty()) {
+        std::string tilesetPath = game->levelsPath + game->levels[0].tilesetSource;
+        TsxLoadResult tsxResult = loadTsxTileset(tilesetPath);
+
+        if (tsxResult.success) {
+            game->tileset = tsxResult.tileset;
+            game->tileset.firstGid = 1;
+            TraceLog(LOG_INFO, "Loaded tileset: %s (%dx%d tiles)",
+                     game->tileset.name.c_str(),
+                     game->tileset.columns, game->tileset.tileCount / game->tileset.columns);
+
+            // Load atlas texture
+            game->atlasTexture = loadTilesetTexture(game->tileset, game->levelsPath);
+            if (game->atlasTexture.id == 0) {
+                TraceLog(LOG_ERROR, "Failed to load atlas texture");
+                return false;
+            }
+        } else {
+            TraceLog(LOG_ERROR, "Failed to load tileset: %s", tsxResult.errorMsg.c_str());
+            return false;
+        }
+    }
+
+    // Load tile properties (tiles.json) for CustomTiles mode
+    std::string tilesJsonPath = game->levelsPath + "tiles.json";
+    game->tileProperties = loadTileProperties(tilesJsonPath);
+
+    if (game->tileProperties.valid) {
+        TraceLog(LOG_INFO, "Loaded tile properties with %zu custom tiles",
+                 game->tileProperties.tiles.size());
+
+        // Load bump atlas texture
+        // bumpAtlas.texture is relative to assets folder (e.g., "textures/bump_atlas.png")
+        std::string bumpPath = game->assetPath + "/" +
+                               game->tileProperties.bumpAtlas.texture;
+        game->bumpAtlasTexture = LoadTexture(bumpPath.c_str());
+
+        if (game->bumpAtlasTexture.id == 0) {
+            TraceLog(LOG_WARNING, "Failed to load bump atlas: %s", bumpPath.c_str());
+        } else {
+            TraceLog(LOG_INFO, "Loaded bump atlas: %dx%d",
+                     game->bumpAtlasTexture.width, game->bumpAtlasTexture.height);
+        }
+    } else {
+        TraceLog(LOG_WARNING, "No tile properties found, using Tilemap mode");
+        game->bumpAtlasTexture = {0};
+    }
+
+    // Initialize storage vectors for render/collision data
+    game->levelRenderData.resize(game->levels.size());
+    game->levelCollisionData.resize(game->levels.size());
+
+    TraceLog(LOG_INFO, "Loaded %zu levels total", game->levels.size());
+    return true;
+}
+
+//------------------------------------------------------------------------------
+// Render Data Building
+//------------------------------------------------------------------------------
+
+static bool game_build_level_render_data(Game* game) {
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
+        return false;
+    }
+
+    LevelRenderData& data = game->levelRenderData[game->currentLevel];
+    LevelCollisionData& collision = game->levelCollisionData[game->currentLevel];
+    const TmxLevel& level = game->levels[game->currentLevel];
+
+    // Free existing data if any
+    freeLevelRenderData(&data);
+    freeLevelCollisionData(&collision);
+
+    // Generate collision data
+    collision = generateLevelCollision(level, game->tileset, 1.0f);
+    TraceLog(LOG_INFO, "Generated %zu collision rects for level %d",
+             collision.rects.size(), game->currentLevel);
+
+    // Create render data structure
+    data = createLevelRenderData(level, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
+
+    // Generate mesh based on available resources
+    if (game->tileProperties.valid && game->bumpAtlasTexture.id > 0) {
+        // CustomTiles mode with bump mapping
+        data.tileMesh = createLevelTileMeshCustom(
+            level, game->tileset, game->tileProperties,
+            game->bumpAtlasTexture.width, game->bumpAtlasTexture.height, 1.0f);
+        TraceLog(LOG_INFO, "Created CustomTiles mesh");
+    } else {
+        // Fallback to standard Tilemap mode
+        data.tileMesh = createLevelTileMesh(level, game->tileset, 1.0f);
+        TraceLog(LOG_INFO, "Created Tilemap mesh (fallback)");
+    }
+
+    if (data.tileMesh.vertexCount > 0) {
+        // Create model with textures
+        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ?
+                            game->bumpAtlasTexture : Texture2D{0};
+
+        data.tileModel = createLevelTileModel(
+            data.tileMesh, game->atlasTexture, bumpTex, &game->sceneRenderer);
+        data.meshValid = true;
+
+        TraceLog(LOG_INFO, "Level %d render data: %d vertices, bounds (%.1f,%.1f) to (%.1f,%.1f)",
+                 game->currentLevel, data.tileMesh.vertexCount,
+                 data.boundsMin.x, data.boundsMin.z,
+                 data.boundsMax.x, data.boundsMax.z);
+    }
+
+    return data.meshValid;
+}
+
+//------------------------------------------------------------------------------
+// Collision Body Creation
+//------------------------------------------------------------------------------
+
+static void game_create_level_collision(Game* game) {
+    // Clear existing collision bodies
+    // Note: Physics bodies are destroyed when physics world is destroyed
+    game->collisionBodies.clear();
+
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levelCollisionData.size()) {
+        return;
+    }
+
+    const LevelCollisionData& collision = game->levelCollisionData[game->currentLevel];
+
+    // Create static Box2D bodies for each merged collision rectangle
+    for (const CollisionRect& rect : collision.rects) {
+        // CollisionRect: x,z = world position (center), halfWidth/halfHeight = extents
+        // Physics 2D space: X = world X, Y = world Z
+        Vector2 physicsPos = {rect.x, rect.z};
+        float width = rect.halfWidth * 2.0f;
+        float height = rect.halfHeight * 2.0f;
+
+        PhysicsBody body = physics_create_static_box(&game->physics,
+                                                     physicsPos, width, height);
+        game->collisionBodies.push_back(body);
+    }
+
+    TraceLog(LOG_INFO, "Created %zu collision bodies from level data",
+             game->collisionBodies.size());
+}
+
+//------------------------------------------------------------------------------
+// Player Spawning
+//------------------------------------------------------------------------------
+
+static void game_spawn_player(Game* game) {
+    // Use the stored player unit ID (already resolved in game_init)
+    const std::string& unitId = game->playerUnitId;
+
+    // Load player unit definition
+    std::string unitPath = game->assetPath + "/units/" + unitId + ".json";
+    const UnitDefinition* playerDef = game->unitManager.loadDefinition(unitPath);
+
+    if (!playerDef) {
+        TraceLog(LOG_ERROR, "Failed to load player unit definition: %s", unitPath.c_str());
+        return;
+    }
+
+    // Find spawn position from waypoint or use level center
+    Vector2 spawnPos = {0, 0};
+
+    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levelRenderData.size()) {
+        const LevelRenderData& data = game->levelRenderData[game->currentLevel];
+        if (!data.waypointPositions.empty()) {
+            // Use first waypoint as spawn point
+            Vector3 wpPos = data.waypointPositions[0];
+            spawnPos = {wpPos.x, wpPos.z};  // World X,Z -> Physics X,Y
+            TraceLog(LOG_INFO, "Spawning player at waypoint: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+        }
+    }
+
+    // In test mode, offset spawn position to avoid nearby geometry
+    if (game->testConfig.enabled) {
+        spawnPos.x += -1.0f;  // Offset in physics X (world X)
+        spawnPos.y += 1.0f;   // Offset in physics Y (world Z)
+        TraceLog(LOG_INFO, "Test mode: offset spawn to (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+    }
+
+    // Determine initial rotation (from test config or default)
+    float initialRotation = game->testConfig.enabled ?
+        game->testConfig.initialRotation * DEG2RAD : 0.0f;
+
+    // Create player instance
+    game->playerUnit = game->unitManager.createInstance(unitId, spawnPos, initialRotation);
+
+    if (game->playerUnit) {
+        // Apply lighting shader to player model
+        game->unitManager.applyShaderToModels(
+            sceneRendererGetShader(&game->sceneRenderer));
+
+        TraceLog(LOG_INFO, "Spawned player unit '%s' at (%.2f, %.2f) rot=%.1f deg",
+                 playerDef->name.c_str(), spawnPos.x, spawnPos.y,
+                 initialRotation * RAD2DEG);
+    } else {
+        TraceLog(LOG_ERROR, "Failed to create player instance");
+    }
+
+    // Set initial desired rotation (from test config or default)
+    game->playerDesiredRotation = game->testConfig.enabled ?
+        game->testConfig.targetRotation * DEG2RAD : 0.0f;
+}
+
+//------------------------------------------------------------------------------
+// Player Input Helpers
+//------------------------------------------------------------------------------
+
+static void game_update_player_rotation(Game* game) {
+    if (!game->playerUnit || game->playerUnit->allSections.empty()) return;
+
+    SectionInstance* root = game->playerUnit->rootSection.get();
+    if (!root) return;
+
+    // Get player position in physics space
+    Vector2 playerPhysPos = root->worldPosition;
+
+    // Get mouse position in world space
+    Vector2 mouseScreen = game->input.mouse_pos;
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+
+    // Normalized screen coordinates (-1 to 1)
+    // Screen Y is inverted (0 at top), so we flip it
+    float normX = (mouseScreen.x / (float)screenWidth) * 2.0f - 1.0f;
+    float normY = -((mouseScreen.y / (float)screenHeight) * 2.0f - 1.0f);
+
+    // Estimate visible world area (rough approximation for top-down view)
+    float cameraHeight = game->camera.position.y - game->camera.target.y;
+    float halfVisibleHeight = cameraHeight * tanf(game->camera.fovy * 0.5f * DEG2RAD);
+    float aspectRatio = (float)screenWidth / (float)screenHeight;
+    float halfVisibleWidth = halfVisibleHeight * aspectRatio;
+
+    // Convert mouse screen position to world coordinates
+    // World X = screen X direction, World Z = screen Y direction (inverted by camera up)
+    // Camera up is {0,0,-1}, so screen top → world -Z
+    float mouseWorldX = game->camera.target.x + normX * halfVisibleWidth;
+    float mouseWorldZ = game->camera.target.z - normY * halfVisibleHeight;
+
+    // Convert world position to physics coordinates
+    // Physics: X = World X, Y = World Z
+    float mousePhysX = mouseWorldX;
+    float mousePhysY = mouseWorldZ;
+
+    // Calculate angle from player to mouse in world coordinates
+    // World: X = screen right, Z = physics Y (screen down with camera up = -Z)
+    // glTF model: +Z is forward
+    //
+    // We want: mouse right → model +Z points right (+X)
+    //          mouse up → model +Z points up (-Z in world)
+    //
+    // Using atan2(x, z) gives angle from +Z axis toward +X axis
+    // When mouse is at +X (right): atan2(positive, 0) = π/2
+    // When mouse is at -Z (up): atan2(0, negative) = π
+    //
+    // DrawModelEx with right-hand rule around Y: positive angle rotates +Z toward +X
+    // So render angle π/2 makes model face +X ✓
+    // And render angle π makes model face -Z ✓
+    //
+    // Therefore: renderAngle = atan2(dx, dz) where dz is toward mouse in world Z
+
+    float dx = mousePhysX - playerPhysPos.x;  // world X offset (screen right positive)
+    float dz = mousePhysY - playerPhysPos.y;  // world Z offset (screen down positive)
+
+    // atan2(dx, dz) gives the angle to rotate model +Z to face the mouse
+    game->playerDesiredRotation = atan2f(dx, dz);
+}
+
+// Helper to get float property from unit definition
+static float getUnitPropertyFloat(const UnitDefinition* def, const char* key, float defaultVal) {
+    if (!def) return defaultVal;
+    auto it = def->properties.find(key);
+    if (it != def->properties.end()) {
+        if (auto* val = std::get_if<float>(&it->second)) {
+            return *val;
+        }
+        // Also try int (JSON might parse whole numbers as int)
+        if (auto* val = std::get_if<int>(&it->second)) {
+            return static_cast<float>(*val);
+        }
+    }
+    return defaultVal;
+}
+
+static void game_apply_player_rotation_torque(Game* game) {
+    if (!game->playerUnit || game->playerUnit->allSections.empty()) return;
+
+    SectionInstance* root = game->playerUnit->rootSection.get();
+    if (!root || !root->hasPhysics) return;
+
+    float current = root->worldRotation;
+    float target = game->playerDesiredRotation;
 
     // Calculate shortest angular difference
     float diff = normalize_angle(target - current);
 
-    // Get current angular velocity for damping
-    float angular_vel = physics_body_get_angular_velocity(&entity->physics);
+    float angular_vel = b2Body_GetAngularVelocity(root->bodyId);
 
-    // PD controller: proportional to error, with velocity damping
-    float torque = diff * 50.0f - angular_vel * 5.0f;
+    // Check for unit-specific rotation gains in properties
+    const UnitDefinition* def = game->playerUnit->definition;
+    float Kp = getUnitPropertyFloat(def, "rotationKp", 0.0f);
+    float Kd = getUnitPropertyFloat(def, "rotationKd", 0.0f);
+
+    // If not specified in unit definition, use inertia-scaled defaults
+    if (Kp <= 0.0f || Kd <= 0.0f) {
+        float inertia = b2Body_GetInertiaTensor(root->bodyId);
+
+        // Base gains tuned for inertia ~0.1 (droid_class_1 scale)
+        // Scale proportionally so smaller bodies don't oscillate wildly
+        float baseKp = 30.0f;
+        float baseKd = 5.0f;
+        float inertiaScale = inertia / 0.1f;  // Normalize to reference inertia
+        if (inertiaScale < 0.1f) inertiaScale = 0.1f;  // Clamp minimum
+
+        if (Kp <= 0.0f) Kp = baseKp * inertiaScale;
+        if (Kd <= 0.0f) Kd = baseKd * inertiaScale;
+    }
+
+    float torque = diff * Kp - angular_vel * Kd;
 
     // Clamp to max torque
     if (torque > MAX_TORQUE) torque = MAX_TORQUE;
     if (torque < -MAX_TORQUE) torque = -MAX_TORQUE;
 
-    physics_body_apply_torque(&entity->physics, torque);
+    b2Body_ApplyTorque(root->bodyId, torque, true);
 }
 
-void game_init(Game* game, const char* assetPath) {
-    // Store asset path
-    strncpy(game->asset_path, assetPath, sizeof(game->asset_path) - 1);
-    game->asset_path[sizeof(game->asset_path) - 1] = '\0';
-
-    physics_world_init(&game->physics);
-    renderer_init(&game->renderer, game->asset_path);
-    input_init(&game->input);
-
-    game->entity_count = 0;
-    game->controlled_entity = nullptr;
-    game->running = true;
-
-    // Top-down camera setup
-    game->camera.position = (Vector3){0, 50, 0};
-    game->camera.target = (Vector3){0, 0, 0};
-    game->camera.up = (Vector3){0, 0, -1};
-    game->camera.fovy = 45.0f;
-    game->camera.projection = CAMERA_PERSPECTIVE;
-
-    // Initialize screen-to-world cache
-    input_update_screen_cache(&game->input, &game->camera);
-
-    // Generate initial level
-    procgen_generate_level(game);
-}
+//------------------------------------------------------------------------------
+// Game Update
+//------------------------------------------------------------------------------
 
 void game_update(Game* game, float dt) {
-    input_update(&game->input);
-    input_apply_to_entity(&game->input, game->controlled_entity);
-    input_update_entity_rotation(&game->input, game->controlled_entity, &game->camera);
+    // Test mode: check frame count and report
+    if (game->testConfig.enabled) {
+        game->testFrameCount++;
 
-    // Apply torque to rotate controlled entity towards mouse
-    apply_rotation_torque(game->controlled_entity);
+        // Report rotation at sample intervals
+        if (game->playerUnit && game->playerUnit->rootSection) {
+            SectionInstance* root = game->playerUnit->rootSection.get();
+            if (root && (game->testFrameCount % game->testConfig.sampleInterval == 0)) {
+                float currentRot = root->worldRotation * RAD2DEG;
+                float targetRot = game->testConfig.targetRotation;
+                float error = normalize_angle(game->playerDesiredRotation - root->worldRotation) * RAD2DEG;
+                float angVel = root->hasPhysics ? b2Body_GetAngularVelocity(root->bodyId) : 0.0f;
 
-    if (game->input.quit) {
-        game->running = false;
-    }
+                printf("Frame %4d: rot=%7.2f deg  target=%7.2f deg  error=%7.2f deg  angVel=%7.2f\n",
+                       game->testFrameCount, currentRot, targetRot, error, angVel);
+            }
+        }
 
-    // Debug mode toggle (keys 0-5)
-    // 0=normal, 1=normals, 2=lightDir, 3=specular, 4=viewDir, 5=halfDir
-    for (int i = 0; i <= 5; i++) {
-        if (IsKeyPressed(KEY_ZERO + i)) {
-            renderer_set_debug_mode(&game->renderer, i);
+        // Exit after test frames completed
+        if (game->testFrameCount >= game->testConfig.testFrames) {
+            // Final report
+            if (game->playerUnit && game->playerUnit->rootSection) {
+                SectionInstance* root = game->playerUnit->rootSection.get();
+                if (root) {
+                    float finalRot = root->worldRotation * RAD2DEG;
+                    float targetRot = game->testConfig.targetRotation;
+                    float finalError = normalize_angle(game->playerDesiredRotation - root->worldRotation) * RAD2DEG;
+
+                    printf("\n=== TEST COMPLETE ===\n");
+                    printf("Final rotation: %.2f deg\n", finalRot);
+                    printf("Target rotation: %.2f deg\n", targetRot);
+                    printf("Final error: %.2f deg\n", finalError);
+                    printf("Converged: %s\n", fabsf(finalError) < 5.0f ? "YES" : "NO");
+                    printf("=====================\n");
+                }
+            }
+            game->running = false;
+            return;
         }
     }
 
+    // Process input (skip in test mode)
+    if (!game->testConfig.enabled) {
+        input_update(&game->input);
+    }
+
+    // Apply input to player unit
+    if (game->playerUnit && game->playerUnit->rootSection) {
+        SectionInstance* root = game->playerUnit->rootSection.get();
+        if (root && root->hasPhysics) {
+            // Apply movement force (skip in test mode - no movement)
+            if (!game->testConfig.enabled) {
+                Vector2 force = {
+                    game->input.movement.x * MOVEMENT_FORCE,
+                    game->input.movement.y * MOVEMENT_FORCE
+                };
+                b2Body_ApplyForceToCenter(root->bodyId, (b2Vec2){force.x, force.y}, true);
+
+                // Update rotation from mouse (normal mode only)
+                game_update_player_rotation(game);
+            }
+
+            // Apply rotation torque (always - this is what we're testing)
+            game_apply_player_rotation_torque(game);
+        }
+    }
+
+    // Handle quit (skip in test mode)
+    if (!game->testConfig.enabled && game->input.quit) {
+        game->running = false;
+    }
+
+    // Debug mode toggle (0-6)
+    for (int i = 0; i <= 6; i++) {
+        if (IsKeyPressed(KEY_ZERO + i)) {
+            game->debugMode = i;
+            sceneRendererSetDebugMode(&game->sceneRenderer, i);
+        }
+    }
+
+    // Toggle normal mapping (N key)
+    static bool normalMapEnabled = true;
+    if (IsKeyPressed(KEY_N)) {
+        normalMapEnabled = !normalMapEnabled;
+        sceneRendererSetNormalMapEnabled(&game->sceneRenderer, normalMapEnabled);
+    }
+
+    // Step physics
     physics_world_step(&game->physics, dt);
 
-    // Sync physics to entities
-    for (int i = 0; i < game->entity_count; i++) {
-        entity_sync_from_physics(&game->entities[i]);
-    }
+    // Update unit manager (syncs physics transforms)
+    game->unitManager.update(dt);
 
-    // Camera follows controlled entity
-    if (game->controlled_entity) {
-        Vector3 pos = game->controlled_entity->position;
-        game->camera.target = pos;
-        game->camera.position = (Vector3){pos.x, 50, pos.z};
+    // Camera follows player
+    if (game->playerUnit && game->playerUnit->rootSection) {
+        SectionInstance* root = game->playerUnit->rootSection.get();
+        if (root) {
+            // Map physics 2D to world 3D
+            // Physics X -> World X, Physics Y -> World Z
+            Vector3 playerPos = {
+                root->worldPosition.x,
+                0.0f,
+                root->worldPosition.y
+            };
+            game->camera.target = playerPos;
+            game->camera.position = (Vector3){playerPos.x, game->cameraHeight, playerPos.z};
+        }
     }
 }
+
+//------------------------------------------------------------------------------
+// Game Render
+//------------------------------------------------------------------------------
 
 void game_render(Game* game) {
     BeginDrawing();
     ClearBackground(DARKGRAY);
 
-    // Update lighting shader with camera position
-    renderer_begin_lighting(&game->renderer, &game->camera);
+    // Update camera position for specular calculations
+    sceneRendererUpdateCamera(&game->sceneRenderer, game->camera.position);
 
     BeginMode3D(game->camera);
 
-    for (int i = 0; i < game->entity_count; i++) {
-        renderer_draw_entity(&game->renderer, &game->entities[i]);
+    // Draw level tiles
+    if (game->currentLevel >= 0 &&
+        game->currentLevel < (int)game->levelRenderData.size()) {
+        LevelRenderData& data = game->levelRenderData[game->currentLevel];
+        if (data.meshValid) {
+            DrawModel(data.tileModel, (Vector3){0, 0, 0}, 1.0f, WHITE);
+        }
+    }
+
+    // Draw all units (player, enemies, etc.)
+    game->unitManager.renderAll();
+
+    // Debug: collision shapes (press C)
+    if (IsKeyDown(KEY_C) && game->currentLevel >= 0 &&
+        game->currentLevel < (int)game->levelCollisionData.size()) {
+        drawCollisionDebug(game->levelCollisionData[game->currentLevel], RED, 0.05f);
+    }
+
+    // Debug: unit physics shapes (press U)
+    if (IsKeyDown(KEY_U)) {
+        game->unitManager.renderDebug();
     }
 
     EndMode3D();
 
+    // HUD
     DrawFPS(10, 10);
 
-    // Show debug mode info
-    const char* debugModes[] = {"0:Normal", "1:Normals", "2:LightDir", "3:Specular", "4:ViewDir", "5:HalfDir"};
-    DrawText(TextFormat("Debug: %s", debugModes[game->renderer.debug_mode]), 10, 30, 20, WHITE);
+    const char* debugModes[] = {
+        "0:Normal", "1:Normals", "2:LightDir",
+        "3:Specular", "4:ViewDir", "5:HalfDir", "6:BumpMap"
+    };
+    DrawText(TextFormat("Debug: %s (C=collision, U=units, N=normalmap)",
+             debugModes[game->debugMode]), 10, 30, 16, WHITE);
+
+    // Level info
+    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+        DrawText(TextFormat("Level %d: %s",
+                 game->currentLevel,
+                 game->levels[game->currentLevel].name.c_str()),
+                 10, 50, 16, WHITE);
+    }
+
+    // Player info
+    if (game->playerUnit && game->playerUnit->rootSection) {
+        SectionInstance* root = game->playerUnit->rootSection.get();
+        if (root) {
+            float rotDeg = root->worldRotation * RAD2DEG;
+            float desiredDeg = game->playerDesiredRotation * RAD2DEG;
+            float errDeg = normalize_angle(game->playerDesiredRotation - root->worldRotation) * RAD2DEG;
+            float angVel = root->hasPhysics ? b2Body_GetAngularVelocity(root->bodyId) : 0.0f;
+            DrawText(TextFormat("Player: (%.1f, %.1f) rot=%s%06.1f",
+                     root->worldPosition.x, root->worldPosition.y,
+                     rotDeg >= 0 ? " " : "", rotDeg),
+                     10, 70, 16, WHITE);
+            DrawText(TextFormat("Desired: %s%06.1f  err=%s%05.1f  angVel=%s%05.1f",
+                     desiredDeg >= 0 ? " " : "", desiredDeg,
+                     errDeg >= 0 ? " " : "", errDeg,
+                     angVel >= 0 ? " " : "", angVel),
+                     10, 90, 16, WHITE);
+        }
+    }
+
+    // Controls help
+    DrawText("WASD/Arrows: Move | Mouse: Aim | 0-6: Debug | ESC: Quit",
+             10, GetScreenHeight() - 25, 14, GRAY);
 
     EndDrawing();
 }
 
+//------------------------------------------------------------------------------
+// Game Destroy
+//------------------------------------------------------------------------------
+
 void game_destroy(Game* game) {
-    for (int i = 0; i < game->entity_count; i++) {
-        entity_destroy(&game->entities[i]);
+    // Destroy unit manager (cleans up all units and their physics)
+    game->unitManager.destroy();
+    game->playerUnit = nullptr;
+
+    // Free level render data
+    for (auto& data : game->levelRenderData) {
+        freeLevelRenderData(&data);
+    }
+    game->levelRenderData.clear();
+
+    // Free collision data
+    for (auto& data : game->levelCollisionData) {
+        freeLevelCollisionData(&data);
+    }
+    game->levelCollisionData.clear();
+
+    // Clear collision bodies vector (bodies destroyed with physics world)
+    game->collisionBodies.clear();
+
+    // Unload textures
+    if (game->atlasTexture.id > 0) {
+        UnloadTexture(game->atlasTexture);
+        game->atlasTexture = {0};
+    }
+    if (game->bumpAtlasTexture.id > 0) {
+        UnloadTexture(game->bumpAtlasTexture);
+        game->bumpAtlasTexture = {0};
     }
 
-    renderer_destroy(&game->renderer);
+    // Destroy scene renderer
+    sceneRendererDestroy(&game->sceneRenderer);
+
+    // Destroy physics world
     physics_world_destroy(&game->physics);
 }

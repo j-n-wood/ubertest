@@ -1,0 +1,36 @@
+{
+  "name": "Class 15",
+  "id": "droid_class_15",
+  "properties": {
+    "classId": 15,
+    "typeCode": 615,
+    "energy": 6,
+    "armour": 65.0,
+    "weapon": 0.0,
+    "droidType": 2,
+    "driveType": 1,
+    "brainType": 2,
+    "hasTurret": false,
+    "description": "Low security droid with rapid-fire weaponry. These are no longer produced and are becoming quite rare."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/615.gltf",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.762000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.008890
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": []
+  }
+}

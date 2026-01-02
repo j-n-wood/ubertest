@@ -1,0 +1,17 @@
+{
+  "name": "Class 8",
+  "id": "droid_class_8",
+  "properties": {
+    "classId": 8,
+    "typeCode": 420,
+    "energy": 4,
+    "armour": 50.0,
+    "weapon": 0.0,
+    "droidType": 1,
+    "driveType": 4,
+    "brainType": 1,
+    "hasTurret": true,
+    "description": "Slow maintenance robot, for external use. Confined to drive maintenance during hyperdrive."
+  },
+  "rootSection": null
+}

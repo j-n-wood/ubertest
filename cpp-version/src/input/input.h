@@ -2,7 +2,6 @@
 #define INPUT_H
 
 #include "raylib.h"
-#include "entities/entity.h"
 
 typedef struct ScreenToWorldCache {
     float screen_width;
@@ -21,8 +20,6 @@ typedef struct Input {
 
 void input_init(Input* input);
 void input_update(Input* input);
-void input_apply_to_entity(Input* input, Entity* entity);
 void input_update_screen_cache(Input* input, Camera3D* camera);
-void input_update_entity_rotation(Input* input, Entity* entity, Camera3D* camera);
 
 #endif

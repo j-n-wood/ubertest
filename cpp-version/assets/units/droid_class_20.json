@@ -1,0 +1,54 @@
+{
+  "name": "Class 20",
+  "id": "droid_class_20",
+  "properties": {
+    "classId": 20,
+    "typeCode": 821,
+    "energy": 8,
+    "armour": 70.0,
+    "weapon": 3.0,
+    "droidType": 2,
+    "driveType": 1,
+    "brainType": 2,
+    "hasTurret": false,
+    "description": "High security patrol droid. Fitted with powerful sensors to rapidly locate intruders."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.254000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.012700
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "model": "models/hcylinder_large_bar.gltf",
+        "localOffset": [0.000000, 0.254000],
+        "localRotation": 0.000000,
+        "height": 0.152400,
+        "scale": [1, 1, 1],
+        "children": []
+      },
+      {
+        "name": "section_2",
+        "model": "models/hcylinder_large_bar.gltf",
+        "localOffset": [0.000000, -0.254000],
+        "localRotation": 0.000000,
+        "height": 0.152400,
+        "scale": [1, 1, 1],
+        "children": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "name": "Class 23",
+  "id": "droid_class_23",
+  "properties": {
+    "classId": 23,
+    "typeCode": 999,
+    "energy": 9,
+    "armour": 80.0,
+    "weapon": 3.0,
+    "droidType": 3,
+    "driveType": 0,
+    "brainType": 3,
+    "hasTurret": false,
+    "description": "Command cyborg, largely autonomous control unit. Warning: the influence device can not control a primode brain for long."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/999base.gltf",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.000000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.017780
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": [
+      {
+        "name": "section_1",
+        "model": "models/torso.gltf",
+        "localOffset": [0.000000, 0.000000],
+        "localRotation": 0.000000,
+        "height": 0.508000,
+        "scale": [1, 1, 1],
+        "children": [
+          {
+            "name": "section_2",
+            "model": "models/rightarm.gltf",
+            "localOffset": [-0.050800, 0.317500],
+            "localRotation": 0.000000,
+            "height": 0.127000,
+            "scale": [1, 1, 1],
+            "children": []
+          },
+          {
+            "name": "section_3",
+            "model": "models/leftarm.gltf",
+            "localOffset": [-0.050800, -0.317500],
+            "localRotation": 0.000000,
+            "height": 0.127000,
+            "scale": [1, 1, 1],
+            "children": []
+          },
+          {
+            "name": "section_4",
+            "model": "models/ellipsehead.gltf",
+            "localOffset": [0.000000, 0.000000],
+            "localRotation": 0.000000,
+            "height": 0.558800,
+            "scale": [1, 1, 1],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

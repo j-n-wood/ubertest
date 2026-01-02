@@ -1,0 +1,36 @@
+{
+  "name": "Class 21",
+  "id": "droid_class_21",
+  "properties": {
+    "classId": 21,
+    "typeCode": 834,
+    "energy": 8,
+    "armour": 70.0,
+    "weapon": 3.0,
+    "droidType": 2,
+    "driveType": 1,
+    "brainType": 2,
+    "hasTurret": false,
+    "description": "Somewhat indiscriminate security droid, fitted with an over-driven antigrav unit and a disruptor which affects the brains of all robots unshielded in a moderate range."
+  },
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/852.gltf",
+    "localOffset": [0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "height": 0.508000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.012700
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": []
+  }
+}

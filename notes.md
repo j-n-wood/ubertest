@@ -47,3 +47,7 @@ Or run the executable directly:
 cmake --build build --target level_viewer 
 
  ./build/tools/level_viewer/level_viewer --input ./output/ships/ship1/levels 
+
+## Rot test mode
+
+./build/topdown_game --test-rotation --initial-rot 0 --target-rot 90 --unit droid_class_1

@@ -1,0 +1,17 @@
+{
+  "name": "Class 10",
+  "id": "droid_class_10",
+  "properties": {
+    "classId": 10,
+    "typeCode": 493,
+    "energy": 4,
+    "armour": 45.0,
+    "weapon": 0.0,
+    "droidType": 1,
+    "driveType": 4,
+    "brainType": 1,
+    "hasTurret": false,
+    "description": "General purpose maintenance robot. Specialised for computer and network repairs."
+  },
+  "rootSection": null
+}
