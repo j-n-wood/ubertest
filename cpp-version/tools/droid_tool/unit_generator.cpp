@@ -242,6 +242,10 @@ UnitGeneratorResult generateUnits(
         for (const auto& section : droidClass.sections) {
             renderIndices.insert(section.renderIndex);
         }
+        // If no sections defined, include the class's main render index for synthetic root
+        if (droidClass.sections.empty() && droidClass.renderIndex >= 0) {
+            renderIndices.insert(droidClass.renderIndex);
+        }
 
         // Convert models
         if (options.convertModels) {
@@ -298,9 +302,24 @@ UnitGeneratorResult generateUnits(
                     exportOpts.source_dir = srcDirStr.c_str();
                     exportOpts.texture_fallback_dir = texFallbackStr.c_str();
                     exportOpts.model_hint = srcFilename.c_str();
-                    exportOpts.texture_count = loadResult.material_count;
-                    for (int i = 0; i < loadResult.material_count && i < GLTF_MAX_TEXTURES; i++) {
-                        exportOpts.texture_paths[i] = loadResult.texture_paths[i];
+
+                    // Prefer texture paths from renderobjects.txt over ASC-embedded paths
+                    // RenderObjects textures are authoritative for the game's actual texture mapping
+                    static std::vector<std::string> roTexturePaths;  // Static to persist c_str() pointers
+                    roTexturePaths.clear();
+                    if (!ro->textures.empty()) {
+                        exportOpts.texture_count = static_cast<int>(ro->textures.size());
+                        for (size_t i = 0; i < ro->textures.size() && i < GLTF_MAX_TEXTURES; i++) {
+                            roTexturePaths.push_back(ro->textures[i]);
+                            exportOpts.texture_paths[i] = roTexturePaths.back().c_str();
+                        }
+                        std::cout << "    Using " << ro->textures.size() << " textures from renderobjects.txt\n";
+                    } else {
+                        // Fallback to ASC-embedded texture paths
+                        exportOpts.texture_count = loadResult.material_count;
+                        for (int i = 0; i < loadResult.material_count && i < GLTF_MAX_TEXTURES; i++) {
+                            exportOpts.texture_paths[i] = loadResult.texture_paths[i];
+                        }
                     }
 
                     fs::create_directories(outPath.parent_path(), ec);
@@ -428,6 +447,22 @@ UnitGeneratorResult generateUnits(
 
         std::set<int> processedModels;
         SectionNode root = findRoot(droidClass.sections);
+
+        // If no sections defined, create synthetic root from class renderIndex
+        DroidSection syntheticSection;
+        if (!root.section && droidClass.renderIndex >= 0) {
+            const RenderObject* classRo = findRenderObject(renderObjects, droidClass.renderIndex);
+            if (classRo && !classRo->modelPath.empty() &&
+                (classRo->type == RenderObjectType::ModelASC || classRo->type == RenderObjectType::ModelMDL)) {
+                std::cout << "  Creating synthetic root section from class renderIndex " << droidClass.renderIndex << "\n";
+                syntheticSection.renderIndex = droidClass.renderIndex;
+                syntheticSection.parentIndex = -1;
+                syntheticSection.offset = {0.0f, 0.0f, 0.0f};
+                syntheticSection.rotation = {0.0f, 0.0f, 0.0f};
+                root.section = &syntheticSection;
+                root.sectionIndex = 0;
+            }
+        }
 
         if (root.section) {
             // Add physics to root

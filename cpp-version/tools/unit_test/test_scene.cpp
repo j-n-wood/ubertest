@@ -1,8 +1,12 @@
 #include "test_scene.h"
 #include "units/unit_json.h"
 #include "raymath.h"
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
+
+namespace fs = std::filesystem;
 
 //------------------------------------------------------------------------------
 // Constants
@@ -113,6 +117,51 @@ void testSceneDestroy(TestScene* scene) {
 // Unit Management
 //------------------------------------------------------------------------------
 
+void testSceneScanUnits(TestScene* scene, const char* unitsDir) {
+    scene->availableUnits.clear();
+
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(unitsDir, ec)) {
+        if (entry.is_regular_file()) {
+            std::string filename = entry.path().filename().string();
+            // Match droid_class_*.json pattern
+            if (filename.find("droid") != std::string::npos &&
+                entry.path().extension() == ".json") {
+                scene->availableUnits.push_back(entry.path().string());
+            }
+        }
+    }
+
+    // Sort alphabetically for consistent ordering
+    std::sort(scene->availableUnits.begin(), scene->availableUnits.end());
+
+    std::cout << "Found " << scene->availableUnits.size() << " unit files" << std::endl;
+}
+
+bool testSceneLoadUnitByIndex(TestScene* scene, int index) {
+    if (scene->availableUnits.empty()) return false;
+
+    // Clamp index to valid range
+    index = std::clamp(index, 0, (int)scene->availableUnits.size() - 1);
+    scene->currentUnitIndex = index;
+
+    return testSceneLoadUnit(scene, scene->availableUnits[index].c_str());
+}
+
+void testSceneNextUnit(TestScene* scene) {
+    if (scene->availableUnits.empty()) return;
+
+    int nextIndex = (scene->currentUnitIndex + 1) % (int)scene->availableUnits.size();
+    testSceneLoadUnitByIndex(scene, nextIndex);
+}
+
+void testScenePrevUnit(TestScene* scene) {
+    if (scene->availableUnits.empty()) return;
+
+    int prevIndex = (scene->currentUnitIndex - 1 + (int)scene->availableUnits.size()) % (int)scene->availableUnits.size();
+    testSceneLoadUnitByIndex(scene, prevIndex);
+}
+
 bool testSceneLoadUnit(TestScene* scene, const char* path) {
     // Clear any debris from previous unit
     scene->units.clearDebris();
@@ -138,6 +187,15 @@ bool testSceneLoadUnit(TestScene* scene, const char* path) {
     }
 
     scene->currentUnitPath = path;
+
+    // Update currentUnitIndex if path matches one in availableUnits
+    for (size_t i = 0; i < scene->availableUnits.size(); ++i) {
+        if (scene->availableUnits[i] == path) {
+            scene->currentUnitIndex = (int)i;
+            break;
+        }
+    }
+
     std::cout << "Loaded unit: " << def->name << " (" << def->id << ")" << std::endl;
     std::cout << "  Collision radius: " << def->collisionRadius << std::endl;
     std::cout << "  Proximity radius: " << def->proximityRadius << std::endl;
@@ -314,6 +372,16 @@ void testSceneHandleInput(TestScene* scene) {
     // F1 - Toggle debug draw
     if (IsKeyPressed(KEY_F1)) {
         scene->showDebug = !scene->showDebug;
+    }
+
+    // F2 - Previous unit
+    if (IsKeyPressed(KEY_F2)) {
+        testScenePrevUnit(scene);
+    }
+
+    // F3 - Next unit
+    if (IsKeyPressed(KEY_F3)) {
+        testSceneNextUnit(scene);
     }
 
     // I - Toggle info overlay
@@ -497,6 +565,8 @@ void testSceneRenderInfo(TestScene* scene) {
     y += lineHeight;
     DrawText("  F1 - Toggle debug", 10, y, 14, GRAY);
     y += lineHeight;
+    DrawText("  F2/F3 - Prev/next unit", 10, y, 14, GRAY);
+    y += lineHeight;
     DrawText("  I - Toggle info", 10, y, 14, GRAY);
     y += lineHeight;
     DrawText("  ESC - Exit", 10, y, 14, GRAY);
@@ -534,7 +604,14 @@ void testSceneRenderInfo(TestScene* scene) {
     // Unit info
     if (scene->currentUnit && scene->currentUnit->definition) {
         const auto* def = scene->currentUnit->definition;
-        DrawText(TextFormat("Unit: %s", def->name.c_str()), 10, y, 16, WHITE);
+
+        // Show unit index if multiple units available
+        if (!scene->availableUnits.empty()) {
+            DrawText(TextFormat("Unit [%d/%d]: %s", scene->currentUnitIndex + 1,
+                     (int)scene->availableUnits.size(), def->name.c_str()), 10, y, 16, WHITE);
+        } else {
+            DrawText(TextFormat("Unit: %s", def->name.c_str()), 10, y, 16, WHITE);
+        }
         y += lineHeight;
         DrawText(TextFormat("ID: %s", def->id.c_str()), 10, y, 14, LIGHTGRAY);
         y += lineHeight;

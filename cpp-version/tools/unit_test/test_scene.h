@@ -22,6 +22,10 @@ struct TestScene {
     UnitInstance* currentUnit = nullptr;
     std::string currentUnitPath;
 
+    // Available unit files (for switching with F2/F3)
+    std::vector<std::string> availableUnits;
+    int currentUnitIndex = 0;
+
     // Asset path configuration
     std::string modelsBasePath;  // Base path for resolving model references
 
@@ -56,8 +60,18 @@ bool testSceneInit(TestScene* scene, const char* shaderPath, const char* modelsB
 // Destroy the test scene
 void testSceneDestroy(TestScene* scene);
 
+// Scan for available unit files in the units directory
+void testSceneScanUnits(TestScene* scene, const char* unitsDir);
+
 // Load and spawn a unit from a JSON file
 bool testSceneLoadUnit(TestScene* scene, const char* path);
+
+// Load unit by index in availableUnits list
+bool testSceneLoadUnitByIndex(TestScene* scene, int index);
+
+// Switch to next/previous unit
+void testSceneNextUnit(TestScene* scene);
+void testScenePrevUnit(TestScene* scene);
 
 // Reset the current unit (destroy and respawn)
 void testSceneResetUnit(TestScene* scene);

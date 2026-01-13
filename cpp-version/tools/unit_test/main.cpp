@@ -58,6 +58,7 @@ void printUsage(const char* programName) {
     std::cout << "  R           - Reset (respawn unit)\n";
     std::cout << "  P           - Pause/resume physics\n";
     std::cout << "  F1          - Toggle debug visualization\n";
+    std::cout << "  F2/F3       - Previous/next unit\n";
     std::cout << "  I           - Toggle info overlay\n";
     std::cout << "  ESC         - Exit\n";
 }
@@ -127,6 +128,12 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to initialize scene (check shader path: " << shadersPath << ")" << std::endl;
         CloseWindow();
         return 1;
+    }
+
+    // Scan for available units if using asset path
+    if (!assetPath.empty()) {
+        std::string unitsDir = (fs::path(assetPath) / ASSET_UNITS).string();
+        testSceneScanUnits(&scene, unitsDir.c_str());
     }
 
     // Load the unit
