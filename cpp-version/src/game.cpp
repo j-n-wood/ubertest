@@ -424,18 +424,17 @@ static float getUnitPropertyFloat(const UnitDefinition* def, const char* key, fl
 }
 
 static void game_apply_player_rotation_torque(Game* game) {
-    if (!game->playerUnit || game->playerUnit->allSections.empty()) return;
+    if (!game->playerUnit || !game->playerUnit->rootSection) return;
+    if (!b2Body_IsValid(game->playerUnit->bodyId)) return;
 
     SectionInstance* root = game->playerUnit->rootSection.get();
-    if (!root || !root->hasPhysics) return;
-
     float current = root->worldRotation;
     float target = game->playerDesiredRotation;
 
     // Calculate shortest angular difference
     float diff = normalize_angle(target - current);
 
-    float angular_vel = b2Body_GetAngularVelocity(root->bodyId);
+    float angular_vel = b2Body_GetAngularVelocity(game->playerUnit->bodyId);
 
     // Check for unit-specific rotation gains in properties
     const UnitDefinition* def = game->playerUnit->definition;
@@ -444,7 +443,7 @@ static void game_apply_player_rotation_torque(Game* game) {
 
     // If not specified in unit definition, use inertia-scaled defaults
     if (Kp <= 0.0f || Kd <= 0.0f) {
-        float inertia = b2Body_GetInertiaTensor(root->bodyId);
+        float inertia = b2Body_GetInertiaTensor(game->playerUnit->bodyId);
 
         // Base gains tuned for inertia ~0.1 (droid_class_1 scale)
         // Scale proportionally so smaller bodies don't oscillate wildly
@@ -463,7 +462,7 @@ static void game_apply_player_rotation_torque(Game* game) {
     if (torque > MAX_TORQUE) torque = MAX_TORQUE;
     if (torque < -MAX_TORQUE) torque = -MAX_TORQUE;
 
-    b2Body_ApplyTorque(root->bodyId, torque, true);
+    b2Body_ApplyTorque(game->playerUnit->bodyId, torque, true);
 }
 
 //------------------------------------------------------------------------------
@@ -482,7 +481,8 @@ void game_update(Game* game, float dt) {
                 float currentRot = root->worldRotation * RAD2DEG;
                 float targetRot = game->testConfig.targetRotation;
                 float error = normalize_angle(game->playerDesiredRotation - root->worldRotation) * RAD2DEG;
-                float angVel = root->hasPhysics ? b2Body_GetAngularVelocity(root->bodyId) : 0.0f;
+                float angVel = b2Body_IsValid(game->playerUnit->bodyId)
+                             ? b2Body_GetAngularVelocity(game->playerUnit->bodyId) : 0.0f;
 
                 printf("Frame %4d: rot=%7.2f deg  target=%7.2f deg  error=%7.2f deg  angVel=%7.2f\n",
                        game->testFrameCount, currentRot, targetRot, error, angVel);
@@ -519,15 +519,14 @@ void game_update(Game* game, float dt) {
 
     // Apply input to player unit
     if (game->playerUnit && game->playerUnit->rootSection) {
-        SectionInstance* root = game->playerUnit->rootSection.get();
-        if (root && root->hasPhysics) {
+        if (b2Body_IsValid(game->playerUnit->bodyId)) {
             // Apply movement force (skip in test mode - no movement)
             if (!game->testConfig.enabled) {
                 Vector2 force = {
                     game->input.movement.x * MOVEMENT_FORCE,
                     game->input.movement.y * MOVEMENT_FORCE
                 };
-                b2Body_ApplyForceToCenter(root->bodyId, (b2Vec2){force.x, force.y}, true);
+                b2Body_ApplyForceToCenter(game->playerUnit->bodyId, (b2Vec2){force.x, force.y}, true);
 
                 // Update rotation from mouse (normal mode only)
                 game_update_player_rotation(game);
@@ -644,7 +643,8 @@ void game_render(Game* game) {
             float rotDeg = root->worldRotation * RAD2DEG;
             float desiredDeg = game->playerDesiredRotation * RAD2DEG;
             float errDeg = normalize_angle(game->playerDesiredRotation - root->worldRotation) * RAD2DEG;
-            float angVel = root->hasPhysics ? b2Body_GetAngularVelocity(root->bodyId) : 0.0f;
+            float angVel = b2Body_IsValid(game->playerUnit->bodyId)
+                         ? b2Body_GetAngularVelocity(game->playerUnit->bodyId) : 0.0f;
             DrawText(TextFormat("Player: (%.1f, %.1f) rot=%s%06.1f",
                      root->worldPosition.x, root->worldPosition.y,
                      rotDeg >= 0 ? " " : "", rotDeg),

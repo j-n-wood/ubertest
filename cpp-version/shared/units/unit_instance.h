@@ -7,7 +7,7 @@
 #include <vector>
 
 //------------------------------------------------------------------------------
-// Section Instance (runtime section with physics body)
+// Section Instance (runtime section - rendering only, no per-section physics)
 //------------------------------------------------------------------------------
 
 class SectionInstance {
@@ -15,7 +15,7 @@ public:
     SectionInstance() = default;
     ~SectionInstance();
 
-    // Non-copyable (owns physics/model resources)
+    // Non-copyable (owns model resources)
     SectionInstance(const SectionInstance&) = delete;
     SectionInstance& operator=(const SectionInstance&) = delete;
 
@@ -25,13 +25,6 @@ public:
 
     const SectionDefinition* definition = nullptr;
 
-    // Physics
-    b2BodyId bodyId = b2_nullBodyId;
-    bool hasPhysics = false;
-
-    // Joint to parent (null for root or after deconstruction)
-    b2JointId parentJoint = b2_nullJointId;
-
     // Rendering
     Model model = {};
     bool hasModel = false;
@@ -40,27 +33,41 @@ public:
     SectionInstance* parent = nullptr;
     std::vector<std::unique_ptr<SectionInstance>> children;
 
-    // State
-    bool attached = true;                     // False after joint break
-
-    // Cached world transform (updated each frame)
+    // Cached world transform (updated each frame from unit physics + offsets)
     Vector2 worldPosition = {0, 0};
     float worldRotation = 0.0f;
+
+    // Facing angle override (used when rotationMode == FollowFacing)
+    float facingAngle = 0.0f;
 };
 
 //------------------------------------------------------------------------------
-// Unit Instance (runtime unit with all sections)
+// Debris Object (created when unit is dismantled)
+//------------------------------------------------------------------------------
+
+struct DebrisObject {
+    b2BodyId bodyId = b2_nullBodyId;
+    Model model = {};
+    bool hasModel = false;
+    float height = 0.0f;
+    int32_t collisionGroup = 0;
+};
+
+//------------------------------------------------------------------------------
+// Unit Instance (runtime unit with single physics body)
 //------------------------------------------------------------------------------
 
 struct UnitInstance {
     const UnitDefinition* definition = nullptr;
+
+    // Single physics body for the entire unit
+    b2BodyId bodyId = b2_nullBodyId;
+
+    // Section hierarchy (rendering only)
     std::unique_ptr<SectionInstance> rootSection;
 
     // All section instances flattened for iteration
     std::vector<SectionInstance*> allSections;
-
-    // All joints for quick access during deconstruction
-    std::vector<b2JointId> allJoints;
 
     // Collision filtering - negative group index prevents self-collision
     int32_t collisionGroupId = 0;

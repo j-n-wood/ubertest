@@ -169,26 +169,42 @@ json physicsToJson(const PhysicsProperties& phys) {
     return j;
 }
 
+SectionRotationMode parseRotationMode(const std::string& str) {
+    if (str == "FollowFacing") return SectionRotationMode::FollowFacing;
+    if (str == "Fixed") return SectionRotationMode::Fixed;
+    return SectionRotationMode::FollowUnit;  // Default
+}
+
+std::string rotationModeToString(SectionRotationMode mode) {
+    switch (mode) {
+        case SectionRotationMode::FollowFacing: return "FollowFacing";
+        case SectionRotationMode::Fixed: return "Fixed";
+        default: return "FollowUnit";
+    }
+}
+
 void parseSection(const json& j, SectionDefinition& section) {
     section.name = j.value("name", "");
     section.modelPath = j.value("model", "");
 
-    if (j.contains("localOffset")) {
-        section.localOffset = parseVector2(j["localOffset"]);
+    if (j.contains("offset")) {
+        section.offset = parseVector3(j["offset"], {0, 0, 0});
     }
     section.localRotation = j.value("localRotation", 0.0f);
-    section.height = j.value("height", 0.0f);
 
     if (j.contains("scale")) {
         section.scale = parseVector3(j["scale"], {1, 1, 1});
     }
 
+    // Parse rotation mode
+    if (j.contains("rotationMode")) {
+        section.rotationMode = parseRotationMode(j["rotationMode"].get<std::string>());
+    }
+
+    // Physics (used for debris when unit is dismantled)
     if (j.contains("physics")) {
         section.physics = parsePhysics(j["physics"]);
     }
-
-    section.jointBreakForce = j.value("jointBreakForce", 0.0f);
-    section.jointBreakTorque = j.value("jointBreakTorque", 0.0f);
 
     if (j.contains("properties")) {
         section.properties = parseProperties(j["properties"]);
@@ -211,28 +227,24 @@ json sectionToJson(const SectionDefinition& section) {
         j["model"] = section.modelPath;
     }
 
-    if (section.localOffset.x != 0 || section.localOffset.y != 0) {
-        j["localOffset"] = vector2ToJson(section.localOffset);
+    if (section.offset.x != 0 || section.offset.y != 0 || section.offset.z != 0) {
+        j["offset"] = vector3ToJson(section.offset);
     }
     if (section.localRotation != 0) {
         j["localRotation"] = section.localRotation;
-    }
-    if (section.height != 0) {
-        j["height"] = section.height;
     }
     if (section.scale.x != 1 || section.scale.y != 1 || section.scale.z != 1) {
         j["scale"] = vector3ToJson(section.scale);
     }
 
-    if (section.physics.has_value()) {
-        j["physics"] = physicsToJson(*section.physics);
+    // Output rotation mode if not default
+    if (section.rotationMode != SectionRotationMode::FollowUnit) {
+        j["rotationMode"] = rotationModeToString(section.rotationMode);
     }
 
-    if (section.jointBreakForce > 0) {
-        j["jointBreakForce"] = section.jointBreakForce;
-    }
-    if (section.jointBreakTorque > 0) {
-        j["jointBreakTorque"] = section.jointBreakTorque;
+    // Physics (used for debris when unit is dismantled)
+    if (section.physics.has_value()) {
+        j["physics"] = physicsToJson(*section.physics);
     }
 
     if (!section.properties.empty()) {
@@ -271,6 +283,10 @@ bool loadUnitDefinitionFromFile(std::string_view path, UnitDefinition& outDefini
         outDefinition.name = j.value("name", "");
         outDefinition.id = j.value("id", "");
 
+        // Unit-level physics radii
+        outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
+        outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
+
         if (j.contains("properties")) {
             outDefinition.properties = parseProperties(j["properties"]);
         }
@@ -296,6 +312,10 @@ bool saveUnitDefinitionToFile(std::string_view path, const UnitDefinition& defin
 
         j["name"] = definition.name;
         j["id"] = definition.id;
+
+        // Unit-level physics radii
+        j["collisionRadius"] = definition.collisionRadius;
+        j["proximityRadius"] = definition.proximityRadius;
 
         if (!definition.properties.empty()) {
             j["properties"] = propertiesToJson(definition.properties);
@@ -326,6 +346,10 @@ bool parseUnitDefinitionFromString(std::string_view jsonString, UnitDefinition& 
         outDefinition.name = j.value("name", "");
         outDefinition.id = j.value("id", "");
 
+        // Unit-level physics radii
+        outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
+        outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
+
         if (j.contains("properties")) {
             outDefinition.properties = parseProperties(j["properties"]);
         }
@@ -351,6 +375,10 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
         j["name"] = definition.name;
         j["id"] = definition.id;
 
+        // Unit-level physics radii
+        j["collisionRadius"] = definition.collisionRadius;
+        j["proximityRadius"] = definition.proximityRadius;
+
         if (!definition.properties.empty()) {
             j["properties"] = propertiesToJson(definition.properties);
         }
@@ -365,9 +393,11 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
     }
 }
 
-void scaleDefinitionHeights(SectionDefinition& section, float scale) {
-    section.height *= scale;
+void scaleDefinitionOffsets(SectionDefinition& section, float scale) {
+    section.offset.x *= scale;
+    section.offset.y *= scale;
+    section.offset.z *= scale;
     for (auto& child : section.children) {
-        scaleDefinitionHeights(child, scale);
+        scaleDefinitionOffsets(child, scale);
     }
 }

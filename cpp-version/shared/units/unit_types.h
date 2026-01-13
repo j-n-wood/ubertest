@@ -68,6 +68,16 @@ using PropertyValue = std::variant<
 using PropertyMap = std::unordered_map<std::string, PropertyValue>;
 
 //------------------------------------------------------------------------------
+// Section Rotation Mode
+//------------------------------------------------------------------------------
+
+enum class SectionRotationMode {
+    FollowUnit,         // Section rotates with unit physics rotation (default)
+    FollowFacing,       // Section rotates to face a target angle (e.g., turret)
+    Fixed               // Section maintains fixed world rotation
+};
+
+//------------------------------------------------------------------------------
 // Section Definition (loaded from JSON, immutable template)
 //------------------------------------------------------------------------------
 
@@ -76,17 +86,16 @@ struct SectionDefinition {
     std::string modelPath;                    // Relative path to GLTF file
 
     // Transform relative to parent
-    Vector2 localOffset = {0, 0};             // 2D offset (physics coords)
+    // offset: (x, y, z) where x/y are 2D physics coords, z is vertical height
+    Vector3 offset = {0, 0, 0};
     float localRotation = 0.0f;               // Radians
-    float height = 0.0f;                      // Y offset for 3D rendering
     Vector3 scale = {1, 1, 1};                // Model scale
 
-    // Physics (optional)
-    std::optional<PhysicsProperties> physics;
+    // Rotation behavior
+    SectionRotationMode rotationMode = SectionRotationMode::FollowUnit;
 
-    // Joint properties for connection to parent
-    float jointBreakForce = 0.0f;             // 0 = unbreakable
-    float jointBreakTorque = 0.0f;            // 0 = unbreakable
+    // Physics (optional - used for debris when unit is dismantled)
+    std::optional<PhysicsProperties> physics;
 
     // Custom game properties
     PropertyMap properties;
@@ -102,6 +111,11 @@ struct SectionDefinition {
 struct UnitDefinition {
     std::string name;
     std::string id;                           // Unique identifier for this unit type
+
+    // Unit-level physics (single collision shape for entire unit)
+    float collisionRadius = 0.5f;             // Collision shape radius (meters)
+    float proximityRadius = 1.0f;             // Proximity detection radius for AI/sensing
+
     SectionDefinition rootSection;
     PropertyMap properties;                   // Unit-level properties
 };

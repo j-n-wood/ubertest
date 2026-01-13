@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <filesystem>
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -23,8 +24,17 @@ void UnitManager::init(b2WorldId worldId, const char* modelsBasePath) {
 }
 
 void UnitManager::destroy() {
-    // Clear instances - SectionInstance destructors handle cleanup via RAII
+    // Clear debris physics bodies
+    clearDebris();
+
+    // Clear instances - destroy unit physics bodies
+    for (auto& instance : m_instances) {
+        if (instance && b2Body_IsValid(instance->bodyId)) {
+            b2DestroyBody(instance->bodyId);
+        }
+    }
     m_instances.clear();
+
     m_definitions.clear();
     m_modelsBasePath.clear();
     m_worldId = b2_nullWorldId;
@@ -35,11 +45,6 @@ void UnitManager::destroy() {
 //------------------------------------------------------------------------------
 
 const UnitDefinition* UnitManager::loadDefinition(std::string_view path) {
-    // Check if already loaded by scanning existing definitions
-    for (const auto& [id, def] : m_definitions) {
-        // Could check by path if we stored it, but for now just load
-    }
-
     auto definition = std::make_unique<UnitDefinition>();
     if (!loadUnitDefinitionFromFile(path, *definition)) {
         return nullptr;
@@ -123,20 +128,48 @@ UnitInstance* UnitManager::createInstance(
     instance->active = true;
     instance->collisionGroupId = m_nextCollisionGroup--;
 
-    // Create root section
+    // Create single physics body for the entire unit using collisionRadius
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = {position.x, position.y};
+    bodyDef.rotation = b2MakeRot(rotation);
+    bodyDef.linearDamping = 4.0f;
+    bodyDef.angularDamping = 8.0f;
+
+    instance->bodyId = b2CreateBody(m_worldId, &bodyDef);
+
+    // Create circle shape using unit's collision radius
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0f;
+    shapeDef.friction = 0.3f;
+    shapeDef.restitution = 0.0f;
+    shapeDef.filter.groupIndex = instance->collisionGroupId;
+
+    b2Circle circle;
+    circle.center = {0, 0};
+    circle.radius = definition->collisionRadius;
+    b2CreateCircleShape(instance->bodyId, &shapeDef, &circle);
+
+    // Create section instances (rendering only, no per-section physics)
     SectionInstance* root = createSectionInstance(
         definition->rootSection,
         nullptr,
-        position,
-        rotation,
         instance.get()
     );
 
     if (!root) {
+        b2DestroyBody(instance->bodyId);
         return nullptr;
     }
 
     instance->rootSection.reset(root);
+
+    // Initialize section transforms
+    root->worldPosition = position;
+    root->worldRotation = rotation;
+    for (auto& child : root->children) {
+        updateSectionTransforms(child.get(), root->worldPosition, root->worldRotation);
+    }
 
     UnitInstance* ptr = instance.get();
     m_instances.push_back(std::move(instance));
@@ -150,6 +183,10 @@ void UnitManager::destroyInstance(UnitInstance* instance) {
         [instance](const auto& ptr) { return ptr.get() == instance; });
 
     if (it != m_instances.end()) {
+        // Destroy physics body
+        if (b2Body_IsValid(instance->bodyId)) {
+            b2DestroyBody(instance->bodyId);
+        }
         // Erase triggers unique_ptr destruction, which calls SectionInstance destructors
         m_instances.erase(it);
     }
@@ -160,104 +197,17 @@ const std::vector<std::unique_ptr<UnitInstance>>& UnitManager::getInstances() co
 }
 
 //------------------------------------------------------------------------------
-// Section Instance Creation
+// Section Instance Creation (Rendering Only)
 //------------------------------------------------------------------------------
 
 SectionInstance* UnitManager::createSectionInstance(
     const SectionDefinition& def,
     SectionInstance* parent,
-    Vector2 parentWorldPos,
-    float parentWorldRot,
     UnitInstance* unit
 ) {
     auto section = new SectionInstance();
     section->definition = &def;
     section->parent = parent;
-    section->attached = true;
-
-    // Calculate world position
-    // Offset rotation uses clockwise direction to match rendering rotation convention
-    float cosR = std::cos(parentWorldRot);
-    float sinR = std::sin(parentWorldRot);
-    section->worldPosition = {
-        parentWorldPos.x + def.localOffset.x * cosR + def.localOffset.y * sinR,
-        parentWorldPos.y - def.localOffset.x * sinR + def.localOffset.y * cosR
-    };
-    section->worldRotation = parentWorldRot + def.localRotation;
-
-    // Create physics body if defined
-    if (def.physics.has_value() && def.physics->shapeType != PhysicsShapeType::None) {
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        bodyDef.type = b2_dynamicBody;
-        bodyDef.position = {section->worldPosition.x, section->worldPosition.y};
-        bodyDef.rotation = b2MakeRot(section->worldRotation);
-        bodyDef.linearDamping = def.physics->linearDamping;
-        bodyDef.angularDamping = def.physics->angularDamping;
-
-        section->bodyId = b2CreateBody(m_worldId, &bodyDef);
-        section->hasPhysics = true;
-
-        // Create shape
-        const auto& phys = *def.physics;
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = phys.density;
-        shapeDef.friction = phys.friction;
-        shapeDef.restitution = phys.restitution;
-        shapeDef.isSensor = phys.isSensor;
-
-        // Set collision filtering - negative group index prevents self-collision within unit
-        shapeDef.filter.groupIndex = unit->collisionGroupId;
-
-        switch (phys.shapeType) {
-            case PhysicsShapeType::Circle: {
-                b2Circle circle;
-                circle.center = {phys.circle.offset.x, phys.circle.offset.y};
-                circle.radius = phys.circle.radius;
-                b2CreateCircleShape(section->bodyId, &shapeDef, &circle);
-                break;
-            }
-            case PhysicsShapeType::Box: {
-                b2Polygon box = b2MakeOffsetBox(
-                    phys.box.width / 2.0f,
-                    phys.box.height / 2.0f,
-                    {phys.box.offset.x, phys.box.offset.y},
-                    0.0f  // angle in radians
-                );
-                b2CreatePolygonShape(section->bodyId, &shapeDef, &box);
-                break;
-            }
-            case PhysicsShapeType::Polygon: {
-                if (!phys.polygon.vertices.empty() && phys.polygon.vertices.size() <= 8) {
-                    b2Vec2 verts[8];
-                    int count = std::min((int)phys.polygon.vertices.size(), 8);
-                    for (int i = 0; i < count; ++i) {
-                        verts[i] = {phys.polygon.vertices[i].x, phys.polygon.vertices[i].y};
-                    }
-                    b2Hull hull = b2ComputeHull(verts, count);
-                    b2Polygon poly = b2MakePolygon(&hull, 0);
-                    b2CreatePolygonShape(section->bodyId, &shapeDef, &poly);
-                }
-                break;
-            }
-            default:
-                break;
-        }
-
-        // Create weld joint to parent if this is not the root
-        if (parent && parent->hasPhysics) {
-            b2WeldJointDef jointDef = b2DefaultWeldJointDef();
-            jointDef.bodyIdA = parent->bodyId;
-            jointDef.bodyIdB = section->bodyId;
-
-            // Local anchors
-            jointDef.localAnchorA = {def.localOffset.x, def.localOffset.y};
-            jointDef.localAnchorB = {0, 0};
-            jointDef.referenceAngle = def.localRotation;
-
-            section->parentJoint = b2CreateWeldJoint(m_worldId, &jointDef);
-            unit->allJoints.push_back(section->parentJoint);
-        }
-    }
 
     // Load model if specified
     if (!def.modelPath.empty()) {
@@ -285,8 +235,6 @@ SectionInstance* UnitManager::createSectionInstance(
         SectionInstance* child = createSectionInstance(
             childDef,
             section,
-            section->worldPosition,
-            section->worldRotation,
             unit
         );
         if (child) {
@@ -298,33 +246,176 @@ SectionInstance* UnitManager::createSectionInstance(
 }
 
 //------------------------------------------------------------------------------
-// Deconstruction
+// Debris Management
 //------------------------------------------------------------------------------
 
-void UnitManager::breakJoint(SectionInstance* section) {
-    if (!section || !section->attached) return;
-
-    if (b2Joint_IsValid(section->parentJoint)) {
-        b2DestroyJoint(section->parentJoint);
+// Helper to calculate accumulated height for a section by walking up parent chain
+static float getAccumulatedHeight(SectionInstance* section) {
+    float height = 0.0f;
+    while (section) {
+        height += section->definition->offset.z;
+        section = section->parent;
     }
-    section->parentJoint = b2_nullJointId;
-    section->attached = false;
+    return height;
 }
 
-void UnitManager::breakAllJoints(UnitInstance* unit) {
-    if (!unit) return;
+std::vector<DebrisObject> UnitManager::dismantleUnit(UnitInstance* unit) {
+    std::vector<DebrisObject> debris;
 
-    for (auto& jointId : unit->allJoints) {
-        if (b2Joint_IsValid(jointId)) {
-            b2DestroyJoint(jointId);
+    if (!unit || !unit->rootSection) {
+        return debris;
+    }
+
+    // Get current unit velocity before destruction
+    b2Vec2 unitVel = {0, 0};
+    float unitAngVel = 0.0f;
+    if (b2Body_IsValid(unit->bodyId)) {
+        unitVel = b2Body_GetLinearVelocity(unit->bodyId);
+        unitAngVel = b2Body_GetAngularVelocity(unit->bodyId);
+    }
+
+    Vector2 unitPos = unit->rootSection->worldPosition;
+
+    // Create debris for each section that has physics properties defined
+    for (auto* section : unit->allSections) {
+        if (!section->definition->physics.has_value()) {
+            continue;  // Skip sections without debris physics
+        }
+
+        // Calculate velocity contribution from rotation
+        Vector2 relPos = {
+            section->worldPosition.x - unitPos.x,
+            section->worldPosition.y - unitPos.y
+        };
+        b2Vec2 debrisVel = {
+            unitVel.x - unitAngVel * relPos.y,
+            unitVel.y + unitAngVel * relPos.x
+        };
+
+        // Calculate accumulated height for this section (relative heights sum up the chain)
+        float sectionHeight = getAccumulatedHeight(section);
+
+        DebrisObject obj = createDebrisFromSection(
+            *section->definition,
+            section->model,
+            section->hasModel,
+            section->worldPosition,
+            section->worldRotation,
+            sectionHeight,
+            debrisVel,
+            unitAngVel
+        );
+
+        // Clear model from section so it's not unloaded when unit is destroyed
+        if (section->hasModel) {
+            section->hasModel = false;  // Ownership transferred to debris
+        }
+
+        debris.push_back(obj);
+        m_debris.push_back(obj);
+    }
+
+    // Destroy the unit
+    destroyInstance(unit);
+
+    return debris;
+}
+
+DebrisObject UnitManager::createDebrisFromSection(
+    const SectionDefinition& section,
+    const Model& model,
+    bool hasModel,
+    Vector2 position,
+    float rotation,
+    float accumulatedHeight,
+    b2Vec2 velocity,
+    float angularVelocity
+) {
+    DebrisObject obj;
+    obj.model = model;
+    obj.hasModel = hasModel;
+    obj.height = accumulatedHeight;  // Use pre-computed accumulated height
+    obj.collisionGroup = m_nextCollisionGroup--;
+
+    if (!section.physics.has_value()) {
+        return obj;
+    }
+
+    const auto& phys = *section.physics;
+
+    // Create physics body
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = {position.x, position.y};
+    bodyDef.rotation = b2MakeRot(rotation);
+    bodyDef.linearDamping = phys.linearDamping;
+    bodyDef.angularDamping = phys.angularDamping;
+
+    obj.bodyId = b2CreateBody(m_worldId, &bodyDef);
+
+    // Create shape
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = phys.density;
+    shapeDef.friction = phys.friction;
+    shapeDef.restitution = phys.restitution;
+    shapeDef.filter.groupIndex = obj.collisionGroup;
+
+    switch (phys.shapeType) {
+        case PhysicsShapeType::Circle: {
+            b2Circle circle;
+            circle.center = {phys.circle.offset.x, phys.circle.offset.y};
+            circle.radius = phys.circle.radius;
+            b2CreateCircleShape(obj.bodyId, &shapeDef, &circle);
+            break;
+        }
+        case PhysicsShapeType::Box: {
+            b2Polygon box = b2MakeOffsetBox(
+                phys.box.width / 2.0f,
+                phys.box.height / 2.0f,
+                {phys.box.offset.x, phys.box.offset.y},
+                0.0f
+            );
+            b2CreatePolygonShape(obj.bodyId, &shapeDef, &box);
+            break;
+        }
+        case PhysicsShapeType::Polygon: {
+            if (!phys.polygon.vertices.empty() && phys.polygon.vertices.size() <= 8) {
+                b2Vec2 verts[8];
+                int count = std::min((int)phys.polygon.vertices.size(), 8);
+                for (int i = 0; i < count; ++i) {
+                    verts[i] = {phys.polygon.vertices[i].x, phys.polygon.vertices[i].y};
+                }
+                b2Hull hull = b2ComputeHull(verts, count);
+                b2Polygon poly = b2MakePolygon(&hull, 0);
+                b2CreatePolygonShape(obj.bodyId, &shapeDef, &poly);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    // Set initial velocity
+    b2Body_SetLinearVelocity(obj.bodyId, velocity);
+    b2Body_SetAngularVelocity(obj.bodyId, angularVelocity);
+
+    return obj;
+}
+
+const std::vector<DebrisObject>& UnitManager::getDebris() const {
+    return m_debris;
+}
+
+void UnitManager::clearDebris() {
+    for (auto& debris : m_debris) {
+        if (b2Body_IsValid(debris.bodyId)) {
+            b2DestroyBody(debris.bodyId);
+        }
+        if (debris.hasModel) {
+            UnloadModel(debris.model);
         }
     }
-    unit->allJoints.clear();
-
-    for (auto* section : unit->allSections) {
-        section->attached = (section->parent == nullptr);  // Root stays "attached"
-        section->parentJoint = b2_nullJointId;
-    }
+    m_debris.clear();
 }
 
 //------------------------------------------------------------------------------
@@ -337,58 +428,18 @@ void UnitManager::update(float dt) {
     for (auto& instance : m_instances) {
         if (!instance || !instance->active) continue;
 
-        // Check for joint breaking
-        checkJointBreaking(instance.get());
+        // Update transforms from unit's single physics body
+        if (instance->rootSection && b2Body_IsValid(instance->bodyId)) {
+            b2Vec2 pos = b2Body_GetPosition(instance->bodyId);
+            float rot = b2Rot_GetAngle(b2Body_GetRotation(instance->bodyId));
 
-        // Update transforms
-        if (instance->rootSection) {
-            // Get root position from physics if it has a body
-            Vector2 rootPos = {0, 0};
-            float rootRot = 0.0f;
+            instance->rootSection->worldPosition = {pos.x, pos.y};
+            instance->rootSection->worldRotation = rot;
 
-            if (instance->rootSection->hasPhysics &&
-                b2Body_IsValid(instance->rootSection->bodyId)) {
-                b2Vec2 pos = b2Body_GetPosition(instance->rootSection->bodyId);
-                rootPos = {pos.x, pos.y};
-                rootRot = b2Rot_GetAngle(b2Body_GetRotation(instance->rootSection->bodyId));
-            }
-
-            instance->rootSection->worldPosition = rootPos;
-            instance->rootSection->worldRotation = rootRot;
-
-            // Update children
+            // Update children using code-based positioning
             for (auto& child : instance->rootSection->children) {
-                updateSectionTransforms(child.get(), rootPos, rootRot);
+                updateSectionTransforms(child.get(), instance->rootSection->worldPosition, rot);
             }
-        }
-    }
-}
-
-void UnitManager::checkJointBreaking(UnitInstance* unit) {
-    for (auto* section : unit->allSections) {
-        if (!section->attached || !b2Joint_IsValid(section->parentJoint)) continue;
-
-        const auto* def = section->definition;
-        if (!def) continue;
-
-        // Check if break thresholds are set
-        if (def->jointBreakForce <= 0 && def->jointBreakTorque <= 0) continue;
-
-        b2Vec2 force = b2Joint_GetConstraintForce(section->parentJoint);
-        float torque = b2Joint_GetConstraintTorque(section->parentJoint);
-
-        float forceMag = b2Length(force);
-
-        bool shouldBreak = false;
-        if (def->jointBreakForce > 0 && forceMag > def->jointBreakForce) {
-            shouldBreak = true;
-        }
-        if (def->jointBreakTorque > 0 && std::abs(torque) > def->jointBreakTorque) {
-            shouldBreak = true;
-        }
-
-        if (shouldBreak) {
-            breakJoint(section);
         }
     }
 }
@@ -400,28 +451,33 @@ void UnitManager::updateSectionTransforms(
 ) {
     if (!section) return;
 
-    if (section->attached && section->parent) {
-        // Compute from parent transform
-        // Offset rotation uses clockwise direction to match rendering rotation convention
-        const auto& offset = section->definition->localOffset;
-        float cosR = std::cos(parentWorldRot);
-        float sinR = std::sin(parentWorldRot);
+    const auto* def = section->definition;
+    if (!def) return;
 
-        // Clockwise rotation: negate sinR terms
-        section->worldPosition = {
-            parentWorldPos.x + offset.x * cosR + offset.y * sinR,
-            parentWorldPos.y - offset.x * sinR + offset.y * cosR
-        };
-        section->worldRotation = parentWorldRot + section->definition->localRotation;
+    // Compute world position (always follows parent offset)
+    // offset.x/y are 2D physics coords, offset.z is vertical height (handled in rendering)
+    float cosR = std::cos(parentWorldRot);
+    float sinR = std::sin(parentWorldRot);
 
-    } else if (section->hasPhysics && b2Body_IsValid(section->bodyId)) {
-        // Detached: get from physics
-        b2Vec2 pos = b2Body_GetPosition(section->bodyId);
-        section->worldPosition = {pos.x, pos.y};
-        section->worldRotation = b2Rot_GetAngle(b2Body_GetRotation(section->bodyId));
+    section->worldPosition = {
+        parentWorldPos.x + def->offset.x * cosR - def->offset.y * sinR,
+        parentWorldPos.y + def->offset.x * sinR + def->offset.y * cosR
+    };
+
+    // Compute world rotation based on mode
+    switch (def->rotationMode) {
+        case SectionRotationMode::FollowUnit:
+            section->worldRotation = parentWorldRot + def->localRotation;
+            break;
+        case SectionRotationMode::FollowFacing:
+            section->worldRotation = section->facingAngle;
+            break;
+        case SectionRotationMode::Fixed:
+            section->worldRotation = def->localRotation;
+            break;
     }
 
-    // Update children
+    // Update children recursively
     for (auto& child : section->children) {
         updateSectionTransforms(child.get(), section->worldPosition, section->worldRotation);
     }
@@ -439,6 +495,15 @@ void UnitManager::applyShaderToModels(Shader shader) {
                 for (int i = 0; i < section->model.materialCount; ++i) {
                     section->model.materials[i].shader = shader;
                 }
+            }
+        }
+    }
+
+    // Also apply to debris
+    for (auto& debris : m_debris) {
+        if (debris.hasModel) {
+            for (int i = 0; i < debris.model.materialCount; ++i) {
+                debris.model.materials[i].shader = shader;
             }
         }
     }
@@ -461,19 +526,29 @@ int UnitManager::getSectionIndex(SectionInstance* section, const std::vector<Sec
 }
 
 void UnitManager::renderSection(SectionInstance* section, const std::vector<float>* heightOffsets,
-                                 const std::vector<SectionInstance*>& allSections) {
+                                 const std::vector<SectionInstance*>& allSections, float parentHeight) {
     if (!section) return;
 
-    if (section->hasModel) {
-        // Calculate height with optional offset
-        float height = section->definition->height;
-        if (heightOffsets) {
-            int idx = getSectionIndex(section, allSections);
-            if (idx >= 0 && idx < (int)heightOffsets->size()) {
-                height += (*heightOffsets)[idx];
-            }
-        }
+    // Calculate this section's absolute height by adding its relative offset.z to parent's height
+    float height = parentHeight + section->definition->offset.z;
 
+    // Debug: print heights on first render
+    static int frameCount = 0;
+    if (parentHeight == 0.0f) frameCount++;
+    if (frameCount == 1) {
+        std::cout << "[RENDER] " << section->definition->name
+                  << ": parent=" << parentHeight
+                  << " + offset.z=" << section->definition->offset.z
+                  << " = " << height << std::endl;
+    }
+    if (heightOffsets) {
+        int idx = getSectionIndex(section, allSections);
+        if (idx >= 0 && idx < (int)heightOffsets->size()) {
+            height += (*heightOffsets)[idx];
+        }
+    }
+
+    if (section->hasModel) {
         // Map 2D physics to 3D rendering
         // Physics: X right, Y forward (into screen)
         // World: X right, Y up (height), Z into screen
@@ -484,30 +559,67 @@ void UnitManager::renderSection(SectionInstance* section, const std::vector<floa
             section->worldPosition.y
         };
 
-        // Physics rotation is counterclockwise from +Y
-        // DrawModelEx rotates counterclockwise around Y axis (from +Z toward -X)
-        // Physics angle 0 = +Y = world +Z (model default forward)
-        // Physics angle π = -Y = world -Z (screen top)
-        // Direct mapping works: physics angle → render angle (same value)
+        // Physics rotation is CCW in physics XY plane
+        // When mapping to 3D (physics Y -> world Z), the rotation direction flips
+        // visually because we're looking at the XZ plane from +Y (above)
+        // Negate the angle to get correct visual rotation
         DrawModelEx(
             section->model,
             position,
             {0, 1, 0},
-            section->worldRotation * RAD2DEG,
+            -section->worldRotation * RAD2DEG,
             section->definition->scale,
             WHITE
         );
     }
 
-    // Render children
+    // Render children, passing this section's accumulated height
     for (auto& child : section->children) {
-        renderSection(child.get(), heightOffsets, allSections);
+        renderSection(child.get(), heightOffsets, allSections, height);
+    }
+
+}
+
+void UnitManager::renderDebris() {
+    for (auto& debris : m_debris) {
+        if (!debris.hasModel || !b2Body_IsValid(debris.bodyId)) continue;
+
+        b2Vec2 pos = b2Body_GetPosition(debris.bodyId);
+        float rot = b2Rot_GetAngle(b2Body_GetRotation(debris.bodyId));
+
+        Vector3 position = {pos.x, debris.height, pos.y};
+
+        DrawModelEx(
+            debris.model,
+            position,
+            {0, 1, 0},
+            -rot * RAD2DEG,
+            {1, 1, 1},
+            WHITE
+        );
     }
 }
 
 void UnitManager::renderDebug(const std::vector<float>* heightOffsets) {
     for (auto& instance : m_instances) {
         if (!instance || !instance->active) continue;
+
+        // Draw unit collision circle
+        if (b2Body_IsValid(instance->bodyId)) {
+            b2Vec2 pos = b2Body_GetPosition(instance->bodyId);
+            float y = 0.1f;
+
+            Vector3 center = {pos.x, y, pos.y};
+            float radius = instance->definition->collisionRadius;
+
+            DrawCircle3D(center, radius, {1, 0, 0}, 90.0f, GREEN);
+
+            // Draw proximity radius (fainter)
+            DrawCircle3D(center, instance->definition->proximityRadius, {1, 0, 0}, 90.0f,
+                        Fade(SKYBLUE, 0.3f));
+        }
+
+        // Render section debug
         if (instance->rootSection) {
             renderSectionDebug(instance->rootSection.get(), heightOffsets, instance->allSections);
         }
@@ -515,14 +627,11 @@ void UnitManager::renderDebug(const std::vector<float>* heightOffsets) {
 }
 
 void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector<float>* heightOffsets,
-                                      const std::vector<SectionInstance*>& allSections) {
+                                      const std::vector<SectionInstance*>& allSections, float parentHeight) {
     if (!section) return;
 
-    // Minimum visible radius for debug shapes
-    constexpr float MIN_DEBUG_RADIUS = 0.1f;
-
-    // Calculate height with optional offset
-    float height = section->definition->height;
+    // Calculate this section's absolute height by adding its relative offset.z to parent's height
+    float height = parentHeight + section->definition->offset.z;
     int sectionIdx = getSectionIndex(section, allSections);
     if (heightOffsets && sectionIdx >= 0 && sectionIdx < (int)heightOffsets->size()) {
         height += (*heightOffsets)[sectionIdx];
@@ -530,80 +639,37 @@ void UnitManager::renderSectionDebug(SectionInstance* section, const std::vector
 
     float y = height + 0.1f;
 
-    // Draw physics shape outline
-    if (section->hasPhysics && section->definition->physics.has_value()) {
-        const auto& phys = *section->definition->physics;
-        Color shapeColor = section->attached ? GREEN : RED;
-
-        Vector3 center = {
-            section->worldPosition.x,
-            y,
-            section->worldPosition.y  // Physics Y -> World Z (no negation)
-        };
-
-        switch (phys.shapeType) {
-            case PhysicsShapeType::Circle: {
-                // Use minimum visible radius if the actual radius is too small
-                float drawRadius = std::max(phys.circle.radius, MIN_DEBUG_RADIUS);
-                DrawCircle3D(center, drawRadius, {1, 0, 0}, 90.0f, shapeColor);
-                break;
-            }
-            case PhysicsShapeType::Box: {
-                // Draw box outline with minimum size
-                float hw = std::max(phys.box.width / 2.0f, MIN_DEBUG_RADIUS);
-                float hh = std::max(phys.box.height / 2.0f, MIN_DEBUG_RADIUS);
-                float cosR = std::cos(section->worldRotation);
-                float sinR = std::sin(section->worldRotation);
-
-                Vector3 corners[4];
-                float localX[] = {-hw, hw, hw, -hw};
-                float localY[] = {-hh, -hh, hh, hh};
-
-                for (int i = 0; i < 4; ++i) {
-                    float rx = localX[i] * cosR - localY[i] * sinR;
-                    float ry = localX[i] * sinR + localY[i] * cosR;
-                    corners[i] = {
-                        section->worldPosition.x + rx,
-                        y,
-                        section->worldPosition.y + ry  // Physics Y -> World Z (no negation)
-                    };
-                }
-
-                for (int i = 0; i < 4; ++i) {
-                    DrawLine3D(corners[i], corners[(i + 1) % 4], shapeColor);
-                }
-                break;
-            }
-            default:
-                break;
-        }
-    }
-
     // Draw joint connection to parent
     if (section->parent) {
-        // Get parent height with offset
-        float parentHeight = section->parent->definition->height;
-        int parentIdx = getSectionIndex(section->parent, allSections);
-        if (heightOffsets && parentIdx >= 0 && parentIdx < (int)heightOffsets->size()) {
-            parentHeight += (*heightOffsets)[parentIdx];
-        }
-
         Vector3 from = {
             section->parent->worldPosition.x,
             parentHeight + 0.1f,
-            section->parent->worldPosition.y  // Physics Y -> World Z (no negation)
+            section->parent->worldPosition.y
         };
         Vector3 to = {
             section->worldPosition.x,
             y,
-            section->worldPosition.y  // Physics Y -> World Z (no negation)
+            section->worldPosition.y
         };
-        Color jointColor = section->attached ? LIME : MAROON;
-        DrawLine3D(from, to, jointColor);
+        DrawLine3D(from, to, LIME);
     }
 
-    // Render children debug
+    // Render children debug, passing this section's accumulated height
     for (auto& child : section->children) {
-        renderSectionDebug(child.get(), heightOffsets, allSections);
+        renderSectionDebug(child.get(), heightOffsets, allSections, height);
+    }
+}
+
+void UnitManager::renderDebrisDebug() {
+    for (auto& debris : m_debris) {
+        if (!b2Body_IsValid(debris.bodyId)) continue;
+
+        b2Vec2 pos = b2Body_GetPosition(debris.bodyId);
+        float y = debris.height + 0.1f;
+
+        Vector3 center = {pos.x, y, pos.y};
+
+        // Draw a small circle for debris
+        DrawCircle3D(center, 0.1f, {1, 0, 0}, 90.0f, RED);
     }
 }

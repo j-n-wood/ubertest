@@ -71,20 +71,25 @@ public:
     [[nodiscard]] const std::vector<std::unique_ptr<UnitInstance>>& getInstances() const;
 
     //--------------------------------------------------------------------------
-    // Deconstruction
+    // Debris Management
     //--------------------------------------------------------------------------
 
-    // Break the joint connecting a section to its parent
-    void breakJoint(SectionInstance* section);
+    // Dismantle a unit into separate debris objects
+    // Returns debris objects that now simulate independently
+    // The original unit is destroyed
+    std::vector<DebrisObject> dismantleUnit(UnitInstance* unit);
 
-    // Break all joints in a unit (total deconstruction)
-    void breakAllJoints(UnitInstance* unit);
+    // Get all active debris
+    [[nodiscard]] const std::vector<DebrisObject>& getDebris() const;
+
+    // Clear all debris
+    void clearDebris();
 
     //--------------------------------------------------------------------------
     // Update & Rendering
     //--------------------------------------------------------------------------
 
-    // Update physics sync and check for joint breaks
+    // Update physics sync
     void update(float dt);
 
     // Apply a shader to all loaded models
@@ -94,9 +99,15 @@ public:
     // heightOffsets: optional per-section height offsets (indexed by allSections order)
     void renderAll(const std::vector<float>* heightOffsets = nullptr);
 
-    // Render debug visualization (physics shapes, joints)
+    // Render all debris objects
+    void renderDebris();
+
+    // Render debug visualization (physics shapes)
     // heightOffsets: optional per-section height offsets (indexed by allSections order)
     void renderDebug(const std::vector<float>* heightOffsets = nullptr);
+
+    // Render debug for debris
+    void renderDebrisDebug();
 
 private:
     b2WorldId m_worldId = b2_nullWorldId;
@@ -110,6 +121,9 @@ private:
     // Active instances
     std::vector<std::unique_ptr<UnitInstance>> m_instances;
 
+    // Active debris
+    std::vector<DebrisObject> m_debris;
+
     // Collision group counter (decrements for each new unit, negative values)
     int32_t m_nextCollisionGroup = -1;
 
@@ -117,35 +131,45 @@ private:
     // Internal Helpers
     //--------------------------------------------------------------------------
 
-    // Recursively create section instances
+    // Recursively create section instances (rendering only, no physics)
     SectionInstance* createSectionInstance(
         const SectionDefinition& def,
         SectionInstance* parent,
-        Vector2 parentWorldPos,
-        float parentWorldRot,
         UnitInstance* unit
     );
 
-    // Update transforms for a section hierarchy
+    // Update transforms for a section hierarchy (code-based positioning)
     void updateSectionTransforms(
         SectionInstance* section,
         Vector2 parentWorldPos,
         float parentWorldRot
     );
 
-    // Check joint break conditions for a unit
-    void checkJointBreaking(UnitInstance* unit);
-
     // Render a section hierarchy
+    // parentHeight: accumulated height from parent sections (for relative stacking)
     void renderSection(SectionInstance* section, const std::vector<float>* heightOffsets,
-                       const std::vector<SectionInstance*>& allSections);
+                       const std::vector<SectionInstance*>& allSections, float parentHeight = 0.0f);
 
     // Render debug for a section hierarchy
+    // parentHeight: accumulated height from parent sections (for relative stacking)
     void renderSectionDebug(SectionInstance* section, const std::vector<float>* heightOffsets,
-                            const std::vector<SectionInstance*>& allSections);
+                            const std::vector<SectionInstance*>& allSections, float parentHeight = 0.0f);
 
     // Helper to get section index in allSections vector
     int getSectionIndex(SectionInstance* section, const std::vector<SectionInstance*>& allSections);
+
+    // Create a debris object from a section at given position/rotation
+    // accumulatedHeight: the total height including all parent offsets
+    DebrisObject createDebrisFromSection(
+        const SectionDefinition& section,
+        const Model& model,
+        bool hasModel,
+        Vector2 position,
+        float rotation,
+        float accumulatedHeight,
+        b2Vec2 velocity,
+        float angularVelocity
+    );
 };
 
 #endif // UNIT_MANAGER_H

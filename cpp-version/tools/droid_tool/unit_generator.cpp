@@ -7,6 +7,7 @@
 #include "gltf_skeletal_export.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <set>
@@ -105,18 +106,20 @@ void writeSectionJson(
     const std::string& modelPathPrefix,
     std::set<int>& processedModels,
     float scale,
-    int depth
+    int depth,
+    const fs::path& modelsOutputDir
 ) {
     if (!node.section) return;
 
     const RenderObject* ro = findRenderObject(renderObjects, node.section->renderIndex);
     std::string modelPath;
+    std::string modelExt;
     if (ro && !ro->modelPath.empty() &&
         (ro->type == RenderObjectType::ModelASC || ro->type == RenderObjectType::ModelMDL)) {
         // Extract filename from path and change extension to .gltf/.glb
         fs::path p(ro->modelPath);
-        std::string ext = (ro->type == RenderObjectType::ModelMDL) ? ".glb" : ".gltf";
-        modelPath = modelPathPrefix + "/" + p.stem().string() + ext;
+        modelExt = (ro->type == RenderObjectType::ModelMDL) ? ".glb" : ".gltf";
+        modelPath = modelPathPrefix + "/" + p.stem().string() + modelExt;
     }
 
     writeIndent(f, depth);
@@ -130,25 +133,63 @@ void writeSectionJson(
         fprintf(f, "\"model\": \"%s\",\n", modelPath.c_str());
     }
 
-    // localOffset: [x, y] in physics plane
-    // Source (x, y) -> swapped to (y, x) for new coordinate convention
+    // offset: [x, y, z] where x/y are physics plane coords, z is vertical height
+    // Source (x, y, z) -> swapped to (y, x, z) for new coordinate convention
     // where X is perpendicular to forward and Y is forward
+    // X offset is negated to correct arm facing direction
     writeIndent(f, depth + 1);
-    fprintf(f, "\"localOffset\": [%.6f, %.6f],\n",
-            node.section->offset[1] * scale,
-            node.section->offset[0] * scale);
+    fprintf(f, "\"offset\": [%.6f, %.6f, %.6f],\n",
+            -node.section->offset[1] * scale,
+            node.section->offset[0] * scale,
+            node.section->offset[2] * scale);
 
     // localRotation: yaw only (rz)
     writeIndent(f, depth + 1);
     fprintf(f, "\"localRotation\": %.6f,\n", node.section->rotation[2]);
 
-    // height: z offset becomes Y in 3D
-    writeIndent(f, depth + 1);
-    fprintf(f, "\"height\": %.6f,\n", node.section->offset[2] * scale);
-
     // scale
     writeIndent(f, depth + 1);
     fprintf(f, "\"scale\": [1, 1, 1],\n");
+
+    // Physics - derive shape from model bounds (for child sections)
+    if (!modelPath.empty() && ro) {
+        fs::path gltfPath = modelsOutputDir / (fs::path(ro->modelPath).stem().string() + modelExt);
+        GLTFBounds bounds = readGLTFBounds(gltfPath.string().c_str());
+        PhysicsShapeInfo physShape = determinePhysicsShape(bounds, 0.15f);
+
+        writeIndent(f, depth + 1);
+        fprintf(f, "\"physics\": {\n");
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"shape\": {\n");
+        if (std::string(physShape.type) == "circle") {
+            writeIndent(f, depth + 3);
+            fprintf(f, "\"type\": \"circle\",\n");
+            writeIndent(f, depth + 3);
+            fprintf(f, "\"radius\": %.6f\n", physShape.radius);
+        } else {
+            writeIndent(f, depth + 3);
+            fprintf(f, "\"type\": \"box\",\n");
+            writeIndent(f, depth + 3);
+            fprintf(f, "\"width\": %.6f,\n", physShape.width);
+            writeIndent(f, depth + 3);
+            fprintf(f, "\"height\": %.6f\n", physShape.height);
+        }
+        writeIndent(f, depth + 2);
+        fprintf(f, "},\n");
+        // Child sections use lower density and damping
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"density\": 0.5,\n");
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"friction\": 0.3,\n");
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"restitution\": 0.1,\n");
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"linearDamping\": 2.0,\n");
+        writeIndent(f, depth + 2);
+        fprintf(f, "\"angularDamping\": 4.0\n");
+        writeIndent(f, depth + 1);
+        fprintf(f, "},\n");
+    }
 
     // children
     writeIndent(f, depth + 1);
@@ -157,7 +198,7 @@ void writeSectionJson(
     if (!node.children.empty()) {
         fprintf(f, "\n");
         for (size_t i = 0; i < node.children.size(); i++) {
-            writeSectionJson(f, node.children[i], renderObjects, modelPathPrefix, processedModels, scale, depth + 2);
+            writeSectionJson(f, node.children[i], renderObjects, modelPathPrefix, processedModels, scale, depth + 2, modelsOutputDir);
             if (i < node.children.size() - 1) {
                 fprintf(f, ",");
             }
@@ -253,8 +294,10 @@ UnitGeneratorResult generateUnits(
                     GLTFExportOptions exportOpts = GLTFDefaultOptions();
                     std::string srcDirStr = srcPath.parent_path().string();
                     std::string texFallbackStr = options.textureSourceDir.parent_path().string();
+                    std::string srcFilename = srcPath.filename().string();
                     exportOpts.source_dir = srcDirStr.c_str();
                     exportOpts.texture_fallback_dir = texFallbackStr.c_str();
+                    exportOpts.model_hint = srcFilename.c_str();
                     exportOpts.texture_count = loadResult.material_count;
                     for (int i = 0; i < loadResult.material_count && i < GLTF_MAX_TEXTURES; i++) {
                         exportOpts.texture_paths[i] = loadResult.texture_paths[i];
@@ -354,6 +397,8 @@ UnitGeneratorResult generateUnits(
         fprintf(jsonFile, "{\n");
         fprintf(jsonFile, "  \"name\": \"Class %d\",\n", droidClass.classId);
         fprintf(jsonFile, "  \"id\": \"droid_class_%d\",\n", droidClass.classId);
+        fprintf(jsonFile, "  \"collisionRadius\": %.6f,\n", droidClass.collideRadius * options.radiusScale);
+        fprintf(jsonFile, "  \"proximityRadius\": %.6f,\n", droidClass.proximityRadius * options.radiusScale);
 
         // Properties
         fprintf(jsonFile, "  \"properties\": {\n");
@@ -406,12 +451,12 @@ UnitGeneratorResult generateUnits(
             if (!modelPath.empty()) {
                 fprintf(jsonFile, "    \"model\": \"%s\",\n", modelPath.c_str());
             }
-            // localOffset: swapped (y, x) for new coordinate convention
-            fprintf(jsonFile, "    \"localOffset\": [%.6f, %.6f],\n",
-                    root.section->offset[1] * options.scale,
-                    root.section->offset[0] * options.scale);
+            // offset: [x, y, z] swapped (y, x, z) for new coordinate convention, X negated
+            fprintf(jsonFile, "    \"offset\": [%.6f, %.6f, %.6f],\n",
+                    -root.section->offset[1] * options.scale,
+                    root.section->offset[0] * options.scale,
+                    root.section->offset[2] * options.scale);
             fprintf(jsonFile, "    \"localRotation\": %.6f,\n", root.section->rotation[2]);
-            fprintf(jsonFile, "    \"height\": %.6f,\n", root.section->offset[2] * options.scale);
             fprintf(jsonFile, "    \"scale\": [1, 1, 1],\n");
 
             // Physics - derive shape from model bounds
@@ -459,7 +504,7 @@ UnitGeneratorResult generateUnits(
             if (!root.children.empty()) {
                 fprintf(jsonFile, "\n");
                 for (size_t i = 0; i < root.children.size(); i++) {
-                    writeSectionJson(jsonFile, root.children[i], renderObjects, "models", processedModels, options.scale, 3);
+                    writeSectionJson(jsonFile, root.children[i], renderObjects, "models", processedModels, options.scale, 3, options.modelsOutputDir);
                     if (i < root.children.size() - 1) {
                         fprintf(jsonFile, ",");
                     }

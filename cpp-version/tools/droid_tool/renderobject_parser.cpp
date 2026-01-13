@@ -64,9 +64,17 @@ RenderObjectParseResult parseRenderObjects(std::string_view filepath) {
         }
 
         // Try to parse a new object header: <name> <index> <type>
+        // Note: Some objects only have 1 END before the next object starts,
+        // so we also check if this line looks like a new object header even if current != NULL
         char name[256];
         int index, type;
-        if (!current && sscanf(lineBuf, "%s %d %d", name, &index, &type) == 3) {
+        if (sscanf(lineBuf, "%s %d %d", name, &index, &type) == 3 &&
+            !startsWith(line, "MODEL ") && !startsWith(line, "MD2 ") &&
+            !startsWith(line, "TEXTURE ") && !startsWith(line, "TEXTURES ") &&
+            !startsWith(line, "EFFECTTEXTURE") && !startsWith(line, "SPECULARITY ")) {
+            // This looks like a new object header - close the current one if any
+            current = nullptr;
+            endCount = 0;
             result.objects.push_back(RenderObject{});
             current = &result.objects.back();
             current->name = name;

@@ -1,4 +1,5 @@
 #include "gltf_export.h"
+#include "gltf_bounds.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <filesystem>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -252,6 +254,7 @@ GLTFExportOptions GLTFDefaultOptions(void) {
     opts.texture_fallback_dir = NULL;
     opts.include_extras = true;
     opts.copy_textures = true;
+    opts.include_physics_shape = true;
     opts.texture_count = 0;
     for (int i = 0; i < GLTF_MAX_TEXTURES; i++) {
         opts.texture_paths[i] = NULL;
@@ -409,7 +412,7 @@ static std::string copy_or_convert_texture(const char* src_path, const char* dst
 // 3. Just filename from fallback_dir
 // Returns empty string if file doesn't exist at any location
 //------------------------------------------------------------------------------
-static std::string resolve_texture_path(const char* texture_path, const char* source_dir, const char* fallback_dir) {
+static std::string resolve_texture_path(const char* texture_path, const char* source_dir, const char* fallback_dir, const char* model_hint = nullptr) {
     if (!texture_path || !*texture_path) return "";
 
     // Convert backslashes to forward slashes
@@ -466,6 +469,50 @@ static std::string resolve_texture_path(const char* texture_path, const char* so
                     break;  // Only filename left, already tried
                 }
                 try_path = try_path.substr(slash_pos + 1);
+            }
+
+            // Last resort: recursively search subdirectories for the filename
+            // This handles cases where ASC has just "body.bmp" but file is in "textures/droids/body.bmp"
+            std::string filename_lower = texture_filename.string();
+            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+
+            // Also try prefix-based matching using model_hint
+            // e.g., model "head_j5.asc" referencing "head.bmp" might need "j5_head.bmp"
+            std::vector<std::string> prefixes_to_try;
+            if (model_hint && *model_hint) {
+                fs::path model_path(model_hint);
+                std::string model_stem = model_path.stem().string();
+                // Look for patterns like "name_suffix" and extract "suffix_"
+                size_t underscore_pos = model_stem.rfind('_');
+                if (underscore_pos != std::string::npos) {
+                    std::string suffix = model_stem.substr(underscore_pos + 1);
+                    std::string prefix = suffix + "_";
+                    std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
+                    prefixes_to_try.push_back(prefix);
+                }
+            }
+
+            for (auto& entry : fs::recursive_directory_iterator(fallback, fs::directory_options::skip_permission_denied)) {
+                if (entry.is_regular_file()) {
+                    std::string entry_filename = entry.path().filename().string();
+                    std::string entry_lower = entry_filename;
+                    std::transform(entry_lower.begin(), entry_lower.end(), entry_lower.begin(), ::tolower);
+
+                    // Exact match
+                    if (entry_lower == filename_lower) {
+                        TraceLog(LOG_INFO, "GLTF Export: Found texture via recursive search: %s", entry.path().string().c_str());
+                        return entry.path().string();
+                    }
+
+                    // Prefix-based match (e.g., "head.bmp" -> "j5_head.bmp")
+                    for (const auto& prefix : prefixes_to_try) {
+                        std::string prefixed = prefix + filename_lower;
+                        if (entry_lower == prefixed) {
+                            TraceLog(LOG_INFO, "GLTF Export: Found texture via prefix search (%s): %s", prefix.c_str(), entry.path().string().c_str());
+                            return entry.path().string();
+                        }
+                    }
+                }
             }
         }
 
@@ -552,6 +599,50 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
     json.key("version"); json.value_string("2.0");
     json.key("generator"); json.value_string("model_tool (Raylib ASC Converter)");
     json.end_object();
+
+    // Compute combined bounds across all meshes for physics shape
+    if (options.include_physics_shape) {
+        float combined_min[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
+        float combined_max[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+
+        for (int m = 0; m < model.meshCount; m++) {
+            float mesh_min[3], mesh_max[3];
+            compute_bounds(&model.meshes[m], mesh_min, mesh_max);
+            for (int i = 0; i < 3; i++) {
+                combined_min[i] = std::min(combined_min[i], mesh_min[i]);
+                combined_max[i] = std::max(combined_max[i], mesh_max[i]);
+            }
+        }
+
+        // Create GLTFBounds from combined bounds
+        GLTFBounds bounds;
+        bounds.valid = true;
+        for (int i = 0; i < 3; i++) {
+            bounds.min[i] = combined_min[i];
+            bounds.max[i] = combined_max[i];
+        }
+
+        // Determine physics shape (uses XZ plane for top-down 2D physics)
+        PhysicsShapeInfo shape = determinePhysicsShape(bounds);
+
+        // Write extras with physics shape
+        json.key_object("extras");
+        json.key_object("physics");
+        json.key_object("shape");
+
+        if (strcmp(shape.type, "circle") == 0) {
+            json.key("type"); json.value_string("circle");
+            json.key("radius"); json.value_float(shape.radius);
+        } else {
+            json.key("type"); json.value_string("box");
+            json.key("width"); json.value_float(shape.width);
+            json.key("height"); json.value_float(shape.height);
+        }
+
+        json.end_object();  // shape
+        json.end_object();  // physics
+        json.end_object();  // extras
+    }
 
     // Scene
     json.key("scene"); json.value_int(0);
@@ -749,7 +840,7 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
                     unique_textures.push_back(uri);
 
                     // Resolve source path for copying (try source_dir first, then fallback_dir)
-                    std::string src_path = resolve_texture_path(tex_path, options.source_dir, options.texture_fallback_dir);
+                    std::string src_path = resolve_texture_path(tex_path, options.source_dir, options.texture_fallback_dir, options.model_hint);
                     unique_src_paths.push_back(src_path);
                 }
                 material_to_texture[m] = tex_idx;

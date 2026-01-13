@@ -37,14 +37,15 @@ struct TestScene {
     Model groundModel = {};
     bool hasGroundModel = false;
 
-    // Enclosing walls for collision testing
-    b2BodyId wallBodies[4] = {b2_nullBodyId, b2_nullBodyId, b2_nullBodyId, b2_nullBodyId};
-    float wallBounds = 10.0f;  // Half-size of enclosure
-
     // Per-section height adjustment
     int selectedSection = 0;            // Currently selected section index for editing
     bool heightsModified = false;       // Track if any heights were changed
     std::vector<float> sectionHeightOffsets;  // Per-section height offsets (added to definition height)
+
+    // Rotation control
+    float manualRotation = 0.0f;        // Unit rotation (radians)
+    float rotationSpeed = 0.0f;         // Auto-rotation speed (radians/sec, 0 = disabled)
+    float facingAngle = 0.0f;           // Facing angle for FollowFacing sections
 };
 
 // Initialize the test scene
@@ -67,17 +68,11 @@ void testSceneUpdate(TestScene* scene, float dt);
 // Render the scene
 void testSceneRender(TestScene* scene);
 
-// Render debug information
-void testSceneRenderDebug(TestScene* scene);
-
 // Render info overlay
 void testSceneRenderInfo(TestScene* scene);
 
 // Handle input
 void testSceneHandleInput(TestScene* scene);
-
-// Create/update enclosing walls based on unit size
-void testSceneCreateWalls(TestScene* scene, float unitRadius);
 
 // Save current unit with scaled heights to JSON
 bool testSceneSaveUnit(TestScene* scene);

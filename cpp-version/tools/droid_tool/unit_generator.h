@@ -19,6 +19,7 @@ struct UnitGeneratorOptions {
     bool skipExisting = true;
     float scale = 0.0254f;
     bool swapYZ = false;  // ASC files from Uberdroid are already Y-up
+    float radiusScale = 2.0f;  // Scale factor for collision/proximity radii
 };
 
 struct UnitGeneratorResult {

@@ -11,8 +11,10 @@ typedef struct GLTFExportOptions {
     const char* texture_dir;     // Relative path prefix for texture URIs (default: "textures")
     const char* source_dir;      // Source directory for resolving texture paths (e.g., ASC file dir)
     const char* texture_fallback_dir;  // Fallback directory if texture not found at source_dir (--texture-path)
+    const char* model_hint;      // Original model filename hint for texture prefix matching (e.g., "head_j5.asc" -> try "j5_head.bmp")
     bool include_extras;         // Include Blinn-Phong extras in materials (default: true)
     bool copy_textures;          // Copy texture files to output (default: true)
+    bool include_physics_shape;  // Include physics shape in asset extras (default: true)
 
     // Texture paths per material (index matches material index)
     // These are the original paths from the source format (e.g., ASC)
