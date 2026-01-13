@@ -225,6 +225,14 @@ SectionInstance* UnitManager::createSectionInstance(
 
         section->model = LoadModel(resolvedPath.c_str());
         section->hasModel = IsModelValid(section->model);
+
+        // Load animations if any
+        if (section->hasModel) {
+            section->animations = LoadModelAnimations(resolvedPath.c_str(), &section->animCount);
+            if (section->animCount > 0) {
+                std::cout << "  Loaded " << section->animCount << " animations for " << def.name << std::endl;
+            }
+        }
     }
 
     // Add to unit's flat list
@@ -423,7 +431,14 @@ void UnitManager::clearDebris() {
 //------------------------------------------------------------------------------
 
 void UnitManager::update(float dt) {
-    (void)dt;
+    // Animation frame timing (30 fps target)
+    constexpr float ANIM_FRAME_TIME = 1.0f / 30.0f;
+    static float animTimer = 0.0f;
+    animTimer += dt;
+    bool advanceFrame = animTimer >= ANIM_FRAME_TIME;
+    if (advanceFrame) {
+        animTimer -= ANIM_FRAME_TIME;
+    }
 
     for (auto& instance : m_instances) {
         if (!instance || !instance->active) continue;
@@ -439,6 +454,21 @@ void UnitManager::update(float dt) {
             // Update children using code-based positioning
             for (auto& child : instance->rootSection->children) {
                 updateSectionTransforms(child.get(), instance->rootSection->worldPosition, rot);
+            }
+        }
+
+        // Update animations for all sections
+        for (auto* section : instance->allSections) {
+            if (section->animPlaying && section->animCount > 0 && advanceFrame) {
+                int animIdx = section->currentAnim % section->animCount;
+                ModelAnimation& anim = section->animations[animIdx];
+
+                section->currentFrame++;
+                if (section->currentFrame >= anim.frameCount) {
+                    section->currentFrame = 0;  // Loop animation
+                }
+
+                UpdateModelAnimation(section->model, anim, section->currentFrame);
             }
         }
     }

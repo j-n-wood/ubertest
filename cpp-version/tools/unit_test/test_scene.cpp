@@ -363,6 +363,55 @@ void testSceneHandleInput(TestScene* scene) {
             std::cout << "Failed to save unit" << std::endl;
         }
     }
+
+    // Animation controls for selected section
+    if (scene->currentUnit && scene->selectedSection >= 0 &&
+        scene->selectedSection < (int)scene->currentUnit->allSections.size()) {
+        auto* section = scene->currentUnit->allSections[scene->selectedSection];
+
+        // Space - Toggle animation playback
+        if (IsKeyPressed(KEY_SPACE) && section->animCount > 0) {
+            section->animPlaying = !section->animPlaying;
+            std::cout << "Animation " << (section->animPlaying ? "playing" : "stopped")
+                      << " (sequence " << section->currentAnim << ")" << std::endl;
+        }
+
+        // N - Next animation sequence
+        if (IsKeyPressed(KEY_N) && section->animCount > 0) {
+            section->currentAnim = (section->currentAnim + 1) % section->animCount;
+            section->currentFrame = 0;
+            // Update model to show first frame of new animation
+            UpdateModelAnimation(section->model, section->animations[section->currentAnim], 0);
+            std::cout << "Animation sequence: " << section->currentAnim
+                      << " (" << section->animations[section->currentAnim].frameCount << " frames)" << std::endl;
+        }
+
+        // M - Previous animation sequence
+        if (IsKeyPressed(KEY_M) && section->animCount > 0) {
+            section->currentAnim = (section->currentAnim - 1 + section->animCount) % section->animCount;
+            section->currentFrame = 0;
+            // Update model to show first frame of new animation
+            UpdateModelAnimation(section->model, section->animations[section->currentAnim], 0);
+            std::cout << "Animation sequence: " << section->currentAnim
+                      << " (" << section->animations[section->currentAnim].frameCount << " frames)" << std::endl;
+        }
+
+        // , - Previous frame (when paused or not playing)
+        if (IsKeyPressed(KEY_COMMA) && section->animCount > 0) {
+            int frameCount = section->animations[section->currentAnim].frameCount;
+            section->currentFrame = (section->currentFrame - 1 + frameCount) % frameCount;
+            UpdateModelAnimation(section->model, section->animations[section->currentAnim], section->currentFrame);
+            std::cout << "Frame: " << section->currentFrame << "/" << frameCount << std::endl;
+        }
+
+        // . - Next frame (when paused or not playing)
+        if (IsKeyPressed(KEY_PERIOD) && section->animCount > 0) {
+            int frameCount = section->animations[section->currentAnim].frameCount;
+            section->currentFrame = (section->currentFrame + 1) % frameCount;
+            UpdateModelAnimation(section->model, section->animations[section->currentAnim], section->currentFrame);
+            std::cout << "Frame: " << section->currentFrame << "/" << frameCount << std::endl;
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -437,6 +486,12 @@ void testSceneRenderInfo(TestScene* scene) {
     DrawText("  Tab - Select section", 10, y, 14, GRAY);
     y += lineHeight;
     DrawText("  [/] - Adjust height", 10, y, 14, GRAY);
+    y += lineHeight;
+    DrawText("  Space - Play/stop anim", 10, y, 14, GRAY);
+    y += lineHeight;
+    DrawText("  N/M - Next/prev sequence", 10, y, 14, GRAY);
+    y += lineHeight;
+    DrawText("  ,/. - Prev/next frame", 10, y, 14, GRAY);
     y += lineHeight;
     DrawText("  Ctrl+S - Save", 10, y, 14, GRAY);
     y += lineHeight;
@@ -517,13 +572,39 @@ void testSceneRenderInfo(TestScene* scene) {
                 modeStr = " [X]";
             }
 
-            DrawText(TextFormat("%s[%d] %s h:%.3f%s%s", selector, idx,
+            // Show animation info if available
+            const char* animStr = "";
+            char animBuf[32] = "";
+            if (section->animCount > 0) {
+                snprintf(animBuf, sizeof(animBuf), " A:%d/%d%s",
+                         section->currentAnim + 1, section->animCount,
+                         section->animPlaying ? ">" : "");
+                animStr = animBuf;
+            }
+
+            DrawText(TextFormat("%s[%d] %s h:%.3f%s%s%s", selector, idx,
                      section->definition->name.c_str(), totalHeight,
-                     (heightOffset != 0.0f) ? "*" : "", modeStr),
+                     (heightOffset != 0.0f) ? "*" : "", modeStr, animStr),
                      10, y, 14, textColor);
             y += lineHeight;
             idx++;
             if (idx >= 10) break;  // Only show first 10
+        }
+
+        // Show animation details for selected section if it has animations
+        if (scene->selectedSection >= 0 &&
+            scene->selectedSection < (int)scene->currentUnit->allSections.size()) {
+            auto* selSection = scene->currentUnit->allSections[scene->selectedSection];
+            if (selSection->animCount > 0) {
+                y += 5;
+                ModelAnimation& anim = selSection->animations[selSection->currentAnim];
+                DrawText(TextFormat("Animation: seq %d/%d, frame %d/%d %s",
+                         selSection->currentAnim + 1, selSection->animCount,
+                         selSection->currentFrame + 1, anim.frameCount,
+                         selSection->animPlaying ? "(playing)" : "(stopped)"),
+                         10, y, 14, GREEN);
+                y += lineHeight;
+            }
         }
     } else if (debrisCount == 0) {
         DrawText("No unit loaded", 10, y, 16, RED);

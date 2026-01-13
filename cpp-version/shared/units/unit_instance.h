@@ -29,6 +29,13 @@ public:
     Model model = {};
     bool hasModel = false;
 
+    // Animation
+    ModelAnimation* animations = nullptr;
+    int animCount = 0;
+    int currentAnim = 0;
+    int currentFrame = 0;
+    bool animPlaying = false;
+
     // Hierarchy
     SectionInstance* parent = nullptr;
     std::vector<std::unique_ptr<SectionInstance>> children;
