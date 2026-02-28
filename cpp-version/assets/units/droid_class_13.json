@@ -1,12 +1,14 @@
 {
   "name": "Class 13",
   "id": "droid_class_13",
+  "collisionRadius": 0.600000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 13,
     "typeCode": 598,
     "energy": 5,
     "armour": 50.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 2,
     "driveType": 2,
     "brainType": 2,
@@ -15,21 +17,14 @@
   },
   "rootSection": {
     "name": "section_0",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.0,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "model": "models/legs.glb",
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.00762
+        "radius": 0.250000
       },
       "density": 1.0,
       "friction": 0.3,
@@ -40,64 +35,78 @@
     "children": [
       {
         "name": "section_1",
-        "localOffset": [
-          0.0,
-          0.0254
-        ],
-        "localRotation": 0.0,
-        "height": 0.4318,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "model": "models/crew_torso.gltf",
+        "offset": [-0.000000, 0.025400, 0.431800],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.152552
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": [
           {
             "name": "section_2",
             "model": "models/crew_arm.gltf",
-            "localOffset": [
-              0.2667,
-              0.0
-            ],
-            "localRotation": 0.0,
-            "height": -0.3556,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.266700, 0.000000, -0.355600],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "circle",
+                "radius": 0.069164
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_3",
             "model": "models/crew_arm.gltf",
-            "localOffset": [
-              -0.2667,
-              0.0
-            ],
-            "localRotation": 0.0,
-            "height": -0.3556,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [0.266700, 0.000000, -0.355600],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "circle",
+                "radius": 0.069164
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_4",
             "model": "models/cylinder_head_small.gltf",
-            "localOffset": [
-              0.0,
-              0.0
-            ],
-            "localRotation": 0.0,
-            "height": 0.3302,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.000000, 0.000000, 0.330200],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "box",
+                "width": 0.183815,
+                "height": 0.021482
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           }
         ]

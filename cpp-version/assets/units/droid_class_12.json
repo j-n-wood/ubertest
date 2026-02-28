@@ -1,12 +1,14 @@
 {
   "name": "Class 12",
   "id": "droid_class_12",
+  "collisionRadius": 0.500000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 12,
     "typeCode": 571,
     "energy": 5,
     "armour": 50.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 2,
     "driveType": 2,
     "brainType": 2,
@@ -16,21 +18,14 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/track_j5.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.0,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
-        "type": "circle",
-        "radius": 0.00635
+        "type": "box",
+        "width": 0.692944,
+        "height": 1.219597
       },
       "density": 1.0,
       "friction": 0.3,
@@ -42,32 +37,38 @@
       {
         "name": "section_1",
         "model": "models/body_j5.gltf",
-        "localOffset": [
-          0.0,
-          -0.254
-        ],
-        "localRotation": 0.0,
-        "height": 0.889,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [-0.000000, -0.254000, 0.889000],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.484187
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": [
           {
             "name": "section_2",
             "model": "models/head_j5.gltf",
-            "localOffset": [
-              0.0,
-              0.254
-            ],
-            "localRotation": 0.0,
-            "height": 0.4318,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.000000, 0.254000, 0.431800],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "circle",
+                "radius": 0.187920
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           }
         ]

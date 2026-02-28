@@ -1,12 +1,14 @@
 {
   "name": "Class 2",
   "id": "droid_class_2",
+  "collisionRadius": 0.200000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 2,
     "typeCode": 139,
     "energy": 1,
     "armour": 20.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 1,
     "driveType": 0,
     "brainType": 1,
@@ -16,21 +18,13 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/disk.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.0762,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.076200],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.51435
+        "radius": 0.514350
       },
       "density": 1.0,
       "friction": 0.3,

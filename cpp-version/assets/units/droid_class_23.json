@@ -1,12 +1,14 @@
 {
   "name": "Class 23",
   "id": "droid_class_23",
+  "collisionRadius": 1.400000,
+  "proximityRadius": 36.000000,
   "properties": {
     "classId": 23,
     "typeCode": 999,
     "energy": 9,
     "armour": 80.0,
-    "weapon": 3.0,
+    "weapon": 3,
     "droidType": 3,
     "driveType": 0,
     "brainType": 3,
@@ -16,21 +18,13 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/999base.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.0,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.01778
+        "radius": 0.388542
       },
       "density": 1.0,
       "friction": 0.3,
@@ -42,64 +36,77 @@
       {
         "name": "section_1",
         "model": "models/torso.gltf",
-        "localOffset": [
-          0.0,
-          0.0
-        ],
-        "localRotation": 0.0,
-        "height": 0.508,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [-0.000000, 0.000000, 0.508000],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.231367
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": [
           {
             "name": "section_2",
             "model": "models/rightarm.gltf",
-            "localOffset": [
-              0.3175,
-              -0.0508
-            ],
-            "localRotation": 0.0,
-            "height": 0.127,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.317500, -0.050800, 0.127000],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "circle",
+                "radius": 0.139153
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_3",
             "model": "models/leftarm.gltf",
-            "localOffset": [
-              -0.3175,
-              -0.0508
-            ],
-            "localRotation": 0.0,
-            "height": 0.127,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [0.317500, -0.050800, 0.127000],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "circle",
+                "radius": 0.139724
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_4",
             "model": "models/ellipsehead.gltf",
-            "localOffset": [
-              0.0,
-              0.0
-            ],
-            "localRotation": 0.0,
-            "height": 0.5588,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.000000, 0.000000, 0.558800],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "box",
+                "width": 0.229769,
+                "height": 0.026852
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           }
         ]

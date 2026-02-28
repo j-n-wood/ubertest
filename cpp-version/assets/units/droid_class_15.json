@@ -1,12 +1,14 @@
 {
   "name": "Class 15",
   "id": "droid_class_15",
+  "collisionRadius": 0.700000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 15,
     "typeCode": 615,
     "energy": 6,
     "armour": 65.0,
-    "weapon": 0.0,
+    "weapon": 5,
     "droidType": 2,
     "driveType": 1,
     "brainType": 2,
@@ -16,21 +18,13 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/615.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.762,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.762000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.00889
+        "radius": 0.203200
       },
       "density": 1.0,
       "friction": 0.3,

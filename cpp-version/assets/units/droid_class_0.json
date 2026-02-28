@@ -1,12 +1,14 @@
 {
   "name": "Class 0",
   "id": "droid_class_0",
+  "collisionRadius": 0.200000,
+  "proximityRadius": 16.000000,
   "properties": {
     "classId": 0,
     "typeCode": 101,
     "energy": 0,
     "armour": 40.0,
-    "weapon": 0.0,
+    "weapon": 0,
     "droidType": 0,
     "driveType": 0,
     "brainType": 0,
@@ -16,17 +18,9 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/101.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.0,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",

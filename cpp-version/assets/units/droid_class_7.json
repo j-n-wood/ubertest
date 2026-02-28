@@ -1,17 +1,37 @@
 {
   "name": "Class 7",
   "id": "droid_class_7",
+  "collisionRadius": 0.300000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 7,
     "typeCode": 329,
     "energy": 3,
     "armour": 30.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 1,
     "driveType": 4,
     "brainType": 1,
     "hasTurret": false,
     "description": "Messenger robot for small packages and data transfers."
   },
-  "rootSection": null
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/mouse.gltf",
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.210058
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": []
+  }
 }

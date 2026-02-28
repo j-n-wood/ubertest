@@ -1,12 +1,14 @@
 {
   "name": "Class 21",
   "id": "droid_class_21",
+  "collisionRadius": 1.000000,
+  "proximityRadius": 36.000000,
   "properties": {
     "classId": 21,
     "typeCode": 834,
     "energy": 8,
     "armour": 70.0,
-    "weapon": 3.0,
+    "weapon": 6,
     "droidType": 2,
     "driveType": 1,
     "brainType": 2,
@@ -16,21 +18,13 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/852.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.508,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.508000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.0127
+        "radius": 0.457200
       },
       "density": 1.0,
       "friction": 0.3,

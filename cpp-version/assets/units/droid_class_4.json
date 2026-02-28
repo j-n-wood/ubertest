@@ -1,12 +1,14 @@
 {
   "name": "Class 4",
   "id": "droid_class_4",
+  "collisionRadius": 0.240000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 4,
     "typeCode": 249,
     "energy": 2,
     "armour": 20.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 1,
     "driveType": 3,
     "brainType": 1,
@@ -16,21 +18,13 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/servant_torso.gltf",
-    "localOffset": [
-      0.0,
-      0.0
-    ],
-    "localRotation": 0.0,
-    "height": 0.3048,
-    "scale": [
-      1,
-      1,
-      1
-    ],
+    "offset": [-0.000000, 0.000000, 0.304800],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
     "physics": {
       "shape": {
         "type": "circle",
-        "radius": 0.003048
+        "radius": 0.225279
       },
       "density": 1.0,
       "friction": 0.3,
@@ -42,64 +36,79 @@
       {
         "name": "section_1",
         "model": "models/tripedal_base.gltf",
-        "localOffset": [
-          0.0,
-          0.0
-        ],
-        "localRotation": 0.0,
-        "height": -0.127,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [-0.000000, 0.000000, -0.127000],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.142098
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": [
           {
             "name": "section_5",
             "model": "models/leg_small.gltf",
-            "localOffset": [
-              0.127,
-              0.0
-            ],
-            "localRotation": 0.0,
-            "height": -0.1778,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.127000, 0.000000, -0.177800],
+            "localRotation": 0.000000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "box",
+                "width": 0.100814,
+                "height": 0.047416
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_6",
             "model": "models/leg_small.gltf",
-            "localOffset": [
-              -0.127,
-              0.0
-            ],
-            "localRotation": 2.64,
-            "height": -0.1778,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [0.127000, 0.000000, -0.177800],
+            "localRotation": 2.640000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "box",
+                "width": 0.100814,
+                "height": 0.047416
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           },
           {
             "name": "section_7",
             "model": "models/leg_small.gltf",
-            "localOffset": [
-              0.0,
-              -0.127
-            ],
-            "localRotation": 1.57,
-            "height": -0.1778,
-            "scale": [
-              1,
-              1,
-              1
-            ],
+            "offset": [-0.000000, -0.127000, -0.177800],
+            "localRotation": 1.570000,
+            "scale": [1, 1, 1],
+            "physics": {
+              "shape": {
+                "type": "box",
+                "width": 0.100814,
+                "height": 0.047416
+              },
+              "density": 0.5,
+              "friction": 0.3,
+              "restitution": 0.1,
+              "linearDamping": 2.0,
+              "angularDamping": 4.0
+            },
             "children": []
           }
         ]
@@ -107,49 +116,60 @@
       {
         "name": "section_2",
         "model": "models/trap_head_small.gltf",
-        "localOffset": [
-          0.0,
-          0.0
-        ],
-        "localRotation": 0.0,
-        "height": 0.381,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [-0.000000, 0.000000, 0.381000],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "circle",
+            "radius": 0.182423
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": []
       },
       {
         "name": "section_3",
         "model": "models/servant_arm.gltf",
-        "localOffset": [
-          0.254,
-          0.0
-        ],
-        "localRotation": 0.0,
-        "height": 0.2032,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [-0.254000, 0.000000, 0.203200],
+        "localRotation": 0.000000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "box",
+            "width": 0.199950,
+            "height": 0.059270
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": []
       },
       {
         "name": "section_4",
         "model": "models/servant_arm.gltf",
-        "localOffset": [
-          -0.254,
-          0.0
-        ],
-        "localRotation": 3.14,
-        "height": 0.2032,
-        "scale": [
-          1,
-          1,
-          1
-        ],
+        "offset": [0.254000, 0.000000, 0.203200],
+        "localRotation": 3.140000,
+        "scale": [1, 1, 1],
+        "physics": {
+          "shape": {
+            "type": "box",
+            "width": 0.199950,
+            "height": 0.059270
+          },
+          "density": 0.5,
+          "friction": 0.3,
+          "restitution": 0.1,
+          "linearDamping": 2.0,
+          "angularDamping": 4.0
+        },
         "children": []
       }
     ]

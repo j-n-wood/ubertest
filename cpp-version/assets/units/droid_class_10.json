@@ -1,17 +1,37 @@
 {
   "name": "Class 10",
   "id": "droid_class_10",
+  "collisionRadius": 0.400000,
+  "proximityRadius": 30.000000,
   "properties": {
     "classId": 10,
     "typeCode": 493,
     "energy": 4,
     "armour": 45.0,
-    "weapon": 0.0,
+    "weapon": -1,
     "droidType": 1,
     "driveType": 4,
     "brainType": 1,
     "hasTurret": false,
     "description": "General purpose maintenance robot. Specialised for computer and network repairs."
   },
-  "rootSection": null
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/r5d2.gltf",
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.378764
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": []
+  }
 }

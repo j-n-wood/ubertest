@@ -1,17 +1,37 @@
 {
   "name": "Class 18",
   "id": "droid_class_18",
+  "collisionRadius": 0.900000,
+  "proximityRadius": 36.000000,
   "properties": {
     "classId": 18,
     "typeCode": 742,
     "energy": 7,
     "armour": 80.0,
-    "weapon": 6.0,
+    "weapon": 4,
     "droidType": 2,
     "driveType": 1,
     "brainType": 2,
     "hasTurret": false,
     "description": "Semi-autonomous battle droid, used for scouting and rapid raiding."
   },
-  "rootSection": null
+  "rootSection": {
+    "name": "section_0",
+    "model": "models/probe.gltf",
+    "offset": [-0.000000, 0.000000, 0.000000],
+    "localRotation": 0.000000,
+    "scale": [1, 1, 1],
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.704850
+      },
+      "density": 1.0,
+      "friction": 0.3,
+      "restitution": 0.0,
+      "linearDamping": 4.0,
+      "angularDamping": 8.0
+    },
+    "children": []
+  }
 }
