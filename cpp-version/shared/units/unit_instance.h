@@ -2,6 +2,8 @@
 #define UNIT_INSTANCE_H
 
 #include "unit_types.h"
+#include "combat_state.h"
+#include "physics/body_user_data.h"
 #include "box2d/box2d.h"
 #include <memory>
 #include <vector>
@@ -54,6 +56,7 @@ public:
 
 struct DebrisObject {
     b2BodyId bodyId = b2_nullBodyId;
+    BodyUserData bodyUserData;
     Model model = {};
     bool hasModel = false;
     float height = 0.0f;
@@ -78,6 +81,12 @@ struct UnitInstance {
 
     // Collision filtering - negative group index prevents self-collision
     int32_t collisionGroupId = 0;
+
+    // Body identification for contact events
+    BodyUserData bodyUserData;
+
+    // Combat
+    UnitCombatState combatState;
 
     // State
     bool active = true;

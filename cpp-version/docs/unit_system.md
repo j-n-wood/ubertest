@@ -115,47 +115,84 @@ struct UnitDefinition {
 
 ### Runtime Structures
 
+> **Note:** The actual implementation uses a single Box2D body per unit (not per-section).
+> Sections are rendering-only; per-section physics shapes are only used for debris on dismantle.
+
 ```cpp
-// Runtime section with physics body
-struct SectionInstance {
-    const SectionDefinition* definition;
-
-    // Physics
-    b2BodyId bodyId = b2_nullBodyId;
-    bool hasPhysics = false;
-
-    // Joint to parent
-    b2JointId parentJoint = b2_nullJointId;
+// Runtime section (rendering only, no per-section physics body)
+class SectionInstance {
+public:
+    const SectionDefinition* definition = nullptr;
 
     // Rendering
     Model model = {};
     bool hasModel = false;
 
+    // Animation
+    ModelAnimation* animations = nullptr;
+    int animCount = 0;
+    int currentAnim = 0;
+    int currentFrame = 0;
+    bool animPlaying = false;
+
     // Hierarchy
     SectionInstance* parent = nullptr;
     std::vector<std::unique_ptr<SectionInstance>> children;
 
-    // State
-    bool attached = true;               // False after joint break
-
-    // Cached world transform
+    // Cached world transform (updated each frame from unit physics + offsets)
     Vector2 worldPosition = {0, 0};
     float worldRotation = 0.0f;
+    float facingAngle = 0.0f;
+};
+
+// Combat state (mutable per-instance gameplay data)
+struct UnitCombatState {
+    float currentHealth = 0.0f;
+    float maxHealth = 0.0f;
+    float armour = 0.0f;        // Damage reduction percentage (0-100)
+    bool alive = true;
 };
 
 // Runtime unit
 struct UnitInstance {
-    const UnitDefinition* definition;
+    const UnitDefinition* definition = nullptr;
+
+    // Single physics body for the entire unit
+    b2BodyId bodyId = b2_nullBodyId;
+
+    // Section hierarchy (rendering only)
     std::unique_ptr<SectionInstance> rootSection;
 
-    // Flattened lists for iteration
+    // All section instances flattened for iteration
     std::vector<SectionInstance*> allSections;
-    std::vector<b2JointId> allJoints;
+
+    // Collision filtering - negative group index prevents self-collision
+    int32_t collisionGroupId = 0;
+
+    // Combat (initialised from definition properties on createInstance)
+    UnitCombatState combatState;
 
     // State
     bool active = true;
 };
 ```
+
+### Combat State
+
+Combat state is initialised automatically in `UnitManager::createInstance()` from the unit definition's `PropertyMap`:
+
+| JSON property | Type in variant | Maps to | Scaling |
+|---------------|-----------------|---------|---------|
+| `energy` | `int` | `maxHealth` / `currentHealth` | `max(10.0, energy * 100.0)` |
+| `armour` | `float` | `armour` | Clamped to 0–100 (percentage damage reduction) |
+
+**Damage model:** `effectiveDamage = rawDamage * (1.0 - armour / 100.0)`. Health clamped to 0; damage on dead units is a no-op.
+
+Free functions in `combat_state.h`:
+- `initCombatState(properties)` — create state from PropertyMap
+- `applyDamage(state, rawDamage)` — returns true if still alive
+- `isAlive(state)` / `destroy(state)` — query and force-kill
+- `getPropertyAsFloat(props, key, default)` — extract int or float variant as float
 
 ### UnitManager
 
@@ -447,6 +484,74 @@ void UnitManager::update(float dt) {
 
 ---
 
+## Body User Data
+
+All Box2D bodies carry a `BodyUserData` struct (via `bodyDef.userData`) that identifies what game object they represent:
+
+```cpp
+enum class BodyTag : uint8_t { None, Unit, Projectile, Debris, Static };
+
+struct BodyUserData {
+    BodyTag tag = BodyTag::None;
+    void* owner = nullptr;  // UnitInstance*, array index, etc.
+};
+```
+
+Contact event processing calls `b2Body_GetUserData()`, casts to `BodyUserData*`, and uses the tag to determine behavior. For units, `owner` points to the `UnitInstance*`. For projectiles, `owner` stores the array index (cast to `void*`) since the projectile vector may reallocate. For debris, `owner` is `nullptr`.
+
+Defined in `shared/physics/body_user_data.h` (no Box2D dependency).
+
+---
+
+## Collision Filtering
+
+Category bits control which types of objects interact:
+
+| Category | Bit | Collides with |
+|----------|-----|---------------|
+| `CATEGORY_UNIT` | 0x0001 | Unit, Projectile, Static, Debris |
+| `CATEGORY_PROJECTILE` | 0x0002 | Unit, Static |
+| `CATEGORY_STATIC` | 0x0004 | Everything (0xFFFF) |
+| `CATEGORY_DEBRIS` | 0x0008 | Unit, Static, Debris |
+
+Self-damage prevention uses the existing negative `groupIndex` system: each unit gets a unique negative groupIndex. A projectile inherits its owner's groupIndex. Box2D prevents collision between bodies sharing the same negative groupIndex, so the projectile skips only its specific owner but hits everything else.
+
+Constants defined in `shared/physics/body_user_data.h`.
+
+---
+
+## Projectile Physics
+
+Projectiles are Box2D bodies managed by `ProjectileManager` (`shared/combat/projectile_manager.h/cpp`).
+
+### Body properties
+
+- `b2_dynamicBody` with `isBullet = true` (CCD prevents tunneling through thin walls)
+- `restitution = 0`, `linearDamping = 0`, `gravityScale = 0`
+- Circle shape with `PROJECTILE_RADIUS` (0.1f)
+- `enableContactEvents = true` on the shape
+- Filter: `categoryBits = CATEGORY_PROJECTILE`, `maskBits = CATEGORY_UNIT | CATEGORY_STATIC`
+
+### Lifecycle
+
+Each game frame follows this sequence:
+
+1. **Physics step** — `b2World_Step()` advances all bodies including projectiles
+2. **Contact events** — `processContactEvents(worldId)` reads `b2World_GetContactEvents()`, applies damage to hit units via body user data, deactivates projectiles on any contact
+3. **Sync positions** — `syncFromPhysics()` copies body positions to `Projectile::position`
+4. **Lifetime tick** — `update(dt)` decrements `remainingLifetime`, deactivates expired projectiles
+5. **Cleanup** — `cleanup()` destroys Box2D bodies for inactive projectiles, compacts the list, re-indexes user data
+
+### Range limiting
+
+Lifetime replaces distance tracking. At constant velocity, `lifetime = maxRange / speed`. The `spawn()` method takes lifetime directly.
+
+### Source of truth
+
+The unit instance collection is authoritative for all positions, orientations, and combat state. Rendering, AI, and combat all read from the same data. Box2D contact events reference instances directly via body user data — no separate target list is maintained.
+
+---
+
 ## Deconstruction System
 
 ### Breaking a Single Joint
@@ -614,26 +719,25 @@ Entity* spawnUnitEntity(Game* game, const char* unitId, Vector3 pos) {
 cpp-version/
 ├── shared/
 │   └── units/
-│       ├── unit_types.h      # Definition structs, PropertyMap
-│       ├── unit_instance.h   # Runtime structs
+│       ├── unit_types.h      # Definition structs, PropertyMap, PhysicsProperties
+│       ├── unit_instance.h   # Runtime structs (SectionInstance, UnitInstance, DebrisObject)
+│       ├── unit_instance.cpp # SectionInstance destructor
 │       ├── unit_manager.h    # Manager interface
-│       ├── unit_manager.cpp  # Core implementation
+│       ├── unit_manager.cpp  # Instance lifecycle, rendering, debris, physics sync
 │       ├── unit_json.h       # JSON load/save declarations
 │       ├── unit_json.cpp     # nlohmann/json parsing & serialization
-│       └── unit_physics.cpp  # Box2D body/joint helpers
+│       ├── combat_state.h    # UnitCombatState struct, damage model declarations
+│       └── combat_state.cpp  # Damage model, property extraction, combat init
 ├── assets/
 │   └── units/
-│       ├── test_simple.json
-│       ├── test_multi.json
-│       └── test_breakable.json
+│       ├── droid_class_0.json   # 24 droid class definitions
+│       ├── droid_class_1.json
+│       └── ...
+├── tests/
+│   ├── combat_state_test.cpp # 10 GoogleTest cases for combat system
+│   └── ...
 └── tools/
-    └── unit_test/
-        ├── CMakeLists.txt
-        ├── main.cpp
-        ├── test_scene.h
-        ├── test_scene.cpp
-        ├── unit_editor.h
-        └── unit_editor.cpp
+    └── unit_test/            # Visual unit inspector
 ```
 
 ---

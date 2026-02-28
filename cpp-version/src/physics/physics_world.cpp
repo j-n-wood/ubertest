@@ -1,4 +1,5 @@
 #include "physics_world.h"
+#include "physics/body_user_data.h"
 
 void physics_world_init(PhysicsWorld* world) {
     b2WorldDef world_def = b2DefaultWorldDef();
@@ -47,6 +48,8 @@ PhysicsBody physics_create_static_box(PhysicsWorld* world, Vector2 pos, float w,
 
     b2Polygon box = b2MakeBox(w / 2.0f, h / 2.0f);
     b2ShapeDef shape_def = b2DefaultShapeDef();
+    shape_def.filter.categoryBits = CATEGORY_STATIC;
+    shape_def.filter.maskBits = MASK_STATIC;
 
     b2CreatePolygonShape(body.body_id, &shape_def, &box);
     body.valid = true;

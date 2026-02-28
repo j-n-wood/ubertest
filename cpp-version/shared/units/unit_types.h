@@ -68,6 +68,23 @@ using PropertyValue = std::variant<
 using PropertyMap = std::unordered_map<std::string, PropertyValue>;
 
 //------------------------------------------------------------------------------
+// Droid Properties (typed fields for unit-level gameplay data)
+//------------------------------------------------------------------------------
+
+struct DroidProperties {
+    int classId = -1;
+    int typeCode = 0;
+    int energy = 0;
+    float armour = 0.0f;
+    int weapon = -1;           // Weapon ID, -1 = unarmed
+    int droidType = 0;
+    int driveType = 0;
+    int brainType = 0;
+    bool hasTurret = false;
+    std::string description;
+};
+
+//------------------------------------------------------------------------------
 // Section Rotation Mode
 //------------------------------------------------------------------------------
 
@@ -117,7 +134,7 @@ struct UnitDefinition {
     float proximityRadius = 1.0f;             // Proximity detection radius for AI/sensing
 
     SectionDefinition rootSection;
-    PropertyMap properties;                   // Unit-level properties
+    DroidProperties properties;               // Droid gameplay properties
 };
 
 #endif // UNIT_TYPES_H

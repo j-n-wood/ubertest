@@ -83,6 +83,37 @@ json propertiesToJson(const PropertyMap& props) {
     return j;
 }
 
+DroidProperties parseDroidProperties(const json& j) {
+    DroidProperties props;
+    if (!j.is_object()) return props;
+    props.classId     = j.value("classId", -1);
+    props.typeCode    = j.value("typeCode", 0);
+    props.energy      = j.value("energy", 0);
+    props.armour      = j.value("armour", 0.0f);
+    props.weapon      = j.value("weapon", -1);
+    props.droidType   = j.value("droidType", 0);
+    props.driveType   = j.value("driveType", 0);
+    props.brainType   = j.value("brainType", 0);
+    props.hasTurret   = j.value("hasTurret", false);
+    props.description = j.value("description", std::string{});
+    return props;
+}
+
+json droidPropertiesToJson(const DroidProperties& props) {
+    json j = json::object();
+    j["classId"]     = props.classId;
+    j["typeCode"]    = props.typeCode;
+    j["energy"]      = props.energy;
+    j["armour"]      = props.armour;
+    j["weapon"]      = props.weapon;
+    j["droidType"]   = props.droidType;
+    j["driveType"]   = props.driveType;
+    j["brainType"]   = props.brainType;
+    j["hasTurret"]   = props.hasTurret;
+    j["description"] = props.description;
+    return j;
+}
+
 PhysicsProperties parsePhysics(const json& j) {
     PhysicsProperties phys;
 
@@ -288,7 +319,7 @@ bool loadUnitDefinitionFromFile(std::string_view path, UnitDefinition& outDefini
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
         if (j.contains("properties")) {
-            outDefinition.properties = parseProperties(j["properties"]);
+            outDefinition.properties = parseDroidProperties(j["properties"]);
         }
 
         if (j.contains("rootSection")) {
@@ -317,9 +348,7 @@ bool saveUnitDefinitionToFile(std::string_view path, const UnitDefinition& defin
         j["collisionRadius"] = definition.collisionRadius;
         j["proximityRadius"] = definition.proximityRadius;
 
-        if (!definition.properties.empty()) {
-            j["properties"] = propertiesToJson(definition.properties);
-        }
+        j["properties"] = droidPropertiesToJson(definition.properties);
 
         j["rootSection"] = sectionToJson(definition.rootSection);
 
@@ -351,7 +380,7 @@ bool parseUnitDefinitionFromString(std::string_view jsonString, UnitDefinition& 
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
         if (j.contains("properties")) {
-            outDefinition.properties = parseProperties(j["properties"]);
+            outDefinition.properties = parseDroidProperties(j["properties"]);
         }
 
         if (j.contains("rootSection")) {
@@ -379,9 +408,7 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
         j["collisionRadius"] = definition.collisionRadius;
         j["proximityRadius"] = definition.proximityRadius;
 
-        if (!definition.properties.empty()) {
-            j["properties"] = propertiesToJson(definition.properties);
-        }
+        j["properties"] = droidPropertiesToJson(definition.properties);
 
         j["rootSection"] = sectionToJson(definition.rootSection);
 

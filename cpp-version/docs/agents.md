@@ -4,7 +4,7 @@ This document provides context for AI agents working on tool projects in the cpp
 
 ## Project Overview
 
-This project converts legacy game data (tiles, geometry, units) to modern formats for a new game engine. Tool projects handle parsing, conversion, validation, and visualization.
+This project converts legacy game data (tiles, geometry, units) to modern formats and implements a top-down action game engine. Tool projects handle parsing, conversion, validation, and visualization. Gameplay systems are implemented in stages (see [gameplay_implementation_plan.md](gameplay_implementation_plan.md)).
 
 ## Key Documentation
 
@@ -14,7 +14,12 @@ This project converts legacy game data (tiles, geometry, units) to modern format
 | [RENDERING_PIPELINE.md](RENDERING_PIPELINE.md) | Tile geometry, winding order, coordinate systems |
 | [ORIGINAL_FORMATS.md](ORIGINAL_FORMATS.md) | Source data format specifications |
 | [JSON_FORMATS.md](JSON_FORMATS.md) | Output format specifications |
-| [unit_system.md](unit_system.md) | Unit/entity system design |
+| [unit_system.md](unit_system.md) | Unit/entity system design, combat state, body user data, collision filtering, projectile lifecycle |
+| [projectile_system.md](projectile_system.md) | Projectile refactor design — Box2D bodies, contact events, API reference |
+| [gameplay_implementation_plan.md](gameplay_implementation_plan.md) | Staged gameplay implementation — **read Design Patterns section first** |
+| [GAME.md](GAME.md) | Game design document (mechanics, rules) |
+| [UBERDROID_DATA_FORMATS.md](../tools/droid_tool/UBERDROID_DATA_FORMATS.md) | **Droid/unit conversion** - Legacy droidclasses.txt, renderobjects.txt formats |
+| [legacy_data_format_reference.md](../../tools/legacy_data_format_reference.md) | Quick reference for legacy unit data structures |
 
 ## Critical Rules for Data Conversion
 
@@ -71,6 +76,9 @@ Unit/entity system testing. See [tools/unit_test/agents.md](../tools/unit_test/a
 ### level_tool
 Converts FreedroidClassic Paradroid.maps to Tiled TMX format. See [tools/level_tool/README.md](../tools/level_tool/README.md).
 
+### droid_tool
+Converts legacy droid class definitions to modern unit JSON format. Parses droidclasses.txt and renderobjects.txt. See [tools/droid_tool/UBERDROID_DATA_FORMATS.md](../tools/droid_tool/UBERDROID_DATA_FORMATS.md) for format reference.
+
 **Usage:**
 ```bash
 ./level_tool --convert                    # Use defaults
@@ -96,15 +104,84 @@ cpp-version/
 │   ├── rendering/          # Mesh generation, shaders
 │   ├── scene_convert/      # Parsing and conversion
 │   ├── model_convert/      # GLTF handling
-│   └── units/              # Entity system
+│   ├── units/              # Unit system (definitions, instances, combat)
+│   │   ├── unit_types.h    #   Definition structs, PropertyMap
+│   │   ├── unit_instance.h #   Runtime structs (SectionInstance, UnitInstance, BodyUserData)
+│   │   ├── unit_manager.*  #   Instance lifecycle, rendering, debris
+│   │   ├── unit_json.*     #   JSON parsing & serialization
+│   │   ├── combat_state.*  #   Combat state, damage model
+│   │   └── weapon.*        #   Weapon definitions, fire/cooldown
+│   ├── combat/             # Combat systems
+│   │   └── projectile_manager.*  # Projectile Box2D bodies, contact events
+│   ├── physics/            # Physics helpers
+│   │   └── body_user_data.h      # BodyTag, BodyUserData, collision categories
+│   └── level/              # TMX level loading, tile rendering, spawn config
 ├── tools/                   # Tool projects
 │   ├── incremental_viewer/
 │   ├── model_tool/
 │   ├── scene_tool/
 │   ├── unit_test/
-│   └── level_tool/
-├── assets/                  # Shared assets (shaders, textures)
-└── src/                     # Game-specific code
+│   ├── level_tool/
+│   └── droid_tool/
+├── tests/                   # GoogleTest suite
+├── assets/                  # Shared assets (shaders, textures, unit definitions)
+│   ├── units/              #   24 droid class JSON definitions
+│   └── models/             #   GLTF models and textures
+├── src/                     # Game-specific code
+└── cmake/                   # Build configuration (SharedSources.cmake, Dependencies.cmake)
+```
+
+## Gameplay Systems
+
+Gameplay is implemented in stages per [gameplay_implementation_plan.md](gameplay_implementation_plan.md). Each stage is independently testable. **Read the [Design Patterns](gameplay_implementation_plan.md#design-patterns) section before implementing any gameplay system.**
+
+### Gameplay Design Patterns
+
+These three rules apply to all gameplay code:
+
+1. **Use raylib types** — `Vector2`, `Vector3`, `Color` for members and function parameters. Use raymath functions (`Vector2Normalize`, `Vector2Scale`, `Vector2Distance`, etc.) instead of manual float arithmetic.
+
+2. **Use Box2D directly** — systems that need physics use Box2D API calls directly. Tests create a `b2World` and step the simulation. Don't write manual physics simulation or abstract Box2D behind wrapper interfaces.
+
+3. **Single source of truth** — the unit instance collection is authoritative for all positions, orientations, and combat state. Access units via `BodyUserData` pointers on Box2D bodies during contact events. Don't build intermediate data structures that duplicate data from authoritative sources.
+
+All Box2D bodies carry a `BodyUserData` struct (defined in `shared/physics/body_user_data.h`) that identifies what they are. See [unit_system.md](unit_system.md#body-user-data) for tag definitions and [unit_system.md](unit_system.md#collision-filtering) for the category bit table.
+
+### Droid Property Access
+
+Unit definitions store gameplay data in a typed `DroidProperties` struct (defined in `unit_types.h`). Access fields directly — no map lookups or variant casts:
+
+```cpp
+float armour = unit->definition->properties.armour;
+int weaponId = unit->definition->properties.weapon;  // -1 = unarmed
+```
+
+### Droid Class Properties
+
+| Property | Type | Range | Purpose |
+|----------|------|-------|---------|
+| `classId` | int | 0–23 | Droid class index |
+| `energy` | int | 0–9 | Power level (maps to health: energy * 100, min 10) |
+| `armour` | float | 20–65+ | Damage reduction percentage |
+| `weapon` | float | 0+ | Weapon capability (Stage 2) |
+| `droidType` | int | 0–3 | Aggression type (Stage 4) |
+| `driveType` | int | 0–2 | Movement type |
+| `brainType` | int | 0–3 | AI behaviour class (Stage 4) |
+| `proximityRadius` | float | 16–30 | AI detection radius (on UnitDefinition, not properties) |
+
+### Adding Gameplay Tests
+
+Tests link `box2d` and `raylib` so gameplay systems can be tested with real physics. Add test files to `tests/CMakeLists.txt` with the corresponding `.cpp` source. Tests that need physics create a lightweight `b2World` (zero gravity) and step it with controlled dt values — no real-time clock needed.
+
+```cmake
+add_executable(run_tests
+    ...
+    weapon_test.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
+    ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
+    ...
+)
+target_link_libraries(run_tests PRIVATE GTest::gtest_main raylib box2d ...)
 ```
 
 ## Common Patterns

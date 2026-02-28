@@ -127,6 +127,11 @@ UnitInstance* UnitManager::createInstance(
     instance->definition = definition;
     instance->active = true;
     instance->collisionGroupId = m_nextCollisionGroup--;
+    instance->combatState = initCombatState(definition->properties);
+
+    // Set body user data for contact event identification
+    instance->bodyUserData.tag = BodyTag::Unit;
+    instance->bodyUserData.owner = instance.get();
 
     // Create single physics body for the entire unit using collisionRadius
     b2BodyDef bodyDef = b2DefaultBodyDef();
@@ -135,6 +140,7 @@ UnitInstance* UnitManager::createInstance(
     bodyDef.rotation = b2MakeRot(rotation);
     bodyDef.linearDamping = 4.0f;
     bodyDef.angularDamping = 8.0f;
+    bodyDef.userData = &instance->bodyUserData;
 
     instance->bodyId = b2CreateBody(m_worldId, &bodyDef);
 
@@ -143,11 +149,17 @@ UnitInstance* UnitManager::createInstance(
     shapeDef.density = 1.0f;
     shapeDef.friction = 0.3f;
     shapeDef.restitution = 0.0f;
+    shapeDef.filter.categoryBits = CATEGORY_UNIT;
+    shapeDef.filter.maskBits = MASK_UNIT;
     shapeDef.filter.groupIndex = instance->collisionGroupId;
 
     b2Circle circle;
     circle.center = {0, 0};
     circle.radius = definition->collisionRadius;
+    if (circle.radius <= 0.0f) {
+        TraceLog(LOG_WARNING, "Unit '%s' has zero collisionRadius, using default 0.2", definition->id.c_str());
+        circle.radius = 0.2f;
+    }
     b2CreateCircleShape(instance->bodyId, &shapeDef, &circle);
 
     // Create section instances (rendering only, no per-section physics)
@@ -351,6 +363,10 @@ DebrisObject UnitManager::createDebrisFromSection(
 
     const auto& phys = *section.physics;
 
+    // Set body user data for contact event identification
+    obj.bodyUserData.tag = BodyTag::Debris;
+    obj.bodyUserData.owner = nullptr;
+
     // Create physics body
     b2BodyDef bodyDef = b2DefaultBodyDef();
     bodyDef.type = b2_dynamicBody;
@@ -358,6 +374,7 @@ DebrisObject UnitManager::createDebrisFromSection(
     bodyDef.rotation = b2MakeRot(rotation);
     bodyDef.linearDamping = phys.linearDamping;
     bodyDef.angularDamping = phys.angularDamping;
+    bodyDef.userData = &obj.bodyUserData;
 
     obj.bodyId = b2CreateBody(m_worldId, &bodyDef);
 
@@ -366,6 +383,8 @@ DebrisObject UnitManager::createDebrisFromSection(
     shapeDef.density = phys.density;
     shapeDef.friction = phys.friction;
     shapeDef.restitution = phys.restitution;
+    shapeDef.filter.categoryBits = CATEGORY_DEBRIS;
+    shapeDef.filter.maskBits = MASK_DEBRIS;
     shapeDef.filter.groupIndex = obj.collisionGroup;
 
     switch (phys.shapeType) {

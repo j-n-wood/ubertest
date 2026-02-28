@@ -18,6 +18,14 @@ add_executable(run_tests
     sanity_test.cpp
     tile_conversion_test.cpp
     paradroid_parser_test.cpp
+    combat_state_test.cpp
+    weapon_test.cpp
+    spawn_test.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
+    ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/spawn_config.cpp
     ${SCENE_CONVERT_SOURCES}
     ${LEVEL_TOOL_SOURCES}
 )
@@ -25,6 +33,7 @@ add_executable(run_tests
 target_link_libraries(run_tests PRIVATE
     GTest::gtest_main
     raylib
+    box2d
     nlohmann_json::nlohmann_json
     tinyxml2
 )
