@@ -1,25 +1,31 @@
 #include "spawn_config.h"
+#include "units/unit_types.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <algorithm>
 #include <random>
-#include <numeric>
 
 using json = nlohmann::json;
 
 //------------------------------------------------------------------------------
-// Module-level state
+// Internal types
 //------------------------------------------------------------------------------
+
+struct TypeClassEntry {
+    std::vector<int> classIds;
+};
 
 struct ShipSpawnData {
     std::string name;
     std::vector<LevelSpawnDef> levels;   // Indexed by level number
 };
 
+//------------------------------------------------------------------------------
+// Module-level state
+//------------------------------------------------------------------------------
+
 static std::vector<ShipSpawnData> s_ships;
 static std::vector<TypeClassEntry> s_typeClassMap;
-static std::vector<std::string> s_levelNames;
-static std::string s_emptyName;
 
 // Thread-local RNG for spawn randomness
 static std::mt19937& getRng() {
@@ -28,109 +34,92 @@ static std::mt19937& getRng() {
 }
 
 //------------------------------------------------------------------------------
-// JSON parsing
-//------------------------------------------------------------------------------
-
-static bool loadFromParsedJson(const json& j) {
-    s_ships.clear();
-    s_typeClassMap.clear();
-    s_levelNames.clear();
-
-    if (!j.is_object()) return false;
-
-    // Parse type-to-class mapping
-    if (j.contains("typeClassMap") && j["typeClassMap"].is_array()) {
-        for (const auto& entry : j["typeClassMap"]) {
-            TypeClassEntry tce;
-            tce.type = entry.value("type", 0);
-            if (entry.contains("classes") && entry["classes"].is_array()) {
-                for (const auto& c : entry["classes"]) {
-                    tce.classIds.push_back(c.get<int>());
-                }
-            }
-            s_typeClassMap.push_back(std::move(tce));
-        }
-    }
-
-    // Parse level names
-    if (j.contains("levelNames") && j["levelNames"].is_array()) {
-        for (const auto& name : j["levelNames"]) {
-            s_levelNames.push_back(name.get<std::string>());
-        }
-    }
-
-    // Parse ships
-    if (!j.contains("ships") || !j["ships"].is_array()) return false;
-
-    for (const auto& shipJson : j["ships"]) {
-        ShipSpawnData ship;
-        ship.name = shipJson.value("name", "");
-
-        if (shipJson.contains("levels") && shipJson["levels"].is_array()) {
-            for (const auto& levelJson : shipJson["levels"]) {
-                LevelSpawnDef def;
-
-                int levelIdx = levelJson.value("level", -1);
-
-                // Use level name from global names if available, or from level JSON
-                if (levelIdx >= 0 && levelIdx < static_cast<int>(s_levelNames.size())) {
-                    def.name = s_levelNames[levelIdx];
-                }
-
-                // Parse profile array
-                if (levelJson.contains("profile") && levelJson["profile"].is_array()) {
-                    const auto& profile = levelJson["profile"];
-                    for (int i = 0; i < SPAWN_TYPE_COUNT && i < static_cast<int>(profile.size()); ++i) {
-                        def.profile[i] = profile[i].get<int>();
-                    }
-                }
-
-                // Parse placed droids
-                if (levelJson.contains("placedDroids") && levelJson["placedDroids"].is_array()) {
-                    for (const auto& pd : levelJson["placedDroids"]) {
-                        SpawnEntry placed;
-                        placed.classId = pd.value("classId", -1);
-                        placed.waypointIndex = pd.value("waypointIndex", -1);
-                        placed.angle = pd.value("angle", 0.0f);
-                        def.placedDroids.push_back(placed);
-                    }
-                }
-
-                // Ensure levels vector is large enough
-                if (levelIdx >= 0) {
-                    if (levelIdx >= static_cast<int>(ship.levels.size())) {
-                        ship.levels.resize(levelIdx + 1);
-                    }
-                    ship.levels[levelIdx] = std::move(def);
-                }
-            }
-        }
-
-        s_ships.push_back(std::move(ship));
-    }
-
-    return !s_ships.empty();
-}
-
-//------------------------------------------------------------------------------
 // Loading
 //------------------------------------------------------------------------------
 
-bool loadSpawnConfigFromFile(const std::string& path) {
+void clearSpawnConfig() {
+    s_ships.clear();
+    s_typeClassMap.clear();
+}
+
+void buildTypeClassMap(const DroidProperties* allDroids, int count) {
+    s_typeClassMap.clear();
+    s_typeClassMap.resize(SPAWN_TYPE_COUNT);
+
+    for (int i = 0; i < count; ++i) {
+        int type = allDroids[i].typeCode / 100;  // e.g., 302 -> 3
+        int typeIndex = type - 1;                 // type 1 at index 0, ... type 9 at index 8
+        if (typeIndex >= 0 && typeIndex < SPAWN_TYPE_COUNT) {
+            s_typeClassMap[typeIndex].classIds.push_back(allDroids[i].classId);
+        }
+    }
+}
+
+static bool parseShipJson(const json& j, ShipSpawnData& ship) {
+    if (!j.is_object()) return false;
+
+    ship.name = j.value("name", "");
+
+    if (!j.contains("levels") || !j["levels"].is_array()) return false;
+
+    for (const auto& levelJson : j["levels"]) {
+        LevelSpawnDef def;
+        int levelIdx = levelJson.value("level", -1);
+
+        // Parse profile array
+        if (levelJson.contains("profile") && levelJson["profile"].is_array()) {
+            const auto& profile = levelJson["profile"];
+            for (int i = 0; i < SPAWN_TYPE_COUNT && i < static_cast<int>(profile.size()); ++i) {
+                def.profile[i] = profile[i].get<int>();
+            }
+        }
+
+        // Parse placed droids
+        if (levelJson.contains("placedDroids") && levelJson["placedDroids"].is_array()) {
+            for (const auto& pd : levelJson["placedDroids"]) {
+                SpawnEntry placed;
+                placed.classId = pd.value("classId", -1);
+                placed.waypointIndex = pd.value("waypointIndex", -1);
+                placed.angle = pd.value("angle", 0.0f);
+                def.placedDroids.push_back(placed);
+            }
+        }
+
+        // Ensure levels vector is large enough
+        if (levelIdx >= 0) {
+            if (levelIdx >= static_cast<int>(ship.levels.size())) {
+                ship.levels.resize(levelIdx + 1);
+            }
+            ship.levels[levelIdx] = std::move(def);
+        }
+    }
+
+    return true;
+}
+
+bool loadShipSpawns(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) return false;
 
     json j = json::parse(file, nullptr, false);
     if (j.is_discarded()) return false;
 
-    return loadFromParsedJson(j);
+    ShipSpawnData ship;
+    if (!parseShipJson(j, ship)) return false;
+
+    s_ships.push_back(std::move(ship));
+    return true;
 }
 
-bool loadSpawnConfigFromJson(const std::string& jsonString) {
+bool loadShipSpawnsFromJson(const std::string& jsonString) {
     json j = json::parse(jsonString, nullptr, false);
     if (j.is_discarded()) return false;
 
-    return loadFromParsedJson(j);
+    ShipSpawnData ship;
+    if (!parseShipJson(j, ship)) return false;
+
+    s_ships.push_back(std::move(ship));
+    return true;
 }
 
 int spawnShipCount() {
@@ -146,11 +135,6 @@ const LevelSpawnDef* getSpawnDef(int shipIndex, int levelIndex) {
     const auto& ship = s_ships[shipIndex];
     if (levelIndex < 0 || levelIndex >= static_cast<int>(ship.levels.size())) return nullptr;
     return &ship.levels[levelIndex];
-}
-
-const std::string& getLevelName(int levelIndex) {
-    if (levelIndex < 0 || levelIndex >= static_cast<int>(s_levelNames.size())) return s_emptyName;
-    return s_levelNames[levelIndex];
 }
 
 //------------------------------------------------------------------------------

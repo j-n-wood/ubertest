@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+struct DroidProperties;
+
 //------------------------------------------------------------------------------
 // Spawn data types
 //------------------------------------------------------------------------------
@@ -20,26 +22,27 @@ struct SpawnEntry {
 
 // Spawn definition for a single level
 struct LevelSpawnDef {
-    std::string name;
     int profile[SPAWN_TYPE_COUNT] = {};   // Count per type (type 1 at index 0, ... type 9 at index 8)
     std::vector<SpawnEntry> placedDroids;
-};
-
-// Type-to-class mapping: which droid classes belong to each type group
-struct TypeClassEntry {
-    int type = 0;                    // Type number (1-9)
-    std::vector<int> classIds;       // Droid class IDs in this type group
 };
 
 //------------------------------------------------------------------------------
 // Loading
 //------------------------------------------------------------------------------
 
-// Load spawn configuration from a JSON file.
-bool loadSpawnConfigFromFile(const std::string& path);
+// Reset all loaded spawn state.
+void clearSpawnConfig();
 
-// Load spawn configuration from a JSON string (for testing).
-bool loadSpawnConfigFromJson(const std::string& jsonString);
+// Build the type-to-class mapping from loaded droid properties.
+// Derives type as typeCode / 100 (e.g., typeCode 302 = type 3).
+// Must be called after droid definitions are loaded, before resolveSpawns.
+void buildTypeClassMap(const DroidProperties* allDroids, int count);
+
+// Load one ship's spawn data from a JSON file, appends to ship list.
+bool loadShipSpawns(const std::string& path);
+
+// Load one ship's spawn data from a JSON string (for testing).
+bool loadShipSpawnsFromJson(const std::string& jsonString);
 
 // Number of ships loaded.
 int spawnShipCount();
@@ -51,9 +54,6 @@ int spawnShipCount();
 // Get the spawn definition for a specific ship and level.
 // Returns nullptr if indices are out of range.
 const LevelSpawnDef* getSpawnDef(int shipIndex, int levelIndex);
-
-// Get the level name for a given level index.
-const std::string& getLevelName(int levelIndex);
 
 //------------------------------------------------------------------------------
 // Spawn resolution

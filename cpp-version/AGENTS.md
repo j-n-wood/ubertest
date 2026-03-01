@@ -22,9 +22,15 @@ cpp-version/
 │   │   ├── scene_renderer.h    # Scene rendering utilities
 │   │   └── scene_renderer.cpp
 │   ├── units/
-│   │   ├── unit_instance.h/cpp # Unit instance management
-│   │   ├── unit_manager.h/cpp  # Unit manager
-│   │   └── unit_json.h/cpp     # Unit JSON serialization
+│   │   ├── unit_instance.h/cpp # Unit instance management, BodyUserData fields
+│   │   ├── unit_manager.h/cpp  # Unit manager, body user data setup, collision categories
+│   │   ├── unit_json.h/cpp     # Unit JSON serialization
+│   │   ├── combat_state.h/cpp  # Combat state, damage model, property helpers
+│   │   └── weapon.h/cpp        # Weapon definitions, fire/cooldown
+│   ├── combat/
+│   │   └── projectile_manager.h/cpp  # Projectile Box2D bodies, contact events
+│   ├── physics/
+│   │   └── body_user_data.h    # BodyTag enum, BodyUserData struct, collision categories
 │   ├── model_convert/
 │   │   ├── asc_loader.h/cpp    # MilkShape ASCII format loader
 │   │   ├── mdl_loader.h/cpp    # Half-Life MDL format loader
@@ -97,7 +103,7 @@ This builds:
 ### Dependencies
 
 - **Raylib 5.5** - Always fetched (all projects need graphics)
-- **Box2D v3.0** - Conditionally fetched when `ENABLE_BOX2D=ON` (main game only)
+- **Box2D v3.0** - Conditionally fetched when `ENABLE_BOX2D=ON` (main game and tests)
 - **nlohmann/json v3.11.3** - JSON parsing and serialization
 - **tinygltf v2.9.3** - glTF model format support (header-only)
 - **GoogleTest v1.15.2** - Unit testing framework
@@ -204,11 +210,32 @@ See [tools/model_tool/PROJECT_PROMPT_TEMPLATE.md](tools/model_tool/PROJECT_PROMP
 - Raw `printf` family (use `std::print` or `std::format`)
 - `typedef struct` (use `struct` directly)
 
+## Gameplay Design Patterns
+
+These three rules apply to **all gameplay code** — combat, AI, spawning, projectiles, etc. See [docs/gameplay_implementation_plan.md](docs/gameplay_implementation_plan.md#design-patterns) for the full rationale.
+
+1. **Use raylib types** — `Vector2`, `Vector3`, `Color` for members and function parameters. Use raymath functions (`Vector2Normalize`, `Vector2Scale`, `Vector2Distance`, etc.) instead of manual float arithmetic.
+
+2. **Use Box2D directly** — systems that need physics use Box2D API calls directly. Tests create a `b2World` and step the simulation. Don't write manual physics simulation or abstract Box2D behind wrapper interfaces.
+
+3. **Single source of truth** — the unit instance collection is authoritative for all positions, orientations, and combat state. Access units via `BodyUserData` pointers on Box2D bodies during contact events. Don't build intermediate data structures that duplicate data from authoritative sources.
+
+All Box2D bodies carry a `BodyUserData` struct (defined in `shared/physics/body_user_data.h`) that identifies what they are. See [docs/unit_system.md](docs/unit_system.md#body-user-data) for tag definitions and [docs/unit_system.md](docs/unit_system.md#collision-filtering) for the category bit table.
+
+### Droid Property Access
+
+Unit definitions store gameplay data in a typed `DroidProperties` struct (defined in `unit_types.h`). Access fields directly — no map lookups or variant casts:
+
+```cpp
+float armour = unit->definition->properties.armour;
+int weaponId = unit->definition->properties.weapon;  // -1 = unarmed
+```
+
 ## Testing
 
 ### Strategy
 
-The project uses **GoogleTest** for unit testing. Tests are located in the `tests/` directory and integrated with CMake's CTest.
+The project uses **GoogleTest** for unit testing. Tests are located in the `tests/` directory and integrated with CMake's CTest. Tests link `box2d` and `raylib` so gameplay systems can be tested with real physics.
 
 ### Running Tests
 
@@ -222,6 +249,9 @@ ctest --test-dir build --output-on-failure
 
 # Run specific test
 ./build/tests/run_tests --gtest_filter=SanityTest.*
+
+# Run weapon/projectile tests only
+./build/tests/run_tests --gtest_filter="Projectile*:Weapon*"
 ```
 
 ### Writing Tests
@@ -246,9 +276,30 @@ TEST(TestSuiteName, TestName) {
 }
 ```
 
+### Gameplay Tests with Physics
+
+Tests that need physics create a lightweight `b2World` (zero gravity) and step it with controlled dt values — no real-time clock needed:
+
+```cpp
+class MyTestFixture : public ::testing::Test {
+protected:
+    b2WorldId worldId = b2_nullWorldId;
+    void SetUp() override {
+        b2WorldDef worldDef = b2DefaultWorldDef();
+        worldDef.gravity = {0.0f, 0.0f};
+        worldId = b2CreateWorld(&worldDef);
+    }
+    void TearDown() override { b2DestroyWorld(worldId); }
+    void step(float dt) { b2World_Step(worldId, dt, 4); }
+};
+```
+
+Contact events must be processed per-step — they are only valid for the step in which they occur.
+
 ### Test Categories
 
 - **Unit tests** (`tests/`): Fast, isolated tests for shared code and utilities
+- **Gameplay tests** (`tests/`): Physics-enabled tests with Box2D worlds (combat, projectiles, weapons)
 - **Integration tests**: Add to `tests/` with dependencies on shared sources
 - **Interactive tools** (`tools/unit_test/`): Visual/interactive testing with Raylib window
 
@@ -264,12 +315,72 @@ add_executable(run_tests
 
 target_link_libraries(run_tests PRIVATE
     GTest::gtest_main
+    raylib
+    box2d
     nlohmann_json::nlohmann_json  # Add dependencies as needed
 )
 ```
+
+## Main Game Architecture
+
+### Game Loop (`src/game.cpp` — `game_update`)
+
+The update loop runs in this order each frame:
+
+1. **Test mode check** — if `testConfig.enabled`, report rotation and count frames
+2. **Input** — `input_update()` reads WASD/arrows (`IsKeyDown`) and mouse position
+3. **Player physics** — apply movement force and rotation torque to the player's Box2D body
+4. **Debug keys** — `IsKeyPressed(KEY_ZERO + i)` for debug render modes 0–6
+5. **Physics step** — `b2World_Step`
+6. **Unit manager update** — syncs physics transforms back to section instances
+7. **Camera follow** — camera target/position track the player root section
+
+### Input Gating by Test Mode
+
+Input processing and player movement are guarded by `!game->testConfig.enabled`. Debug keys (0–6) and rotation torque application are **not** guarded. When debugging input issues, check whether `testConfig.enabled` is unexpectedly `true`.
+
+### Unit Physics — Two Levels
+
+Units have physics at **two separate levels**:
+
+- **Unit-level `collisionRadius`** (in unit JSON root) — used by `UnitManager::createInstance` to create the Box2D body's circle shape. This determines mass, inertia, and collision detection for the live unit. **Must be > 0** or the body will have zero mass/inertia and won't respond to forces or torques.
+- **Section-level `physics`** (in each section's JSON) — used only for **debris** when a unit is dismantled. Not used for the live unit body.
+
+A `collisionRadius` of 0 silently creates a non-functional physics body. The code now logs a warning and applies a default minimum of 0.2.
+
+### Coordinate Mapping
+
+- **Physics (Box2D 2D)**: X = right, Y = forward/into screen
+- **World (Raylib 3D)**: X = right, Y = up (height), Z = into screen
+- Mapping: Physics X → World X, Physics Y → World Z
+- Camera: top-down, `camera.up = {0, 0, -1}`, positioned at `{playerX, cameraHeight, playerZ}`
+- Rotation: physics CCW angle is negated for `DrawModelEx` (`-rotation * RAD2DEG`)
+
+### Key Constants (`src/game.cpp`)
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MOVEMENT_FORCE` | 7.0 | Force applied per frame from WASD input |
+| `MAX_TORQUE` | 100.0 | Clamp for rotation PD controller |
+| Default `linearDamping` | 4.0 | Top-down friction simulation |
+| Default `angularDamping` | 8.0 | Rotation resistance |
+
+### Debugging Checklist
+
+When player input doesn't work:
+
+1. **Check `testConfig.enabled`** — gates all input processing
+2. **Check `collisionRadius`** in the unit JSON — zero means zero mass/inertia
+3. **Check `playerUnit` is non-null** — `game_spawn_player` logs errors on failure
+4. **Check `b2Body_IsValid`** — body creation can fail silently
+5. **Check spawn position** — player may be trapped in level collision geometry
 
 ## Project-Specific Documentation
 
 - **Main Game**: See [README.md](README.md) for game architecture
 - **Model Tool**: See [tools/model_tool/AGENTS.md](tools/model_tool/AGENTS.md) for ASC/GLTF conversion details
 - **Entity System**: See [docs/entity_system.md](docs/entity_system.md) for entity/physics design
+- **Unit System**: See [docs/unit_system.md](docs/unit_system.md) for unit definitions, combat state, body user data, collision filtering, projectile lifecycle
+- **Projectile System**: See [docs/projectile_system.md](docs/projectile_system.md) for Box2D projectile refactor design, contact events, API reference
+- **Gameplay Plan**: See [docs/gameplay_implementation_plan.md](docs/gameplay_implementation_plan.md) for staged implementation — **read [Design Patterns](docs/gameplay_implementation_plan.md#design-patterns) section first**
+- **Data Conversion**: See [docs/agents.md](docs/agents.md) for conversion tool guidance, coordinate systems, winding order

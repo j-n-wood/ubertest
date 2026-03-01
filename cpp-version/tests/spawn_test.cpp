@@ -1,40 +1,52 @@
 #include <gtest/gtest.h>
 #include "level/spawn_config.h"
+#include "units/unit_types.h"
 #include <set>
 #include <algorithm>
 
 //------------------------------------------------------------------------------
-// Test fixture — loads spawn config from inline JSON
+// Test fixture — builds type-class map from DroidProperties, loads ship spawns
 //------------------------------------------------------------------------------
 
-static const char* TEST_SPAWN_JSON = R"({
-  "typeClassMap": [
-    {"type": 1, "classes": [1, 2]},
-    {"type": 2, "classes": [3, 4, 5]},
-    {"type": 3, "classes": [6, 7]},
-    {"type": 4, "classes": [8, 9, 10]},
-    {"type": 5, "classes": [11, 12, 13]},
-    {"type": 6, "classes": [14, 15, 16]},
-    {"type": 7, "classes": [17, 18, 19]},
-    {"type": 8, "classes": [20, 21, 22]},
-    {"type": 9, "classes": [23]}
-  ],
-  "levelNames": ["Maintenance", "Engineering"],
-  "ships": [
+// Simulates loaded droid classes with known typeCode -> type mapping
+static const DroidProperties TEST_DROIDS[] = {
+    {.classId = 1,  .typeCode = 100},
+    {.classId = 2,  .typeCode = 100},   // type 1: classes [1, 2]
+    {.classId = 3,  .typeCode = 200},
+    {.classId = 4,  .typeCode = 200},
+    {.classId = 5,  .typeCode = 200},   // type 2: classes [3, 4, 5]
+    {.classId = 6,  .typeCode = 300},
+    {.classId = 7,  .typeCode = 300},   // type 3: classes [6, 7]
+    {.classId = 8,  .typeCode = 400},
+    {.classId = 9,  .typeCode = 400},
+    {.classId = 10, .typeCode = 400},   // type 4: classes [8, 9, 10]
+    {.classId = 11, .typeCode = 500},
+    {.classId = 12, .typeCode = 500},
+    {.classId = 13, .typeCode = 500},   // type 5: classes [11, 12, 13]
+    {.classId = 14, .typeCode = 600},
+    {.classId = 15, .typeCode = 600},
+    {.classId = 16, .typeCode = 600},   // type 6: classes [14, 15, 16]
+    {.classId = 17, .typeCode = 700},
+    {.classId = 18, .typeCode = 700},
+    {.classId = 19, .typeCode = 700},   // type 7: classes [17, 18, 19]
+    {.classId = 20, .typeCode = 800},
+    {.classId = 21, .typeCode = 800},
+    {.classId = 22, .typeCode = 800},   // type 8: classes [20, 21, 22]
+    {.classId = 23, .typeCode = 900},   // type 9: classes [23]
+};
+
+static const char* TEST_SHIP_JSON = R"({
+  "name": "Test Ship",
+  "levels": [
     {
-      "name": "Test Ship",
-      "levels": [
-        {
-          "level": 0,
-          "profile": [2, 1, 1, 3, 0, 0, 0, 0, 0],
-          "placedDroids": []
-        },
-        {
-          "level": 1,
-          "profile": [1, 0, 0, 0, 0, 0, 0, 0, 0],
-          "placedDroids": [{"classId": 23, "waypointIndex": 5, "angle": 1.57}]
-        }
-      ]
+      "level": 0,
+      "profile": [2, 1, 1, 3, 0, 0, 0, 0, 0],
+      "placedDroids": []
+    },
+    {
+      "level": 1,
+      "profile": [1, 0, 0, 0, 0, 0, 0, 0, 0],
+      "placedDroids": [{"classId": 23, "waypointIndex": 5, "angle": 1.57}]
     }
   ]
 })";
@@ -42,7 +54,9 @@ static const char* TEST_SPAWN_JSON = R"({
 class SpawnFixture : public ::testing::Test {
 protected:
     void SetUp() override {
-        ASSERT_TRUE(loadSpawnConfigFromJson(TEST_SPAWN_JSON));
+        clearSpawnConfig();
+        buildTypeClassMap(TEST_DROIDS, static_cast<int>(std::size(TEST_DROIDS)));
+        ASSERT_TRUE(loadShipSpawnsFromJson(TEST_SHIP_JSON));
     }
 };
 

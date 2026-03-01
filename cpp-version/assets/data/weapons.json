@@ -1,0 +1,110 @@
+[
+  {
+    "id": 0,
+    "name": "Plasma Bolt",
+    "damage": 11.0,
+    "speed": 17.5,
+    "fireRate": 0.8,
+    "maxRange": 20.0,
+    "optimumRange": 10.0,
+    "type": "projectile",
+    "damageType": "plasma",
+    "twin": false
+  },
+  {
+    "id": 1,
+    "name": "Gas Axe",
+    "damage": 3.5,
+    "speed": 12.5,
+    "fireRate": 1.2,
+    "maxRange": 7.5,
+    "optimumRange": 5.0,
+    "type": "beam",
+    "damageType": "cutter",
+    "twin": false
+  },
+  {
+    "id": 2,
+    "name": "Laser Rifle",
+    "damage": 20.0,
+    "speed": 20.0,
+    "fireRate": 0.6,
+    "maxRange": 20.0,
+    "optimumRange": 15.0,
+    "type": "projectile",
+    "damageType": "laser",
+    "twin": false
+  },
+  {
+    "id": 3,
+    "name": "Plasma Cannon",
+    "damage": 33.0,
+    "speed": 12.5,
+    "fireRate": 1.1,
+    "maxRange": 20.0,
+    "optimumRange": 10.0,
+    "type": "projectile",
+    "damageType": "plasma",
+    "twin": false
+  },
+  {
+    "id": 4,
+    "name": "Rapid Laser",
+    "damage": 16.0,
+    "speed": 20.0,
+    "fireRate": 0.45,
+    "maxRange": 25.0,
+    "optimumRange": 15.0,
+    "type": "projectile",
+    "damageType": "laser",
+    "twin": false
+  },
+  {
+    "id": 5,
+    "name": "Plasma Torch",
+    "damage": 6.0,
+    "speed": 27.5,
+    "fireRate": 0.15,
+    "maxRange": 9.0,
+    "optimumRange": 7.5,
+    "type": "projectile",
+    "damageType": "plasma",
+    "twin": false
+  },
+  {
+    "id": 6,
+    "name": "Disruptor",
+    "damage": 40.0,
+    "speed": 0.0,
+    "fireRate": 1.7,
+    "maxRange": 25.0,
+    "optimumRange": 25.0,
+    "type": "area",
+    "damageType": "disruptor",
+    "twin": false
+  },
+  {
+    "id": 7,
+    "name": "Twin Particle Cannon",
+    "damage": 22.0,
+    "speed": 16.0,
+    "fireRate": 1.1,
+    "maxRange": 20.0,
+    "optimumRange": 10.0,
+    "type": "projectile",
+    "damageType": "plasma",
+    "twin": true
+  },
+  {
+    "id": 8,
+    "name": "Exterminator",
+    "damage": 6.0,
+    "speed": 12.5,
+    "fireRate": 1.2,
+    "maxRange": 8.5,
+    "optimumRange": 8.5,
+    "type": "beam",
+    "damageType": "cutter",
+    "twin": false
+  }
+]
