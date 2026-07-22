@@ -73,14 +73,45 @@ cpp-version/
         └── unit_generator.h/cpp       # Unit definition generation
 ```
 
+## Build Environment
+
+### Tool Paths (macOS)
+
+| Tool | Path |
+|------|------|
+| cmake | `/opt/homebrew/bin/cmake` |
+| ninja | `/opt/homebrew/bin/ninja` |
+| clang++ | `/usr/bin/clang++` |
+| git | `/usr/bin/git` |
+
+These are not in the default shell PATH for non-interactive shells. Use full paths when invoking from scripts or agents.
+
+### Project Root Layout
+
+The `cpp-version/` directory sits inside a larger project root:
+
+```
+test_project/                    # Project root
+├── cpp-version/                 # This workspace (C++ game engine)
+├── uber/uberdroid/              # Original game data (legacy format)
+│   ├── data/                    # tiles.txt, droidclasses.txt, renderobjects.txt, etc.
+│   ├── ship0/ .. ship7/         # Per-ship level data (xmapfile*.txt, level XMLs)
+│   └── models/                  # Original model files
+├── tiled/                       # Tiled map editor files
+│   └── Paradroid.maps           # Parsed map data
+└── FreedroidClassic/            # Reference implementation
+```
+
+Tests use `TEST_PROJECT_ROOT` (compile definition) to locate files in `uber/` and `tiled/`.
+
 ## Build System
 
 ### Building All Projects
 
 ```bash
 cd cpp-version
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
+/opt/homebrew/bin/cmake -B build -DCMAKE_BUILD_TYPE=Release
+/opt/homebrew/bin/cmake --build build --parallel
 ```
 
 This builds:
@@ -241,10 +272,7 @@ The project uses **GoogleTest** for unit testing. Tests are located in the `test
 
 ```bash
 # Build and run all tests
-cmake --build build --target run_tests
-ctest --test-dir build --output-on-failure
-
-# Run test executable directly (more verbose output)
+/opt/homebrew/bin/cmake --build build --target run_tests
 ./build/tests/run_tests
 
 # Run specific test

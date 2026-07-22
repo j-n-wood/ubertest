@@ -16,7 +16,7 @@ cmake --build build --target model_tool
 
 * shaders folder is not relative to provided asset path
 * shaders folder does not exist in output of droid tool
-* vertical offsets from old droidclasses seem crap. Manual adjustment is possible.
+* ~~vertical offsets from old droidclasses seem crap. Manual adjustment is possible.~~
 * add env maps
 
 
@@ -51,3 +51,14 @@ cmake --build build --target level_viewer
 ## Rot test mode
 
 ./build/topdown_game --test-rotation --initial-rot 0 --target-rot 90 --unit droid_class_1
+
+## convert droids
+
+cd /Users/joshwood/code/test_project/cpp-version && ./build/tools/droid_tool/droid_tool --output assets --uber /Users/joshwood/code/test_project/uber 
+
+## Test unit with animation
+
+./build/tools/unit_test/unit_test --asset-path  ./droid_output droid_class_17.json
+
+space -> stop/start anim
+n/m -> cycle sequences

@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cmake: configure (Makefiles)",
+            "type": "shell",
+            "command": "/opt/homebrew/bin/cmake",
+            "args": [
+                "-S", "${workspaceFolder}/cpp-version",
+                "-B", "${workspaceFolder}/cpp-version/build",
+                "-G", "Unix Makefiles",
+                "-DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "cmake: build topdown_game",
+            "type": "shell",
+            "command": "/opt/homebrew/bin/cmake",
+            "args": [
+                "--build", "${workspaceFolder}/cpp-version/build",
+                "--target", "topdown_game",
+                "--parallel"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

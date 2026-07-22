@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "/Users/joshwood/code/test_project/c-version"
+    "cmake.sourceDirectory": "/Users/joshwood/code/test_project/cpp-version",
+    "cmake.buildDirectory": "${sourceDirectory}/build",
+    "cmake.generator": "Unix Makefiles"
 }
