@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "paradroid_parser.h"
+#include <string>
 
 // Expected level data from Paradroid.maps
 struct ExpectedLevel {
@@ -33,9 +34,8 @@ constexpr int EXPECTED_LEVEL_COUNT = 16;
 constexpr int EXPECTED_TOTAL_WAYPOINTS = 233;
 constexpr int EXPECTED_TOTAL_LINKS = 553;
 
-// Default input path (relative to build/tests/ where run_tests executes)
-// From cpp-version/build/tests/ -> ../../../tiled/Paradroid.maps
-const char* TEST_INPUT_PATH = "../../../tiled/Paradroid.maps";
+// TEST_PROJECT_ROOT is defined by CMake as the parent of cpp-version
+static const std::string TEST_INPUT_PATH = std::string(TEST_PROJECT_ROOT) + "/tiled/Paradroid.maps";
 
 TEST(ParadroidParserTest, ParsesCorrectNumberOfLevels) {
     auto result = parseParadroidMaps(TEST_INPUT_PATH);

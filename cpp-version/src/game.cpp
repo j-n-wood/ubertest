@@ -1,4 +1,5 @@
 #include "game.h"
+#include "level/spawn_config.h"
 #include <cmath>
 #include <cstring>
 
@@ -6,11 +7,19 @@
 #define MOVEMENT_FORCE 7.0f
 #define PI 3.14159265358979323846f
 
+// Lift tile GIDs in the TMX tileset (from tiles 0.json annotations)
+static constexpr int LIFT_TILE_GID_A = 16;
+static constexpr int LIFT_TILE_GID_B = 17;
+
 // Forward declarations
 static bool game_load_levels(Game* game);
 static bool game_build_level_render_data(Game* game);
 static void game_create_level_collision(Game* game);
 static void game_spawn_player(Game* game);
+static void game_spawn_enemies(Game* game);
+static void game_despawn_enemies(Game* game);
+static void game_switch_level(Game* game, int newLevel);
+static std::vector<Vector2> game_find_lift_positions(const Game* game, int level);
 static void game_update_player_rotation(Game* game);
 static void game_apply_player_rotation_torque(Game* game);
 
@@ -105,6 +114,36 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
 
     // Spawn player unit
     game_spawn_player(game);
+
+    // Preload all unit definitions for enemy spawning
+    std::string unitsPath = game->assetPath + "/units/";
+    game->unitManager.preloadDefinitions(unitsPath);
+
+    // Build type-class map from loaded definitions (needed by resolveSpawns)
+    {
+        std::vector<DroidProperties> allProps;
+        auto defIds = game->unitManager.getDefinitionIds();
+        for (const auto& id : defIds) {
+            const UnitDefinition* def = game->unitManager.getDefinition(id);
+            if (def) {
+                allProps.push_back(def->properties);
+            }
+        }
+        if (!allProps.empty()) {
+            buildTypeClassMap(allProps.data(), (int)allProps.size());
+        }
+    }
+
+    // Load ship spawn data
+    std::string spawnPath = game->assetPath + "/ships/ship1/spawns.json";
+    if (loadShipSpawns(spawnPath)) {
+        TraceLog(LOG_INFO, "Loaded spawn data from %s", spawnPath.c_str());
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load spawn data from %s", spawnPath.c_str());
+    }
+
+    // Spawn enemies for the starting level
+    game_spawn_enemies(game);
 }
 
 //------------------------------------------------------------------------------
@@ -344,6 +383,224 @@ static void game_spawn_player(Game* game) {
 }
 
 //------------------------------------------------------------------------------
+// Enemy Spawning
+//------------------------------------------------------------------------------
+
+static void game_spawn_enemies(Game* game) {
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) return;
+
+    const LevelRenderData& renderData = game->levelRenderData[game->currentLevel];
+    if (renderData.waypointPositions.empty()) {
+        TraceLog(LOG_WARNING, "No waypoints for level %d, skipping enemy spawn", game->currentLevel);
+        return;
+    }
+
+    // Get spawn definition for current level (ship index 0)
+    const LevelSpawnDef* spawnDef = getSpawnDef(0, game->currentLevel);
+    if (!spawnDef) {
+        TraceLog(LOG_WARNING, "No spawn definition for level %d", game->currentLevel);
+        return;
+    }
+
+    // Find player waypoint index (closest to player position)
+    int playerWaypointIdx = 0;
+    if (game->playerUnit && game->playerUnit->rootSection) {
+        Vector2 playerPos = game->playerUnit->rootSection->worldPosition;
+        float bestDist = 1e9f;
+        for (int i = 0; i < (int)renderData.waypointPositions.size(); i++) {
+            Vector3 wp = renderData.waypointPositions[i];
+            float dx = wp.x - playerPos.x;
+            float dz = wp.z - playerPos.y;
+            float dist = dx * dx + dz * dz;
+            if (dist < bestDist) {
+                bestDist = dist;
+                playerWaypointIdx = i;
+            }
+        }
+    }
+
+    // Resolve spawns to concrete entries
+    auto spawnEntries = resolveSpawns(*spawnDef,
+        (int)renderData.waypointPositions.size(),
+        playerWaypointIdx);
+
+    if (spawnEntries.empty()) {
+        TraceLog(LOG_INFO, "No enemies to spawn on level %d", game->currentLevel);
+        return;
+    }
+
+    // Create enemy instances
+    game->enemyUnits.clear();
+    std::vector<UnitInstance*> enemies;
+
+    for (const auto& spawn : spawnEntries) {
+        std::string defId = "droid_class_" + std::to_string(spawn.classId);
+
+        if (spawn.waypointIndex < 0 || spawn.waypointIndex >= (int)renderData.waypointPositions.size()) {
+            TraceLog(LOG_WARNING, "Invalid waypoint index %d for spawn", spawn.waypointIndex);
+            continue;
+        }
+
+        Vector3 wpPos = renderData.waypointPositions[spawn.waypointIndex];
+        Vector2 spawnPos = {wpPos.x, wpPos.z};  // World X,Z -> Physics X,Y
+
+        UnitInstance* enemy = game->unitManager.createInstance(defId, spawnPos, spawn.angle);
+        if (enemy) {
+            enemies.push_back(enemy);
+            game->enemyUnits.push_back(enemy);
+        } else {
+            TraceLog(LOG_WARNING, "Failed to create enemy '%s'", defId.c_str());
+        }
+    }
+
+    // Apply lighting shader to all unit models (including new enemies)
+    game->unitManager.applyShaderToModels(
+        sceneRendererGetShader(&game->sceneRenderer));
+
+    // Initialize AI with the spawned enemies
+    game->aiManager.init(spawnEntries,
+        renderData.waypointPositions,
+        renderData.waypointAdjacency,
+        enemies);
+
+    TraceLog(LOG_INFO, "Spawned %zu enemies on level %d", enemies.size(), game->currentLevel);
+}
+
+static void game_despawn_enemies(Game* game) {
+    // Clear AI components (they reference enemy units)
+    game->aiManager.components().clear();
+
+    // Destroy enemy unit instances
+    for (auto* enemy : game->enemyUnits) {
+        if (enemy) {
+            game->unitManager.destroyInstance(enemy);
+        }
+    }
+    game->enemyUnits.clear();
+}
+
+//------------------------------------------------------------------------------
+// Lift Tile Detection
+//------------------------------------------------------------------------------
+
+static std::vector<Vector2> game_find_lift_positions(const Game* game, int level) {
+    std::vector<Vector2> positions;
+    if (level < 0 || level >= (int)game->levels.size()) return positions;
+
+    const TmxLevel& lvl = game->levels[level];
+
+    for (int row = 0; row < lvl.height; row++) {
+        for (int col = 0; col < lvl.width; col++) {
+            int gid = lvl.tiles[row * lvl.width + col];
+            if (gid == LIFT_TILE_GID_A || gid == LIFT_TILE_GID_B) {
+                // Tile center in world/physics coordinates (worldScale = 1.0)
+                float px = col + 0.5f;
+                float py = row + 0.5f;
+                positions.push_back({px, py});
+            }
+        }
+    }
+
+    return positions;
+}
+
+//------------------------------------------------------------------------------
+// Debug Level Switching
+//------------------------------------------------------------------------------
+
+static void game_switch_level(Game* game, int newLevel) {
+    if (newLevel < 0 || newLevel >= (int)game->levels.size()) return;
+    if (newLevel == game->currentLevel) return;
+
+    TraceLog(LOG_INFO, "Switching from level %d to level %d", game->currentLevel, newLevel);
+
+    // 1. Despawn all enemies
+    game_despawn_enemies(game);
+
+    // 2. Destroy current collision bodies (static Box2D bodies)
+    for (auto& body : game->collisionBodies) {
+        if (body.valid) {
+            b2DestroyBody(body.body_id);
+            body.valid = false;
+        }
+    }
+    game->collisionBodies.clear();
+
+    // 3. Switch level
+    game->currentLevel = newLevel;
+
+    // 4. Build render data and collision data for new level
+    if (!game_build_level_render_data(game)) {
+        TraceLog(LOG_ERROR, "Failed to build render data for level %d", newLevel);
+        return;
+    }
+
+    // 5. Create collision bodies for new level
+    game_create_level_collision(game);
+
+    // 6. Spawn enemies for new level
+    game_spawn_enemies(game);
+
+    // 7. Find lift positions in the new level and teleport player
+    auto liftPositions = game_find_lift_positions(game, newLevel);
+
+    if (!liftPositions.empty() && game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
+        Vector2 targetPos = liftPositions[0];
+
+        // Move player out of the way during collision resolution
+        b2Body_SetTransform(game->playerUnit->bodyId,
+                            (b2Vec2){-100.0f, -100.0f},
+                            b2Body_GetRotation(game->playerUnit->bodyId));
+        b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
+        b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+
+        // Simulate enemies away from the lift position if any are nearby
+        const float clearRadius = 1.5f;
+        float dt = 1.0f / 60.0f;
+        int maxSteps = 300;  // up to 5 seconds of simulation
+        Vector2 fakePlayerPos = {-1000.0f, -1000.0f};  // Keep enemies in patrol mode
+
+        for (int step = 0; step < maxSteps; step++) {
+            bool collision = false;
+            for (auto* enemy : game->enemyUnits) {
+                if (!enemy || !enemy->active || !enemy->rootSection) continue;
+                Vector2 ePos = enemy->rootSection->worldPosition;
+                float dx = ePos.x - targetPos.x;
+                float dy = ePos.y - targetPos.y;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist < clearRadius) {
+                    collision = true;
+                    break;
+                }
+            }
+            if (!collision) break;
+
+            // Advance AI and physics to move enemies along patrol routes
+            game->aiManager.update(dt, fakePlayerPos,
+                                   game->physics.world_id,
+                                   &game->projectileManager);
+            physics_world_step(&game->physics, dt);
+            game->unitManager.update(dt);
+        }
+
+        // Teleport player to lift position
+        b2Body_SetTransform(game->playerUnit->bodyId,
+                            (b2Vec2){targetPos.x, targetPos.y},
+                            b2Body_GetRotation(game->playerUnit->bodyId));
+        b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
+        b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+
+        // Sync unit positions from physics
+        game->unitManager.update(0);
+
+        TraceLog(LOG_INFO, "Moved player to lift at (%.1f, %.1f) on level %d",
+                 targetPos.x, targetPos.y, newLevel);
+    } else if (liftPositions.empty()) {
+        TraceLog(LOG_WARNING, "No lift tiles found on level %d, player stays at current position", newLevel);
+    }
+}
+
+//------------------------------------------------------------------------------
 // Player Input Helpers
 //------------------------------------------------------------------------------
 
@@ -407,22 +664,6 @@ static void game_update_player_rotation(Game* game) {
     game->playerDesiredRotation = atan2f(dx, dz);
 }
 
-// Helper to get float property from unit definition
-static float getUnitPropertyFloat(const UnitDefinition* def, const char* key, float defaultVal) {
-    if (!def) return defaultVal;
-    auto it = def->properties.find(key);
-    if (it != def->properties.end()) {
-        if (auto* val = std::get_if<float>(&it->second)) {
-            return *val;
-        }
-        // Also try int (JSON might parse whole numbers as int)
-        if (auto* val = std::get_if<int>(&it->second)) {
-            return static_cast<float>(*val);
-        }
-    }
-    return defaultVal;
-}
-
 static void game_apply_player_rotation_torque(Game* game) {
     if (!game->playerUnit || !game->playerUnit->rootSection) return;
     if (!b2Body_IsValid(game->playerUnit->bodyId)) return;
@@ -436,25 +677,18 @@ static void game_apply_player_rotation_torque(Game* game) {
 
     float angular_vel = b2Body_GetAngularVelocity(game->playerUnit->bodyId);
 
-    // Check for unit-specific rotation gains in properties
-    const UnitDefinition* def = game->playerUnit->definition;
-    float Kp = getUnitPropertyFloat(def, "rotationKp", 0.0f);
-    float Kd = getUnitPropertyFloat(def, "rotationKd", 0.0f);
+    // Inertia-scaled PD gains
+    float inertia = b2Body_GetInertiaTensor(game->playerUnit->bodyId);
 
-    // If not specified in unit definition, use inertia-scaled defaults
-    if (Kp <= 0.0f || Kd <= 0.0f) {
-        float inertia = b2Body_GetInertiaTensor(game->playerUnit->bodyId);
+    // Base gains tuned for inertia ~0.1 (droid_class_1 scale)
+    // Scale proportionally so smaller bodies don't oscillate wildly
+    float baseKp = 30.0f;
+    float baseKd = 5.0f;
+    float inertiaScale = inertia / 0.1f;  // Normalize to reference inertia
+    if (inertiaScale < 0.1f) inertiaScale = 0.1f;  // Clamp minimum
 
-        // Base gains tuned for inertia ~0.1 (droid_class_1 scale)
-        // Scale proportionally so smaller bodies don't oscillate wildly
-        float baseKp = 30.0f;
-        float baseKd = 5.0f;
-        float inertiaScale = inertia / 0.1f;  // Normalize to reference inertia
-        if (inertiaScale < 0.1f) inertiaScale = 0.1f;  // Clamp minimum
-
-        if (Kp <= 0.0f) Kp = baseKp * inertiaScale;
-        if (Kd <= 0.0f) Kd = baseKd * inertiaScale;
-    }
+    float Kp = baseKp * inertiaScale;
+    float Kd = baseKd * inertiaScale;
 
     float torque = diff * Kp - angular_vel * Kd;
 
@@ -557,8 +791,37 @@ void game_update(Game* game, float dt) {
         sceneRendererSetNormalMapEnabled(&game->sceneRenderer, normalMapEnabled);
     }
 
+    // Debug: Level switching (Page Up / Page Down)
+    if (IsKeyPressed(KEY_PAGE_UP)) {
+        int newLevel = game->currentLevel + 1;
+        if (newLevel < (int)game->levels.size()) {
+            game_switch_level(game, newLevel);
+        }
+    }
+    if (IsKeyPressed(KEY_PAGE_DOWN)) {
+        int newLevel = game->currentLevel - 1;
+        if (newLevel >= 0) {
+            game_switch_level(game, newLevel);
+        }
+    }
+
+    // Update AI (applies forces before physics step)
+    if (game->playerUnit && game->playerUnit->rootSection) {
+        b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
+        Vector2 playerPos2D = {pp.x, pp.y};
+        game->aiManager.update(dt, playerPos2D,
+                               game->physics.world_id,
+                               &game->projectileManager);
+    }
+
     // Step physics
     physics_world_step(&game->physics, dt);
+
+    // Update projectiles (lifetime, contact events, cleanup)
+    game->projectileManager.update(dt);
+    game->projectileManager.syncFromPhysics();
+    game->projectileManager.processContactEvents(game->physics.world_id);
+    game->projectileManager.cleanup();
 
     // Update unit manager (syncs physics transforms)
     game->unitManager.update(dt);
@@ -658,7 +921,7 @@ void game_render(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD/Arrows: Move | Mouse: Aim | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
 
     EndDrawing();
@@ -669,6 +932,10 @@ void game_render(Game* game) {
 //------------------------------------------------------------------------------
 
 void game_destroy(Game* game) {
+    // Despawn enemies and clear spawn config
+    game_despawn_enemies(game);
+    clearSpawnConfig();
+
     // Destroy unit manager (cleans up all units and their physics)
     game->unitManager.destroy();
     game->playerUnit = nullptr;

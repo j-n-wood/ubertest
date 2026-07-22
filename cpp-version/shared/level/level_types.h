@@ -162,6 +162,9 @@ struct LevelRenderData {
     std::vector<Vector3> waypointPositions;
     std::vector<std::pair<int, int>> waypointLinks; // pairs of waypoint indices
 
+    // Waypoint adjacency list — waypointAdjacency[i] = indices of waypoints linked to i
+    std::vector<std::vector<int>> waypointAdjacency;
+
     // Level metadata
     std::string levelName;
     int gridWidth = 0;

@@ -7,27 +7,9 @@
 
 namespace fs = std::filesystem;
 
-// Test data paths (uber is at test_project level, not cpp-version level)
-// From cpp-version/build, need to go up to cpp-version, then up to test_project
-static const char* TILES_PATH = "../../uber/uberdroid/data/tiles.txt";
-static const char* XMAPFILE_PATH = "../../uber/uberdroid/ship1/xmapfile0.txt";
-
-// Helper to find the correct path (tries multiple relative paths)
-static const char* findTilesPath() {
-    // From build directory
-    if (fs::exists(TILES_PATH)) return TILES_PATH;
-    // From build/tests directory
-    if (fs::exists("../../../uber/uberdroid/data/tiles.txt"))
-        return "../../../uber/uberdroid/data/tiles.txt";
-    return TILES_PATH;
-}
-
-static const char* findXmapfilePath() {
-    if (fs::exists(XMAPFILE_PATH)) return XMAPFILE_PATH;
-    if (fs::exists("../../../uber/uberdroid/ship1/xmapfile0.txt"))
-        return "../../../uber/uberdroid/ship1/xmapfile0.txt";
-    return XMAPFILE_PATH;
-}
+// Test data paths — TEST_PROJECT_ROOT is defined by CMake as the parent of cpp-version
+static const std::string TILES_PATH = std::string(TEST_PROJECT_ROOT) + "/uber/uberdroid/data/tiles.txt";
+static const std::string XMAPFILE_PATH = std::string(TEST_PROJECT_ROOT) + "/uber/uberdroid/ship1/xmapfile0.txt";
 
 //------------------------------------------------------------------------------
 // Archetile Parser Tests
@@ -43,7 +25,7 @@ protected:
 
 TEST_F(ArchetileParserTest, LoadTilesFile) {
     std::vector<Archetile> archetiles;
-    bool result = parseArchetilesFile(findTilesPath(), archetiles);
+    bool result = parseArchetilesFile(TILES_PATH.c_str(), archetiles);
 
     ASSERT_TRUE(result) << "Failed to parse tiles.txt";
     EXPECT_GT(archetiles.size(), 0) << "No archetiles loaded";
@@ -57,13 +39,13 @@ TEST_F(ArchetileParserTest, LoadTilesFile) {
 }
 
 TEST_F(ArchetileParserTest, ArchetileCacheLoads) {
-    bool loaded = ArchetileCache::instance().load(findTilesPath());
+    bool loaded = ArchetileCache::instance().load(TILES_PATH.c_str());
     ASSERT_TRUE(loaded) << "Failed to load archetiles into cache";
     EXPECT_TRUE(ArchetileCache::instance().isLoaded());
 }
 
 TEST_F(ArchetileParserTest, ArchetileCacheGet) {
-    bool loaded = ArchetileCache::instance().load(findTilesPath());
+    bool loaded = ArchetileCache::instance().load(TILES_PATH.c_str());
     ASSERT_TRUE(loaded);
 
     // Index 0 should exist (Plain tile)
@@ -78,7 +60,7 @@ TEST_F(ArchetileParserTest, ArchetileCacheGet) {
 }
 
 TEST_F(ArchetileParserTest, ExpandArchetile) {
-    ArchetileCache::instance().load(findTilesPath());
+    ArchetileCache::instance().load(TILES_PATH.c_str());
     const Archetile* archetype = ArchetileCache::instance().get(0);
     ASSERT_NE(archetype, nullptr);
 
@@ -110,10 +92,10 @@ protected:
 
 TEST_F(DomainParserTest, ParseXmapfile) {
     Domain domain;
-    const char* xmapPath = findXmapfilePath();
+    const char* xmapPath = XMAPFILE_PATH.c_str();
     fs::path basePath = fs::path(xmapPath).parent_path();
 
-    bool result = parseDomainFile(xmapPath, domain, basePath, findTilesPath());
+    bool result = parseDomainFile(xmapPath, domain, basePath, TILES_PATH.c_str());
 
     ASSERT_TRUE(result) << "Failed to parse xmapfile";
     EXPECT_EQ(domain.levelNumber, 0);
@@ -129,10 +111,10 @@ TEST_F(DomainParserTest, ParseXmapfile) {
 
 TEST_F(DomainParserTest, ParsedTilesHaveVertices) {
     Domain domain;
-    const char* xmapPath = findXmapfilePath();
+    const char* xmapPath = XMAPFILE_PATH.c_str();
     fs::path basePath = fs::path(xmapPath).parent_path();
 
-    bool result = parseDomainFile(xmapPath, domain, basePath, findTilesPath());
+    bool result = parseDomainFile(xmapPath, domain, basePath, TILES_PATH.c_str());
     ASSERT_TRUE(result);
     ASSERT_GT(domain.areas.size(), 0);
 
@@ -150,10 +132,10 @@ TEST_F(DomainParserTest, ParsedTilesHaveVertices) {
 
 TEST_F(DomainParserTest, ParsedDataStructures) {
     Domain domain;
-    const char* xmapPath = findXmapfilePath();
+    const char* xmapPath = XMAPFILE_PATH.c_str();
     fs::path basePath = fs::path(xmapPath).parent_path();
 
-    bool result = parseDomainFile(xmapPath, domain, basePath, findTilesPath());
+    bool result = parseDomainFile(xmapPath, domain, basePath, TILES_PATH.c_str());
     ASSERT_TRUE(result);
 
     // Domain should have areas with tiles (verified by other tests)
@@ -190,9 +172,9 @@ protected:
         ArchetileCache::instance().clear();
 
         // Load real data for testing
-        const char* xmapPath = findXmapfilePath();
+        const char* xmapPath = XMAPFILE_PATH.c_str();
         fs::path basePath = fs::path(xmapPath).parent_path();
-        parseDomainFile(xmapPath, testDomain, basePath, findTilesPath());
+        parseDomainFile(xmapPath, testDomain, basePath, TILES_PATH.c_str());
     }
 };
 

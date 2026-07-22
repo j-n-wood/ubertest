@@ -94,7 +94,12 @@ DroidProperties parseDroidProperties(const json& j) {
     props.droidType   = j.value("droidType", 0);
     props.driveType   = j.value("driveType", 0);
     props.brainType   = j.value("brainType", 0);
-    props.hasTurret   = j.value("hasTurret", false);
+    props.hasTurret       = j.value("hasTurret", false);
+    props.omnidirectional = j.value("omnidirectional", false);
+    props.visualRadius    = j.value("visualRadius", 0.0f);
+    if (j.contains("fireOffset")) {
+        props.fireOffset = parseVector3(j["fireOffset"], {0, 0, 0});
+    }
     props.description = j.value("description", std::string{});
     return props;
 }
@@ -109,7 +114,12 @@ json droidPropertiesToJson(const DroidProperties& props) {
     j["droidType"]   = props.droidType;
     j["driveType"]   = props.driveType;
     j["brainType"]   = props.brainType;
-    j["hasTurret"]   = props.hasTurret;
+    j["hasTurret"]       = props.hasTurret;
+    j["omnidirectional"] = props.omnidirectional;
+    j["visualRadius"]    = props.visualRadius;
+    if (props.fireOffset.x != 0 || props.fireOffset.y != 0 || props.fireOffset.z != 0) {
+        j["fireOffset"] = vector3ToJson(props.fireOffset);
+    }
     j["description"] = props.description;
     return j;
 }

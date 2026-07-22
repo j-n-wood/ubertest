@@ -447,12 +447,15 @@ LevelRenderData createLevelRenderData(
         idToIndex[level.waypoints[i].id] = static_cast<int>(i);
     }
 
+    // Build adjacency list (bidirectional) and deduplicated link pairs (for visualization)
+    data.waypointAdjacency.resize(level.waypoints.size());
     for (size_t i = 0; i < level.waypoints.size(); i++) {
         for (int linkId : level.waypoints[i].links) {
             auto it = idToIndex.find(linkId);
             if (it != idToIndex.end()) {
-                // Add link (only in one direction to avoid duplicates)
                 int j = it->second;
+                data.waypointAdjacency[i].push_back(j);
+                // Add visualization link (only in one direction to avoid duplicates)
                 if (i < (size_t)j) {
                     data.waypointLinks.push_back({static_cast<int>(i), j});
                 }

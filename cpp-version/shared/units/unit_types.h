@@ -81,6 +81,9 @@ struct DroidProperties {
     int driveType = 0;
     int brainType = 0;
     bool hasTurret = false;
+    bool omnidirectional = false;  // Can face any direction while moving
+    float visualRadius = 0.0f;    // Visual detection / disengage range
+    Vector3 fireOffset = {0, 0, 0}; // Projectile spawn offset from unit centre
     std::string description;
 };
 

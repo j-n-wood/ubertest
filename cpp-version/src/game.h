@@ -13,6 +13,8 @@
 #include "level/tile_properties_loader.h"
 #include "rendering/scene_renderer.h"
 #include "units/unit_manager.h"
+#include "combat/projectile_manager.h"
+#include "ai/ai_manager.h"
 
 #include <vector>
 #include <string>
@@ -56,6 +58,11 @@ struct Game {
     UnitManager unitManager;
     UnitInstance* playerUnit;
     float playerDesiredRotation;  // For mouse aim
+    std::vector<UnitInstance*> enemyUnits;  // Tracked for level-switch cleanup
+
+    // Combat & AI
+    ProjectileManager projectileManager;
+    AIManager aiManager;
 
     // Camera
     Camera3D camera;
