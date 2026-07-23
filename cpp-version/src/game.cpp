@@ -1,10 +1,16 @@
 #include "game.h"
 #include "level/spawn_config.h"
+#include "units/movement_tuning.h"
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <filesystem>
 
-#define MAX_TORQUE 100.0f
-#define MOVEMENT_FORCE 7.0f
+namespace fs = std::filesystem;
+
 #define PI 3.14159265358979323846f
 
 // Lift tile GIDs in the TMX tileset (from tiles 0.json annotations)
@@ -21,7 +27,7 @@ static void game_despawn_enemies(Game* game);
 static void game_switch_level(Game* game, int newLevel);
 static std::vector<Vector2> game_find_lift_positions(const Game* game, int level);
 static void game_update_player_rotation(Game* game);
-static void game_apply_player_rotation_torque(Game* game);
+static void game_cycle_player_unit(Game* game, int direction);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -383,6 +389,77 @@ static void game_spawn_player(Game* game) {
 }
 
 //------------------------------------------------------------------------------
+// Debug: swap the player-controlled unit type at runtime
+//------------------------------------------------------------------------------
+//
+// Cycles game->playerUnit to the next/previous droid_class_*.json definition,
+// keeping the current position and facing. Lets us test each unit type — and its
+// per-type speed/acceleration/deceleration — directly in-game. The replacement
+// goes through the same createInstance() path as any unit, so it picks up the new
+// type's motor-joint limits automatically.
+static void game_cycle_player_unit(Game* game, int direction) {
+    if (!game->playerUnit || !b2Body_IsValid(game->playerUnit->bodyId)) return;
+
+    // Enumerate available unit definitions from the units asset directory.
+    std::vector<std::string> ids;
+    std::string unitsDir = game->assetPath + "/units";
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(unitsDir, ec)) {
+        if (entry.path().extension() != ".json") continue;
+        std::string stem = entry.path().stem().string();
+        if (stem.rfind("droid_class_", 0) == 0) ids.push_back(stem);
+    }
+    if (ec || ids.empty()) {
+        TraceLog(LOG_WARNING, "Unit cycle: no unit definitions found in %s", unitsDir.c_str());
+        return;
+    }
+
+    // Order by trailing class number so cycling is predictable (0,1,2,...).
+    auto classNum = [](const std::string& s) {
+        return std::atoi(s.c_str() + std::strlen("droid_class_"));
+    };
+    std::sort(ids.begin(), ids.end(),
+              [&](const std::string& a, const std::string& b) { return classNum(a) < classNum(b); });
+
+    // Find current index, step by direction (wrapping).
+    int count = static_cast<int>(ids.size());
+    int cur = 0;
+    for (int i = 0; i < count; i++) {
+        if (ids[i] == game->playerUnitId) { cur = i; break; }
+    }
+    int next = ((cur + direction) % count + count) % count;
+    if (ids[next] == game->playerUnitId) return;  // only one type available
+    const std::string newId = ids[next];
+
+    // Preserve current transform.
+    b2Vec2 pos = b2Body_GetPosition(game->playerUnit->bodyId);
+    float angle = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
+
+    // Load the new definition (cached after first load).
+    std::string path = unitsDir + "/" + newId + ".json";
+    const UnitDefinition* def = game->unitManager.loadDefinition(path);
+    if (!def) {
+        TraceLog(LOG_WARNING, "Unit cycle: failed to load %s", path.c_str());
+        return;
+    }
+
+    // Swap: destroy the old player instance and spawn the new type in place.
+    game->unitManager.destroyInstance(game->playerUnit);
+    game->playerUnit = game->unitManager.createInstance(newId, {pos.x, pos.y}, angle);
+    game->playerUnitId = newId;
+
+    if (game->playerUnit) {
+        game->unitManager.applyShaderToModels(sceneRendererGetShader(&game->sceneRenderer));
+        game->playerDesiredRotation = angle;
+        TraceLog(LOG_INFO, "Player unit -> '%s' (%s)  speed=%.0f accel=%.0f decel=%.0f",
+                 newId.c_str(), def->name.c_str(),
+                 def->maxSpeed, def->acceleration, def->deceleration);
+    } else {
+        TraceLog(LOG_ERROR, "Unit cycle: failed to create instance for %s", newId.c_str());
+    }
+}
+
+//------------------------------------------------------------------------------
 // Enemy Spawning
 //------------------------------------------------------------------------------
 
@@ -548,11 +625,15 @@ static void game_switch_level(Game* game, int newLevel) {
         Vector2 targetPos = liftPositions[0];
 
         // Move player out of the way during collision resolution
+        float playerAngle = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
         b2Body_SetTransform(game->playerUnit->bodyId,
                             (b2Vec2){-100.0f, -100.0f},
                             b2Body_GetRotation(game->playerUnit->bodyId));
         b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
         b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+        // Follow the teleport with the joint target so the motor doesn't drag the
+        // player back toward its old target during the clear-out simulation below.
+        unit_set_move_target(game->playerUnit, {-100.0f, -100.0f}, playerAngle);
 
         // Simulate enemies away from the lift position if any are nearby
         const float clearRadius = 1.5f;
@@ -589,6 +670,10 @@ static void game_switch_level(Game* game, int newLevel) {
                             b2Body_GetRotation(game->playerUnit->bodyId));
         b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
         b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+        // Re-point the joint target at the new position so the player holds the
+        // lift spot instead of being pulled back toward the old target.
+        unit_set_move_target(game->playerUnit, targetPos,
+                             b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId)));
 
         // Sync unit positions from physics
         game->unitManager.update(0);
@@ -660,43 +745,10 @@ static void game_update_player_rotation(Game* game) {
     float dx = mousePhysX - playerPhysPos.x;  // world X offset (screen right positive)
     float dz = mousePhysY - playerPhysPos.y;  // world Z offset (screen down positive)
 
-    // atan2(dx, dz) gives the angle to rotate model +Z to face the mouse
-    game->playerDesiredRotation = atan2f(dx, dz);
-}
-
-static void game_apply_player_rotation_torque(Game* game) {
-    if (!game->playerUnit || !game->playerUnit->rootSection) return;
-    if (!b2Body_IsValid(game->playerUnit->bodyId)) return;
-
-    SectionInstance* root = game->playerUnit->rootSection.get();
-    float current = root->worldRotation;
-    float target = game->playerDesiredRotation;
-
-    // Calculate shortest angular difference
-    float diff = normalize_angle(target - current);
-
-    float angular_vel = b2Body_GetAngularVelocity(game->playerUnit->bodyId);
-
-    // Inertia-scaled PD gains
-    float inertia = b2Body_GetInertiaTensor(game->playerUnit->bodyId);
-
-    // Base gains tuned for inertia ~0.1 (droid_class_1 scale)
-    // Scale proportionally so smaller bodies don't oscillate wildly
-    float baseKp = 30.0f;
-    float baseKd = 5.0f;
-    float inertiaScale = inertia / 0.1f;  // Normalize to reference inertia
-    if (inertiaScale < 0.1f) inertiaScale = 0.1f;  // Clamp minimum
-
-    float Kp = baseKp * inertiaScale;
-    float Kd = baseKd * inertiaScale;
-
-    float torque = diff * Kp - angular_vel * Kd;
-
-    // Clamp to max torque
-    if (torque > MAX_TORQUE) torque = MAX_TORQUE;
-    if (torque < -MAX_TORQUE) torque = -MAX_TORQUE;
-
-    b2Body_ApplyTorque(game->playerUnit->bodyId, torque, true);
+    // Face the mouse using the shared facing convention (see facing_angle_to in
+    // movement_tuning.h). Using atan2(dx, dz) previously left the X component
+    // negated, so mouse left/right gave reversed facing.
+    game->playerDesiredRotation = facing_angle_to(dx, dz);
 }
 
 //------------------------------------------------------------------------------
@@ -751,23 +803,32 @@ void game_update(Game* game, float dt) {
         input_update(&game->input);
     }
 
-    // Apply input to player unit
+    // Apply input to player unit. The player drives the SAME motor-joint control
+    // layer as AI units (identical-simulation invariant) — only the target source
+    // differs: player input here vs. AI waypoint logic in AIManager.
     if (game->playerUnit && game->playerUnit->rootSection) {
         if (b2Body_IsValid(game->playerUnit->bodyId)) {
-            // Apply movement force (skip in test mode - no movement)
+            b2Vec2 bodyPos = b2Body_GetPosition(game->playerUnit->bodyId);
+            Vector2 moveTarget = {bodyPos.x, bodyPos.y};  // default: hold position
+
             if (!game->testConfig.enabled) {
-                Vector2 force = {
-                    game->input.movement.x * MOVEMENT_FORCE,
-                    game->input.movement.y * MOVEMENT_FORCE
-                };
-                b2Body_ApplyForceToCenter(game->playerUnit->bodyId, (b2Vec2){force.x, force.y}, true);
-
-                // Update rotation from mouse (normal mode only)
+                // Update desired facing from the mouse.
                 game_update_player_rotation(game);
-            }
 
-            // Apply rotation torque (always - this is what we're testing)
-            game_apply_player_rotation_torque(game);
+                // Carrot target: a bounded step ahead along the input direction
+                // (same lookahead scheme the AI uses).
+                float ix = game->input.movement.x;
+                float iy = game->input.movement.y;
+                float mag = sqrtf(ix * ix + iy * iy);
+                if (mag > 0.001f) {
+                    moveTarget.x = bodyPos.x + (ix / mag) * UNIT_MOVE_LOOKAHEAD;
+                    moveTarget.y = bodyPos.y + (iy / mag) * UNIT_MOVE_LOOKAHEAD;
+                }
+            }
+            // In test mode moveTarget stays at the current position (hold) while
+            // playerDesiredRotation carries the test's target angle.
+
+            unit_set_move_target(game->playerUnit, moveTarget, game->playerDesiredRotation);
         }
     }
 
@@ -789,6 +850,12 @@ void game_update(Game* game, float dt) {
     if (IsKeyPressed(KEY_N)) {
         normalMapEnabled = !normalMapEnabled;
         sceneRendererSetNormalMapEnabled(&game->sceneRenderer, normalMapEnabled);
+    }
+
+    // Debug: cycle the player-controlled unit type (F1 = next, F2 = previous)
+    if (!game->testConfig.enabled) {
+        if (IsKeyPressed(KEY_F1)) game_cycle_player_unit(game, +1);
+        if (IsKeyPressed(KEY_F2)) game_cycle_player_unit(game, -1);
     }
 
     // Debug: Level switching (Page Up / Page Down)
@@ -912,6 +979,12 @@ void game_render(Game* game) {
                      root->worldPosition.x, root->worldPosition.y,
                      rotDeg >= 0 ? " " : "", rotDeg),
                      10, 70, 16, WHITE);
+            if (game->playerUnit->definition) {
+                const UnitDefinition* pd = game->playerUnit->definition;
+                DrawText(TextFormat("Unit: %s  spd=%.0f acc=%.0f dec=%.0f  [F1/F2 to cycle]",
+                         pd->name.c_str(), pd->maxSpeed, pd->acceleration, pd->deceleration),
+                         10, 110, 16, YELLOW);
+            }
             DrawText(TextFormat("Desired: %s%06.1f  err=%s%05.1f  angVel=%s%05.1f",
                      desiredDeg >= 0 ? " " : "", desiredDeg,
                      errDeg >= 0 ? " " : "", errDeg,
@@ -921,7 +994,7 @@ void game_render(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD: Move | Mouse: Aim | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
 
     EndDrawing();

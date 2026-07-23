@@ -48,9 +48,12 @@ private:
     int selectChaseTarget(const AIComponent& ai, Vector2 playerPos) const;
     int selectFleeTarget(const AIComponent& ai, Vector2 playerPos) const;
 
-    // Movement and rotation helpers
-    void moveTowardWaypoint(AIComponent& ai, Vector2 targetPos) const;
-    void applyRotation(b2BodyId bodyId, float targetAngle) const;
+    // Movement and rotation helpers.
+    // setMotion drives the unit toward `moveTarget` (via a bounded carrot) while
+    // facing `facing`, by setting its motor-joint target. holdPosition parks the
+    // unit at its current transform (used when dwelling / halting / no target).
+    void setMotion(AIComponent& ai, Vector2 moveTarget, float facing) const;
+    void holdPosition(AIComponent& ai) const;
     bool isAtWaypoint(const AIComponent& ai, Vector2 waypointPos) const;
     Vector2 getUnitPosition(const AIComponent& ai) const;
     Vector2 waypointPos2D(int index) const;

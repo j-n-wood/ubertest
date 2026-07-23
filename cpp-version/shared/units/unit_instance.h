@@ -73,6 +73,12 @@ struct UnitInstance {
     // Single physics body for the entire unit
     b2BodyId bodyId = b2_nullBodyId;
 
+    // Motor joint anchoring this unit to the static world-origin body. Its
+    // linearOffset is the desired world position and angularOffset the desired
+    // world facing. Driven identically by the AI or the player via
+    // unit_set_move_target(). b2_nullJointId until unit_attach_motor_joint().
+    b2JointId motorJoint = b2_nullJointId;
+
     // Section hierarchy (rendering only)
     std::unique_ptr<SectionInstance> rootSection;
 
@@ -91,5 +97,26 @@ struct UnitInstance {
     // State
     bool active = true;
 };
+
+//------------------------------------------------------------------------------
+// Motor-joint movement control (shared by AI and player — see movement_tuning.h)
+//------------------------------------------------------------------------------
+
+// Create the static, shapeless anchor body at the world origin (identity
+// transform). It is the bodyA for every unit's motor joint, so a joint's
+// linearOffset equals the target world position and angularOffset the target
+// world facing. One per Box2D world; caller owns it (destroyed with the world).
+b2BodyId unit_create_origin_body(b2WorldId world);
+
+// Attach a motor joint anchoring `unit` to `originBody`, using the shared tuning
+// parameters. The joint's initial target is the unit body's current transform, so
+// an undriven unit holds station. Safe to call once per unit after its body exists.
+void unit_attach_motor_joint(UnitInstance* unit, b2WorldId world, b2BodyId originBody);
+
+// Set the desired world position and facing for a unit's motor joint. This is the
+// single control entry point both the AI state machine and the player-input code
+// call — the enforcement point for the identical-simulation invariant. No-op if
+// the unit has no (valid) motor joint.
+void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFacing);
 
 #endif // UNIT_INSTANCE_H

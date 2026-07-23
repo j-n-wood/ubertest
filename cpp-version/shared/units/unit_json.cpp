@@ -328,6 +328,11 @@ bool loadUnitDefinitionFromFile(std::string_view path, UnitDefinition& outDefini
         outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
+        // Per-type movement limits (original units; 0 = unspecified -> global fallback)
+        outDefinition.maxSpeed     = j.value("maxSpeed", 0.0f);
+        outDefinition.acceleration = j.value("acceleration", 0.0f);
+        outDefinition.deceleration = j.value("deceleration", 0.0f);
+
         if (j.contains("properties")) {
             outDefinition.properties = parseDroidProperties(j["properties"]);
         }
@@ -357,6 +362,11 @@ bool saveUnitDefinitionToFile(std::string_view path, const UnitDefinition& defin
         // Unit-level physics radii
         j["collisionRadius"] = definition.collisionRadius;
         j["proximityRadius"] = definition.proximityRadius;
+
+        // Per-type movement limits (original units)
+        j["maxSpeed"] = definition.maxSpeed;
+        j["acceleration"] = definition.acceleration;
+        j["deceleration"] = definition.deceleration;
 
         j["properties"] = droidPropertiesToJson(definition.properties);
 
@@ -389,6 +399,11 @@ bool parseUnitDefinitionFromString(std::string_view jsonString, UnitDefinition& 
         outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
+        // Per-type movement limits (original units; 0 = unspecified -> global fallback)
+        outDefinition.maxSpeed     = j.value("maxSpeed", 0.0f);
+        outDefinition.acceleration = j.value("acceleration", 0.0f);
+        outDefinition.deceleration = j.value("deceleration", 0.0f);
+
         if (j.contains("properties")) {
             outDefinition.properties = parseDroidProperties(j["properties"]);
         }
@@ -417,6 +432,11 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
         // Unit-level physics radii
         j["collisionRadius"] = definition.collisionRadius;
         j["proximityRadius"] = definition.proximityRadius;
+
+        // Per-type movement limits (original units)
+        j["maxSpeed"] = definition.maxSpeed;
+        j["acceleration"] = definition.acceleration;
+        j["deceleration"] = definition.deceleration;
 
         j["properties"] = droidPropertiesToJson(definition.properties);
 

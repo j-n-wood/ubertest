@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "ai/ai_manager.h"
 #include "units/unit_instance.h"
+#include "units/movement_tuning.h"
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "physics/body_user_data.h"
@@ -36,6 +37,7 @@ static const char* TEST_WEAPONS_JSON = R"([
 class AITestFixture : public ::testing::Test {
 protected:
     b2WorldId worldId = b2_nullWorldId;
+    b2BodyId originBody = b2_nullBodyId;  // anchor for unit motor joints
     ProjectileManager projectiles;
     AIManager aiManager;
 
@@ -57,6 +59,10 @@ protected:
         b2WorldDef worldDef = b2DefaultWorldDef();
         worldDef.gravity = {0.0f, 0.0f};
         worldId = b2CreateWorld(&worldDef);
+
+        // Motor-joint anchor at the world origin (matches UnitManager). Units get
+        // their movement joint attached in createUnitBody() below.
+        originBody = unit_create_origin_body(worldId);
 
         // Waypoint positions (Vector3: x = X, y = height, z = Y in 2D)
         waypointPositions = {
@@ -175,6 +181,10 @@ protected:
 
         b2Circle circle = {{0, 0}, radius};
         b2CreateCircleShape(unit.bodyId, &shapeDef, &circle);
+
+        // Attach the motor joint so AI movement (which drives the joint target)
+        // actually moves the body — same control path as the game.
+        unit_attach_motor_joint(&unit, worldId, originBody);
     }
 
     // Build section instances for a unit (needed for turret tests)
@@ -454,8 +464,13 @@ TEST_F(AITestFixture, TurretDroidFiresWhileMoving) {
         if (section->definition &&
             section->definition->rotationMode == SectionRotationMode::FollowFacing) {
             headTracking = true;
-            // Head should face roughly toward player (+X direction, angle ~0)
-            EXPECT_NEAR(section->facingAngle, 0.0f, 1.0f);
+            // Head should track the player. Compare against the shared facing
+            // convention rather than a hard-coded angle so the test stays valid
+            // regardless of the internal angle convention.
+            b2Vec2 up = b2Body_GetPosition(unit.bodyId);
+            float expected = facing_angle_to(playerPos.x - up.x, playerPos.y - up.y);
+            EXPECT_NEAR(section->facingAngle, expected, 0.35f)
+                << "Turret head should face the player";
             break;
         }
     }

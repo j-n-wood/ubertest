@@ -9,6 +9,12 @@ A C++ workspace for a top-down game using 2D physics with 3D graphics, plus supp
 - **Build**: CMake 3.20+
 - **Language**: C++23
 
+## Movement model
+
+Units move via a Box2D **`b2MotorJoint`** that drives each body toward a desired position and facing (anchored to a static world-origin body, so joint offsets equal world coordinates). Because the drive is a solver constraint bounded by max force/torque, collisions negotiate with it instead of knocking units off course.
+
+Player and AI units are **simulated identically** — the game concept is that the player takes remote control of a unit, so player input simply replaces the AI's target through the same `unit_set_move_target()` entry point and the same tuning ([`shared/units/movement_tuning.h`](shared/units/movement_tuning.h)). See Design Pattern 4 in [docs/gameplay_implementation_plan.md](docs/gameplay_implementation_plan.md).
+
 ## Project Structure
 
 ```

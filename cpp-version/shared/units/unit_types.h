@@ -136,6 +136,16 @@ struct UnitDefinition {
     float collisionRadius = 0.5f;             // Collision shape radius (meters)
     float proximityRadius = 1.0f;             // Proximity detection radius for AI/sensing
 
+    // Per-type movement limits, in the ORIGINAL droidclasses.txt units
+    // (speed/acceleration/deceleration from droid_class.cpp). The movement layer
+    // scales these to world units via MOVEMENT_UNIT_SCALE (movement_tuning.h) and
+    // maps them onto the motor joint: acceleration/deceleration -> max force,
+    // maxSpeed + acceleration -> linear damping (terminal velocity). A value of 0
+    // means "unspecified" — the unit falls back to the global motor tuning.
+    float maxSpeed = 0.0f;                     // Top speed
+    float acceleration = 0.0f;                 // Force authority while speeding up
+    float deceleration = 0.0f;                 // Force authority while braking
+
     SectionDefinition rootSection;
     DroidProperties properties;               // Droid gameplay properties
 };

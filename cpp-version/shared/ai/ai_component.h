@@ -52,15 +52,15 @@ struct AIComponent {
 // Constants
 //------------------------------------------------------------------------------
 
-inline constexpr float AI_MOVEMENT_FORCE = 7.0f;        // Same as player
+// Movement/rotation are driven by the shared motor-joint control layer; the drive
+// parameters (max force/torque, correction factor, carrot lookahead, turret slew)
+// live in movement_tuning.h and are identical for AI and player. The constants
+// below are AI decision-logic only.
 inline constexpr float AI_WAYPOINT_ARRIVAL_DIST = 0.5f;  // Distance to consider "arrived"
 inline constexpr float AI_DWELL_MIN = 0.5f;
 inline constexpr float AI_DWELL_MAX = 2.0f;
 inline constexpr float AI_BACK_AVOIDANCE_WEIGHT = 0.2f;  // Reduced probability for previous waypoint
 inline constexpr float AI_COLINEAR_THRESHOLD = 0.7f;     // Dot product threshold to skip dwell
 inline constexpr float AI_FACING_THRESHOLD = 0.25f;      // Radians (~14 degrees) for fire alignment
-inline constexpr float AI_MAX_TORQUE = 100.0f;
-inline constexpr float AI_ROTATION_KP = 30.0f;
-inline constexpr float AI_ROTATION_KD = 5.0f;
 
 #endif // AI_COMPONENT_H

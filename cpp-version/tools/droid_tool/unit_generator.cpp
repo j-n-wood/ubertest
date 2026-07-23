@@ -419,6 +419,13 @@ UnitGeneratorResult generateUnits(
         fprintf(jsonFile, "  \"collisionRadius\": %.6f,\n", droidClass.collideRadius * options.radiusScale);
         fprintf(jsonFile, "  \"proximityRadius\": %.6f,\n", droidClass.proximityRadius * options.radiusScale);
 
+        // Per-type movement limits, taken verbatim from the original data
+        // (droid_class.cpp order: speed, acceleration, deceleration, scan_rate).
+        // speeds[3] is scan_rate, not a movement value, so it is not written.
+        fprintf(jsonFile, "  \"maxSpeed\": %.6f,\n", droidClass.speeds[0]);
+        fprintf(jsonFile, "  \"acceleration\": %.6f,\n", droidClass.speeds[1]);
+        fprintf(jsonFile, "  \"deceleration\": %.6f,\n", droidClass.speeds[2]);
+
         // Properties
         fprintf(jsonFile, "  \"properties\": {\n");
         fprintf(jsonFile, "    \"classId\": %d,\n", droidClass.classId);

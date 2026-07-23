@@ -240,10 +240,15 @@ void testSceneUpdate(TestScene* scene, float dt) {
     if (!scene->paused) {
         b2World_Step(scene->worldId, dt, 4);
 
-        // Set unit rotation via physics body
+        // Set unit rotation via physics body. Units now carry a motor joint
+        // (anchored to the world origin) that would otherwise pull the body back
+        // toward its stored target, so point that target at the same transform we
+        // set here — the joint then applies ~zero correction and manual rotation
+        // stays instantaneous.
         if (scene->currentUnit && b2Body_IsValid(scene->currentUnit->bodyId)) {
             b2Vec2 pos = b2Body_GetPosition(scene->currentUnit->bodyId);
             b2Body_SetTransform(scene->currentUnit->bodyId, pos, b2MakeRot(scene->manualRotation));
+            unit_set_move_target(scene->currentUnit, {pos.x, pos.y}, scene->manualRotation);
         }
 
         // Update facing angle for FollowFacing sections

@@ -1,5 +1,6 @@
 #include "ai_manager.h"
 #include "units/unit_instance.h"
+#include "units/movement_tuning.h"
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "level/spawn_config.h"
@@ -23,6 +24,16 @@ float normalizeAngle(float angle) {
 float randomFloat(float min, float max) {
     float t = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     return min + t * (max - min);
+}
+
+// Step `current` toward `target` by at most maxStep radians, taking the shortest
+// way around the circle (so an angle near 0/2π slews the short way to a nearby
+// target instead of spinning almost all the way around).
+float slewToward(float current, float target, float maxStep) {
+    float diff = normalizeAngle(target - current);
+    if (diff > maxStep) diff = maxStep;
+    if (diff < -maxStep) diff = -maxStep;
+    return normalizeAngle(current + diff);
 }
 
 } // namespace
@@ -132,13 +143,14 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
     // Dwelling at waypoint
     if (ai.dwellTimer > 0.0f) {
         ai.dwellTimer -= dt;
+        holdPosition(ai);
         return;
     }
 
     // Need a target?
     if (ai.targetWaypoint < 0) {
         ai.targetWaypoint = selectPatrolTarget(ai);
-        if (ai.targetWaypoint < 0) return; // dead end
+        if (ai.targetWaypoint < 0) { holdPosition(ai); return; } // dead end
     }
 
     Vector2 targetPos = waypointPos2D(ai.targetWaypoint);
@@ -172,16 +184,14 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
                 ai.dwellTimer = randomFloat(AI_DWELL_MIN, AI_DWELL_MAX);
             }
         }
+        holdPosition(ai);
         return;
     }
 
-    // Move toward target
-    moveTowardWaypoint(ai, targetPos);
-
-    // Orient body to face movement direction
+    // Move toward target, facing the movement direction.
     Vector2 dir = Vector2Subtract(targetPos, unitPos);
-    float targetAngle = atan2f(dir.y, dir.x);
-    applyRotation(ai.unit->bodyId, targetAngle);
+    float targetAngle = facing_angle_to(dir.x, dir.y);
+    setMotion(ai, targetPos, targetAngle);
 }
 
 //------------------------------------------------------------------------------
@@ -210,7 +220,7 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
         // Continue waypoint navigation toward player
         if (ai.targetWaypoint < 0) {
             ai.targetWaypoint = selectChaseTarget(ai, playerPos);
-            if (ai.targetWaypoint < 0) return;
+            if (ai.targetWaypoint < 0) { holdPosition(ai); return; }
         }
 
         Vector2 targetPos = waypointPos2D(ai.targetWaypoint);
@@ -222,37 +232,39 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
 
         if (ai.targetWaypoint >= 0) {
             Vector2 wpPos = waypointPos2D(ai.targetWaypoint);
-            moveTowardWaypoint(ai, wpPos);
 
-            // Body orientation
+            // Body faces the player (omnidirectional) or the movement direction.
+            float angle;
             if (ai.omnidirectional) {
-                // Body faces player while moving
                 Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-                float angle = atan2f(toPlayer.y, toPlayer.x);
-                applyRotation(ai.unit->bodyId, angle);
+                angle = facing_angle_to(toPlayer.x, toPlayer.y);
             } else {
-                // Body faces movement direction (turret or standard)
                 Vector2 dir = Vector2Subtract(wpPos, unitPos);
-                float angle = atan2f(dir.y, dir.x);
-                applyRotation(ai.unit->bodyId, angle);
+                angle = facing_angle_to(dir.x, dir.y);
             }
+            setMotion(ai, wpPos, angle);
+        } else {
+            holdPosition(ai);
         }
     } else {
-        // Halting — turn body to face player
+        // Halting — hold station and turn body to face the player. Holding the
+        // position via the motor joint also resists being shoved off the firing spot.
         Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-        float angle = atan2f(toPlayer.y, toPlayer.x);
-        applyRotation(ai.unit->bodyId, angle);
+        float angle = facing_angle_to(toPlayer.x, toPlayer.y);
+        unit_set_move_target(ai.unit, unitPos, angle);
     }
 
-    // Head tracking — all hostile droids turn head toward player
+    // Head tracking — all hostile droids slew the head toward the player. Facing
+    // is a render-only scalar; slew the shortest way at the shared turret rate.
     if (ai.hasTurret && ai.unit->rootSection) {
         Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-        float headAngle = atan2f(toPlayer.y, toPlayer.x);
+        float headAngle = facing_angle_to(toPlayer.x, toPlayer.y);
         // Find head section (first child with FollowFacing mode)
         for (auto* section : ai.unit->allSections) {
             if (section->definition &&
                 section->definition->rotationMode == SectionRotationMode::FollowFacing) {
-                section->facingAngle = headAngle;
+                section->facingAngle =
+                    slewToward(section->facingAngle, headAngle, TURRET_SLEW_RATE * dt);
                 break;
             }
         }
@@ -267,9 +279,10 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
 //------------------------------------------------------------------------------
 
 void AIManager::updateFlee(AIComponent& ai, float dt, Vector2 playerPos) {
+    (void)dt;
     if (ai.targetWaypoint < 0) {
         ai.targetWaypoint = selectFleeTarget(ai, playerPos);
-        if (ai.targetWaypoint < 0) return;
+        if (ai.targetWaypoint < 0) { holdPosition(ai); return; }
     }
 
     Vector2 targetPos = waypointPos2D(ai.targetWaypoint);
@@ -283,12 +296,11 @@ void AIManager::updateFlee(AIComponent& ai, float dt, Vector2 playerPos) {
 
     if (ai.targetWaypoint >= 0) {
         Vector2 wpPos = waypointPos2D(ai.targetWaypoint);
-        moveTowardWaypoint(ai, wpPos);
 
-        // Orient body to face movement direction
+        // Move toward the flee waypoint, facing the movement direction.
         Vector2 dir = Vector2Subtract(wpPos, unitPos);
-        float angle = atan2f(dir.y, dir.x);
-        applyRotation(ai.unit->bodyId, angle);
+        float angle = facing_angle_to(dir.x, dir.y);
+        setMotion(ai, wpPos, angle);
     }
 }
 
@@ -379,29 +391,27 @@ int AIManager::selectFleeTarget(const AIComponent& ai, Vector2 playerPos) const 
 // Movement and Rotation
 //------------------------------------------------------------------------------
 
-void AIManager::moveTowardWaypoint(AIComponent& ai, Vector2 targetPos) const {
+void AIManager::setMotion(AIComponent& ai, Vector2 moveTarget, float facing) const {
     Vector2 unitPos = getUnitPosition(ai);
-    Vector2 dir = Vector2Subtract(targetPos, unitPos);
+    Vector2 dir = Vector2Subtract(moveTarget, unitPos);
     float len = Vector2Length(dir);
-    if (len < 0.001f) return;
 
-    Vector2 force = Vector2Scale(Vector2Normalize(dir), AI_MOVEMENT_FORCE);
-    b2Body_ApplyForceToCenter(ai.unit->bodyId, {force.x, force.y}, true);
+    // Place the linear target a bounded distance ahead along the heading (a
+    // "carrot"). This caps the position error — and thus the motor force and
+    // speed — and eases arrival as the final target comes within lookahead.
+    Vector2 carrot = unitPos;
+    if (len > 0.001f) {
+        float reach = fminf(UNIT_MOVE_LOOKAHEAD, len);
+        carrot = Vector2Add(unitPos, Vector2Scale(dir, reach / len));
+    }
+
+    unit_set_move_target(ai.unit, carrot, facing);
 }
 
-void AIManager::applyRotation(b2BodyId bodyId, float targetAngle) const {
-    float currentAngle = b2Rot_GetAngle(b2Body_GetRotation(bodyId));
-    float angularVel = b2Body_GetAngularVelocity(bodyId);
-    float inertia = b2Body_GetInertiaTensor(bodyId);
-    float inertiaScale = inertia > 0.0f ? inertia : 1.0f;
-
-    float diff = normalizeAngle(targetAngle - currentAngle);
-    float torque = diff * AI_ROTATION_KP * inertiaScale - angularVel * AI_ROTATION_KD * inertiaScale;
-
-    if (torque > AI_MAX_TORQUE) torque = AI_MAX_TORQUE;
-    if (torque < -AI_MAX_TORQUE) torque = -AI_MAX_TORQUE;
-
-    b2Body_ApplyTorque(bodyId, torque, true);
+void AIManager::holdPosition(AIComponent& ai) const {
+    Vector2 unitPos = getUnitPosition(ai);
+    float facing = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
+    unit_set_move_target(ai.unit, unitPos, facing);
 }
 
 bool AIManager::isAtWaypoint(const AIComponent& ai, Vector2 waypointPos) const {
@@ -442,7 +452,7 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
     // Check facing alignment
     float bodyAngle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
     Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-    float angleToPlayer = atan2f(toPlayer.y, toPlayer.x);
+    float angleToPlayer = facing_angle_to(toPlayer.x, toPlayer.y);
 
     float facingAngle;
     if (ai.hasTurret) {

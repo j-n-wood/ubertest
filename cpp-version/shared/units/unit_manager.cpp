@@ -1,5 +1,6 @@
 #include "unit_manager.h"
 #include "unit_json.h"
+#include "movement_tuning.h"
 #include "rlgl.h"
 #include <cmath>
 #include <algorithm>
@@ -21,6 +22,8 @@ void UnitManager::init(b2WorldId worldId, const char* modelsBasePath) {
     if (modelsBasePath && modelsBasePath[0] != '\0') {
         m_modelsBasePath = modelsBasePath;
     }
+    // Static anchor at the world origin — bodyA for every unit's motor joint.
+    m_originBody = unit_create_origin_body(m_worldId);
 }
 
 void UnitManager::destroy() {
@@ -37,6 +40,9 @@ void UnitManager::destroy() {
 
     m_definitions.clear();
     m_modelsBasePath.clear();
+    // The origin body is owned by the world; it is freed when the world is
+    // destroyed elsewhere. Just drop our handle.
+    m_originBody = b2_nullBodyId;
     m_worldId = b2_nullWorldId;
 }
 
@@ -138,8 +144,24 @@ UnitInstance* UnitManager::createInstance(
     bodyDef.type = b2_dynamicBody;
     bodyDef.position = {position.x, position.y};
     bodyDef.rotation = b2MakeRot(rotation);
-    bodyDef.linearDamping = 4.0f;
-    bodyDef.angularDamping = 8.0f;
+    // Per-type linear damping sets terminal velocity. The motor saturates at
+    // (mass * acceleration * MOVEMENT_UNIT_SCALE * UNIT_MOTOR_AUTHORITY), so
+    // terminal speed = force / (mass * damping). Choosing
+    // damping = acceleration * UNIT_MOTOR_AUTHORITY / maxSpeed makes the unit
+    // cruise at exactly maxSpeed*MOVEMENT_UNIT_SCALE while the authority factor
+    // still boosts absolute force (it cancels out of terminal speed). Units with
+    // no movement data fall back to the global damping constant.
+    float linearDamping = UNIT_LINEAR_DAMPING;
+    if (definition->maxSpeed > 0.0f && definition->acceleration > 0.0f) {
+        linearDamping = definition->acceleration * UNIT_MOTOR_AUTHORITY / definition->maxSpeed;
+    }
+    bodyDef.linearDamping = linearDamping;
+    bodyDef.angularDamping = UNIT_ANGULAR_DAMPING;
+    // Never sleep: units are driven by a motor joint whose target we update every
+    // frame, and b2MotorJoint_Set*Offset does NOT wake a sleeping body. A resting
+    // unit would otherwise sleep (~0.5s) and then ignore new move/face targets,
+    // freezing until something else woke it (e.g. swapping unit type).
+    bodyDef.enableSleep = false;
     bodyDef.userData = &instance->bodyUserData;
 
     instance->bodyId = b2CreateBody(m_worldId, &bodyDef);
@@ -161,6 +183,10 @@ UnitInstance* UnitManager::createInstance(
         circle.radius = 0.2f;
     }
     b2CreateCircleShape(instance->bodyId, &shapeDef, &circle);
+
+    // Attach the motor joint that drives this unit toward a target position/facing.
+    // Identical for AI-driven units and the player — only the target source differs.
+    unit_attach_motor_joint(instance.get(), m_worldId, m_originBody);
 
     // Create section instances (rendering only, no per-section physics)
     SectionInstance* root = createSectionInstance(
@@ -195,6 +221,12 @@ void UnitManager::destroyInstance(UnitInstance* instance) {
         [instance](const auto& ptr) { return ptr.get() == instance; });
 
     if (it != m_instances.end()) {
+        // Destroy the motor joint before its body (explicit; Box2D would also
+        // clean it up with the body, but be deterministic).
+        if (b2Joint_IsValid(instance->motorJoint)) {
+            b2DestroyJoint(instance->motorJoint);
+            instance->motorJoint = b2_nullJointId;
+        }
         // Destroy physics body
         if (b2Body_IsValid(instance->bodyId)) {
             b2DestroyBody(instance->bodyId);

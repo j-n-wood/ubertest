@@ -112,6 +112,9 @@ public:
 private:
     b2WorldId m_worldId = b2_nullWorldId;
 
+    // Static anchor at the world origin; bodyA for every unit's motor joint.
+    b2BodyId m_originBody = b2_nullBodyId;
+
     // Base path for resolving model references within unit definitions
     std::string m_modelsBasePath;
 
