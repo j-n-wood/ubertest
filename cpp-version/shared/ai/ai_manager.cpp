@@ -4,6 +4,7 @@
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "level/spawn_config.h"
+#include "physics/body_user_data.h"
 #include "raymath.h"
 #include <cmath>
 #include <cstdlib>
@@ -86,6 +87,9 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
     for (auto& ai : components_) {
         if (!ai.unit || !ai.unit->active) continue;
 
+        // Tick the collision-redirect decision cooldown
+        if (ai.collideCooldown > 0.0f) ai.collideCooldown -= dt;
+
         // Update weapon cooldown
         if (ai.armed) {
             updateWeaponCooldown(ai.weaponState, dt);
@@ -121,6 +125,71 @@ void AIManager::onDamageTaken(UnitInstance* unit) {
             }
             return;
         }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Collision response
+//------------------------------------------------------------------------------
+
+AIComponent* AIManager::findComponent(UnitInstance* unit) {
+    for (auto& ai : components_) {
+        if (ai.unit == unit) return &ai;
+    }
+    return nullptr;
+}
+
+void AIManager::processCollisions(b2WorldId worldId) {
+    b2ContactEvents events = b2World_GetContactEvents(worldId);
+
+    for (int i = 0; i < events.beginCount; ++i) {
+        const b2ContactBeginTouchEvent& ev = events.beginEvents[i];
+        auto* udA = static_cast<BodyUserData*>(b2Body_GetUserData(b2Shape_GetBody(ev.shapeIdA)));
+        auto* udB = static_cast<BodyUserData*>(b2Body_GetUserData(b2Shape_GetBody(ev.shapeIdB)));
+
+        // Ignore projectile contacts — those are damage, handled by ProjectileManager.
+        if ((udA && udA->tag == BodyTag::Projectile) ||
+            (udB && udB->tag == BodyTag::Projectile)) {
+            continue;
+        }
+
+        bool aUnit = udA && udA->tag == BodyTag::Unit;
+        bool bUnit = udB && udB->tag == BodyTag::Unit;
+        auto* unitA = aUnit ? static_cast<UnitInstance*>(udA->owner) : nullptr;
+        auto* unitB = bUnit ? static_cast<UnitInstance*>(udB->owner) : nullptr;
+
+        onCollision(unitA, unitB);
+    }
+}
+
+void AIManager::onCollision(UnitInstance* a, UnitInstance* b) {
+    // Each unit involved reacts; the "other" is the partner unit or nullptr
+    // (wall/debris). The player has no AIComponent, so findComponent skips it.
+    if (a) {
+        if (AIComponent* ai = findComponent(a)) handleCollision(*ai, b);
+    }
+    if (b) {
+        if (AIComponent* ai = findComponent(b)) handleCollision(*ai, a);
+    }
+}
+
+void AIManager::handleCollision(AIComponent& ai, UnitInstance* other) {
+    (void)other;
+    // Hostile units are pursuing/attacking — they push through, don't back off.
+    if (ai.hostile) return;
+
+    // Debounce the decision (not movement): while cooling down, keep moving toward
+    // the redirect target already chosen instead of re-deciding every frame.
+    if (ai.collideCooldown > 0.0f) return;
+    ai.collideCooldown = AI_COLLIDE_COOLDOWN;
+
+    // Redirect away from the collision point. Normally head back toward the prior
+    // waypoint; if we're already doing that (or have none), drop the target so the
+    // next tick re-selects — back-avoidance then biases us off the blocked route.
+    if (ai.previousWaypoint >= 0 && ai.targetWaypoint != ai.previousWaypoint) {
+        ai.targetWaypoint = ai.previousWaypoint;
+    } else {
+        ai.targetWaypoint = -1;
     }
 }
 
@@ -186,6 +255,29 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
         }
         holdPosition(ai);
         return;
+    }
+
+    // Stuck detection: if we're trying to move but barely moving, the route is
+    // blocked (pinned on a wall, or a deadlock). Abandon it and reselect, biased
+    // away from the blocked direction. Handles the case where a wall contact only
+    // fired one begin-touch event and left the unit pinned. The timer resets when
+    // the target changes so each fresh route gets a full window.
+    if (ai.targetWaypoint != ai.stuckWaypoint) {
+        ai.stuckWaypoint = ai.targetWaypoint;
+        ai.stuckTimer = 0.0f;
+    }
+    b2Vec2 vel = b2Body_GetLinearVelocity(ai.unit->bodyId);
+    float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
+    if (speed < AI_STUCK_SPEED) {
+        ai.stuckTimer += dt;
+        if (ai.stuckTimer > AI_STUCK_TIME) {
+            ai.previousWaypoint = ai.targetWaypoint;  // avoid the blocked route on reselect
+            ai.targetWaypoint = -1;
+            ai.stuckTimer = 0.0f;
+            return;
+        }
+    } else {
+        ai.stuckTimer = 0.0f;
     }
 
     // Move toward target, facing the movement direction.

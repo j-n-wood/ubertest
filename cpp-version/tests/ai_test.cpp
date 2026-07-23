@@ -579,3 +579,91 @@ TEST_F(AITestFixture, FleeSelectsWaypointAwayFromPlayer) {
     EXPECT_EQ(ai.targetWaypoint, 4)
         << "Fleeing droid should pick waypoint farthest from player (4, not 1)";
 }
+
+//------------------------------------------------------------------------------
+// Collision response tests
+//------------------------------------------------------------------------------
+
+TEST_F(AITestFixture, CollisionRedirectsNonHostileToPriorWaypoint) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 1, -10);
+    auto& ai = aiManager.components()[0];
+    ai.hostile = false;
+    ai.previousWaypoint = 0;  // came from waypoint 0
+    ai.targetWaypoint = 2;    // heading toward waypoint 2
+
+    UnitInstance other;  // dummy collision partner (identity only)
+    aiManager.onCollision(&unit, &other);
+
+    EXPECT_EQ(ai.targetWaypoint, 0) << "Collision should redirect toward the prior waypoint";
+    EXPECT_GT(ai.collideCooldown, 0.0f) << "Redirect decision is debounced";
+}
+
+TEST_F(AITestFixture, CollisionCooldownDebouncesRedirect) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 1, -10);
+    auto& ai = aiManager.components()[0];
+    ai.hostile = false;
+    ai.previousWaypoint = 0;
+    ai.targetWaypoint = 2;
+
+    UnitInstance other;
+    aiManager.onCollision(&unit, &other);  // redirect -> target 0, cooldown armed
+    ai.targetWaypoint = 2;                 // pretend AI re-picked 2
+    aiManager.onCollision(&unit, &other);  // within cooldown -> ignored
+
+    EXPECT_EQ(ai.targetWaypoint, 2) << "A second collision within the cooldown is ignored";
+}
+
+TEST_F(AITestFixture, CollisionWithoutPriorWaypointForcesReselect) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 1, -10);
+    auto& ai = aiManager.components()[0];
+    ai.hostile = false;
+    ai.previousWaypoint = -1;  // no prior waypoint
+    ai.targetWaypoint = 2;
+
+    UnitInstance other;
+    aiManager.onCollision(&unit, &other);
+
+    EXPECT_EQ(ai.targetWaypoint, -1) << "With no prior waypoint the target is dropped for reselection";
+}
+
+TEST_F(AITestFixture, StuckUnitAbandonsBlockedRoute) {
+    UnitInstance unit;
+    initSingleEnemy(unit, unarmedDef, 1, -10);  // unarmed: won't switch to chase
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Patrol;
+    ai.hostile = false;
+    ai.currentWaypoint = 1;
+    ai.previousWaypoint = 0;
+    ai.targetWaypoint = 2;  // heading 1 -> 2
+
+    // Sit at waypoint 1 and never step physics, so speed stays ~0 (blocked).
+    b2Body_SetTransform(unit.bodyId,
+                        {waypointPositions[1].x, waypointPositions[1].z}, b2MakeRot(0.0f));
+    Vector2 playerPos = {100.0f, 100.0f};
+
+    int frames = static_cast<int>(AI_STUCK_TIME / 0.016f) + 5;
+    for (int i = 0; i < frames; i++) {
+        aiManager.update(0.016f, playerPos, worldId, nullptr);
+    }
+
+    EXPECT_EQ(ai.previousWaypoint, 2) << "The blocked route becomes previousWaypoint";
+    EXPECT_NE(ai.targetWaypoint, 2) << "A stuck unit reselects a different route";
+}
+
+TEST_F(AITestFixture, HostileUnitIgnoresCollision) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 1, -10);
+    auto& ai = aiManager.components()[0];
+    ai.hostile = true;        // pursuing — must not back off
+    ai.previousWaypoint = 0;
+    ai.targetWaypoint = 2;
+
+    UnitInstance other;
+    aiManager.onCollision(&unit, &other);
+
+    EXPECT_EQ(ai.targetWaypoint, 2) << "Hostile unit should not redirect";
+    EXPECT_FLOAT_EQ(ai.collideCooldown, 0.0f);
+}

@@ -72,6 +72,7 @@ struct Game {
     // State
     bool running;
     int debugMode;
+    bool showAIDebug = false;  // V key: draw waypoints + per-unit AI state
 
     // Paths
     std::string assetPath;

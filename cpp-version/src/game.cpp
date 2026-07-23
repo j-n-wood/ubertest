@@ -852,6 +852,11 @@ void game_update(Game* game, float dt) {
         sceneRendererSetNormalMapEnabled(&game->sceneRenderer, normalMapEnabled);
     }
 
+    // Toggle AI/waypoint debug overlay (V key)
+    if (IsKeyPressed(KEY_V)) {
+        game->showAIDebug = !game->showAIDebug;
+    }
+
     // Debug: cycle the player-controlled unit type (F1 = next, F2 = previous)
     if (!game->testConfig.enabled) {
         if (IsKeyPressed(KEY_F1)) game_cycle_player_unit(game, +1);
@@ -884,6 +889,9 @@ void game_update(Game* game, float dt) {
     // Step physics
     physics_world_step(&game->physics, dt);
 
+    // Collision response: non-hostile units pause/retreat after bumping obstacles.
+    game->aiManager.processCollisions(game->physics.world_id);
+
     // Update projectiles (lifetime, contact events, cleanup)
     game->projectileManager.update(dt);
     game->projectileManager.syncFromPhysics();
@@ -913,6 +921,53 @@ void game_update(Game* game, float dt) {
 //------------------------------------------------------------------------------
 // Game Render
 //------------------------------------------------------------------------------
+
+// Debug overlay (toggled with V): waypoint graph + each AI unit's intended target.
+// Drawn inside 3D mode.
+static void game_draw_ai_debug_3d(Game* game) {
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levelRenderData.size()) return;
+    const LevelRenderData& data = game->levelRenderData[game->currentLevel];
+    int wpCount = (int)data.waypointPositions.size();
+
+    // Waypoint links
+    for (const auto& link : data.waypointLinks) {
+        if (link.first < 0 || link.second < 0 || link.first >= wpCount || link.second >= wpCount) continue;
+        const Vector3& a = data.waypointPositions[link.first];
+        const Vector3& b = data.waypointPositions[link.second];
+        DrawLine3D({a.x, 0.15f, a.z}, {b.x, 0.15f, b.z}, DARKBLUE);
+    }
+    // Waypoint nodes
+    for (const auto& wp : data.waypointPositions) {
+        DrawSphere({wp.x, 0.15f, wp.z}, 0.12f, SKYBLUE);
+    }
+    // Per-unit intended heading (line to target waypoint)
+    for (const auto& ai : game->aiManager.components()) {
+        if (!ai.unit || !ai.unit->rootSection) continue;
+        Vector2 p = ai.unit->rootSection->worldPosition;
+        if (ai.targetWaypoint >= 0 && ai.targetWaypoint < wpCount) {
+            const Vector3& to = data.waypointPositions[ai.targetWaypoint];
+            DrawLine3D({p.x, 0.3f, p.y}, {to.x, 0.3f, to.z}, YELLOW);
+        }
+    }
+}
+
+// Debug overlay (toggled with V): per-unit AI state text. Drawn in 2D (screen space).
+static void game_draw_ai_debug_2d(Game* game) {
+    for (const auto& ai : game->aiManager.components()) {
+        if (!ai.unit || !ai.unit->rootSection) continue;
+        Vector2 p = ai.unit->rootSection->worldPosition;
+        Vector2 screen = GetWorldToScreen((Vector3){p.x, 0.6f, p.y}, game->camera);
+
+        const char* st = ai.state == AIState::Chase ? "C" :
+                         ai.state == AIState::Flee  ? "F" : "P";
+        Color col = ai.state == AIState::Chase ? RED :
+                    ai.state == AIState::Flee  ? ORANGE : GREEN;
+        // "R" marks an active collision-redirect cooldown.
+        const char* redirect = (ai.collideCooldown > 0.0f) ? " R" : "";
+        DrawText(TextFormat("%s>%d%s", st, ai.targetWaypoint, redirect),
+                 (int)screen.x - 8, (int)screen.y, 12, col);
+    }
+}
 
 void game_render(Game* game) {
     BeginDrawing();
@@ -946,7 +1001,17 @@ void game_render(Game* game) {
         game->unitManager.renderDebug();
     }
 
+    // Debug: waypoint graph + AI intended targets (toggle V)
+    if (game->showAIDebug) {
+        game_draw_ai_debug_3d(game);
+    }
+
     EndMode3D();
+
+    // Debug: per-unit AI state labels (toggle V)
+    if (game->showAIDebug) {
+        game_draw_ai_debug_2d(game);
+    }
 
     // HUD
     DrawFPS(10, 10);
@@ -994,7 +1059,7 @@ void game_render(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
 
     EndDrawing();

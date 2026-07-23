@@ -32,6 +32,15 @@ public:
     // Notify that a unit took damage — triggers Chase (armed) or Flee (unarmed).
     void onDamageTaken(UnitInstance* unit);
 
+    // Process unit↔unit and unit↔wall contacts from the last physics step. A
+    // non-hostile unit pauses on contact and retreats to its prior waypoint after
+    // repeated hits (see AIComponent collision constants). Call after b2World_Step.
+    void processCollisions(b2WorldId worldId);
+
+    // React to a single contact pair (either party may be null for a wall/other).
+    // Public so it can be driven directly in tests; processCollisions calls it.
+    void onCollision(UnitInstance* a, UnitInstance* b);
+
     // Access (mainly for testing)
     const std::vector<AIComponent>& components() const { return components_; }
     std::vector<AIComponent>& components() { return components_; }
@@ -47,6 +56,10 @@ private:
     int selectPatrolTarget(const AIComponent& ai) const;
     int selectChaseTarget(const AIComponent& ai, Vector2 playerPos) const;
     int selectFleeTarget(const AIComponent& ai, Vector2 playerPos) const;
+
+    // Collision / avoidance helpers
+    AIComponent* findComponent(UnitInstance* unit);
+    void handleCollision(AIComponent& ai, UnitInstance* other);
 
     // Movement and rotation helpers.
     // setMotion drives the unit toward `moveTarget` (via a bounded carrot) while
