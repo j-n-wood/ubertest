@@ -825,6 +825,38 @@ static void game_update_player_rotation(Game* game) {
 }
 
 //------------------------------------------------------------------------------
+// Line-of-sight visibility (render filter only — simulation is unaffected)
+//------------------------------------------------------------------------------
+
+// True if nothing blocks the straight line from `from` to `to`. Blocked by static
+// geometry and CLOSED doors (an open door clears its collision filter so the ray
+// passes); other units are ignored so they don't occlude one another.
+static bool game_has_line_of_sight(Game* game, Vector2 from, Vector2 to) {
+    b2Vec2 origin = {from.x, from.y};
+    b2Vec2 translation = {to.x - from.x, to.y - from.y};
+    b2QueryFilter filter;
+    filter.categoryBits = CATEGORY_PROJECTILE;          // sightline probe
+    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR;  // walls + closed doors only
+    b2RayResult r = b2World_CastRayClosest(game->physics.world_id, origin, translation, filter);
+    return !r.hit;
+}
+
+// Set each unit's render `visible` flag from the player's line of sight.
+static void game_update_unit_visibility(Game* game) {
+    if (!game->playerUnit || !b2Body_IsValid(game->playerUnit->bodyId)) return;
+    b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
+    Vector2 playerPos = {pp.x, pp.y};
+
+    for (const auto& inst : game->unitManager.getInstances()) {
+        if (!inst) continue;
+        if (inst.get() == game->playerUnit) { inst->visible = true; continue; }  // always see self
+        if (!b2Body_IsValid(inst->bodyId)) { inst->visible = false; continue; }
+        b2Vec2 up = b2Body_GetPosition(inst->bodyId);
+        inst->visible = game_has_line_of_sight(game, playerPos, {up.x, up.y});
+    }
+}
+
+//------------------------------------------------------------------------------
 // Game Update
 //------------------------------------------------------------------------------
 
@@ -969,6 +1001,9 @@ void game_update(Game* game, float dt) {
     game->doorManager.update(dt);
     game->doorRenderer.update(game->doorManager.views());
 
+    // Line-of-sight: only units the player can see are rendered (render flag only).
+    game_update_unit_visibility(game);
+
     // Update projectiles (lifetime, contact events, cleanup)
     game->projectileManager.update(dt);
     game->projectileManager.syncFromPhysics();
@@ -1017,10 +1052,15 @@ static void game_draw_ai_debug_3d(Game* game) {
     for (const auto& wp : data.waypointPositions) {
         DrawSphere({wp.x, 0.15f, wp.z}, 0.12f, SKYBLUE);
     }
-    // Per-unit intended heading (line to target waypoint)
+    // Per-unit: collision-radius ring (GREEN = visible, MAGENTA = hidden by LOS, so
+    // hidden units can still be picked out) + intended-heading line.
     for (const auto& ai : game->aiManager.components()) {
         if (!ai.unit || !ai.unit->rootSection) continue;
         Vector2 p = ai.unit->rootSection->worldPosition;
+        float radius = ai.unit->definition ? ai.unit->definition->collisionRadius : 0.2f;
+        Color ring = ai.unit->visible ? GREEN : MAGENTA;
+        // Circle default lies in XY; rotate 90° about X to lie flat on the XZ ground.
+        DrawCircle3D((Vector3){p.x, 0.12f, p.y}, radius, (Vector3){1, 0, 0}, 90.0f, ring);
         if (ai.targetWaypoint >= 0 && ai.targetWaypoint < wpCount) {
             const Vector3& to = data.waypointPositions[ai.targetWaypoint];
             DrawLine3D({p.x, 0.3f, p.y}, {to.x, 0.3f, to.z}, YELLOW);

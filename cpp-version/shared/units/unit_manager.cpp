@@ -597,7 +597,7 @@ void UnitManager::applyShaderToModels(Shader shader) {
 
 void UnitManager::renderAll(const std::vector<float>* heightOffsets) {
     for (auto& instance : m_instances) {
-        if (!instance || !instance->active) continue;
+        if (!instance || !instance->active || !instance->visible) continue;
         if (instance->rootSection) {
             renderSection(instance->rootSection.get(), heightOffsets, instance->allSections);
         }

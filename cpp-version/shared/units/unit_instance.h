@@ -96,6 +96,10 @@ struct UnitInstance {
 
     // State
     bool active = true;
+
+    // Rendering-only: set false when the player has no line of sight to this unit.
+    // Does not affect simulation (AI/physics/combat continue) — only viewport draw.
+    bool visible = true;
 };
 
 //------------------------------------------------------------------------------
