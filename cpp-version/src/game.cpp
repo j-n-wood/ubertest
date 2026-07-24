@@ -1018,6 +1018,13 @@ void game_update(Game* game, float dt) {
         game->showAIDebug = !game->showAIDebug;
     }
 
+    // Pause (P) and debug slow-motion (O). These toggles run even while paused so
+    // the game can be resumed; they are disabled in the rotation test harness.
+    if (!game->testConfig.enabled) {
+        if (IsKeyPressed(KEY_P)) game->paused = !game->paused;
+        if (IsKeyPressed(KEY_O)) game->slowMotion = !game->slowMotion;
+    }
+
     // Debug: cycle the player-controlled unit type (F1 = next, F2 = previous)
     if (!game->testConfig.enabled) {
         if (IsKeyPressed(KEY_F1)) game_cycle_player_unit(game, +1);
@@ -1038,40 +1045,45 @@ void game_update(Game* game, float dt) {
         }
     }
 
-    // Update AI (applies forces before physics step)
-    if (game->playerUnit && game->playerUnit->rootSection) {
-        b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
-        Vector2 playerPos2D = {pp.x, pp.y};
-        game->aiManager.update(dt, playerPos2D,
-                               game->physics.world_id,
-                               &game->projectileManager);
+    // --- Simulation: frozen while paused; time-scaled while in slow-motion. ---
+    if (!game->paused) {
+        float simDt = game->slowMotion ? dt * 0.1f : dt;
+
+        // Update AI (applies forces before physics step)
+        if (game->playerUnit && game->playerUnit->rootSection) {
+            b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
+            Vector2 playerPos2D = {pp.x, pp.y};
+            game->aiManager.update(simDt, playerPos2D,
+                                   game->physics.world_id,
+                                   &game->projectileManager);
+        }
+
+        // Step physics
+        physics_world_step(&game->physics, simDt);
+
+        // Collision response: non-hostile units pause/retreat after bumping obstacles.
+        game->aiManager.processCollisions(game->physics.world_id);
+
+        // Doors: advance open/close state + collision toggle, then refresh the visual.
+        game->doorManager.update(simDt);
+        game->doorRenderer.update(game->doorManager.views());
+
+        // Chargers: update IDLE/CHARGING proximity state + free-running tile animation.
+        game->chargerManager.update(simDt);
+        game->chargerRenderer.update(simDt, game->chargerManager.views());
+
+        // Line-of-sight: only units the player can see are rendered (render flag only).
+        game_update_unit_visibility(game);
+
+        // Update projectiles (lifetime, contact events, cleanup)
+        game->projectileManager.update(simDt);
+        game->projectileManager.syncFromPhysics();
+        game->projectileManager.processContactEvents(game->physics.world_id);
+        game->projectileManager.cleanup();
+
+        // Update unit manager (syncs physics transforms)
+        game->unitManager.update(simDt);
     }
-
-    // Step physics
-    physics_world_step(&game->physics, dt);
-
-    // Collision response: non-hostile units pause/retreat after bumping obstacles.
-    game->aiManager.processCollisions(game->physics.world_id);
-
-    // Doors: advance open/close state + collision toggle, then refresh the visual.
-    game->doorManager.update(dt);
-    game->doorRenderer.update(game->doorManager.views());
-
-    // Chargers: update IDLE/CHARGING proximity state + free-running tile animation.
-    game->chargerManager.update(dt);
-    game->chargerRenderer.update(dt, game->chargerManager.views());
-
-    // Line-of-sight: only units the player can see are rendered (render flag only).
-    game_update_unit_visibility(game);
-
-    // Update projectiles (lifetime, contact events, cleanup)
-    game->projectileManager.update(dt);
-    game->projectileManager.syncFromPhysics();
-    game->projectileManager.processContactEvents(game->physics.world_id);
-    game->projectileManager.cleanup();
-
-    // Update unit manager (syncs physics transforms)
-    game->unitManager.update(dt);
 
     // Camera follows player
     if (game->playerUnit && game->playerUnit->rootSection) {
@@ -1299,8 +1311,19 @@ void game_render(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints/doors | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints/doors | P: Pause | O: Slow | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
+
+    // Pause / slow-motion state indicator (centred, top).
+    if (game->paused) {
+        const char* txt = "PAUSED";
+        int w = MeasureText(txt, 30);
+        DrawText(txt, GetScreenWidth() / 2 - w / 2, 40, 30, YELLOW);
+    } else if (game->slowMotion) {
+        const char* txt = "SLOW-MO";
+        int w = MeasureText(txt, 20);
+        DrawText(txt, GetScreenWidth() / 2 - w / 2, 40, 20, SKYBLUE);
+    }
 
     EndDrawing();
 }

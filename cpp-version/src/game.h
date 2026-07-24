@@ -84,6 +84,8 @@ struct Game {
     bool running;
     int debugMode;
     bool showAIDebug = false;  // V key: draw waypoints + per-unit AI state
+    bool paused = false;       // P key: freeze all game-state updates (still renders)
+    bool slowMotion = false;   // O key: debug 1/10-speed simulation
 
     // Paths
     std::string assetPath;
