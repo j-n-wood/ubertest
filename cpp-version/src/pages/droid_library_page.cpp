@@ -22,6 +22,37 @@ int classNumOf(const std::string& id) {
     if (id.rfind(prefix, 0) == 0) return std::atoi(id.c_str() + std::strlen(prefix));
     return 0;
 }
+
+// Draw `text` word-wrapped to maxWidth pixels, breaking on spaces and honoring any
+// explicit '\n' in the string (raylib's DrawText advances a line per newline). Returns
+// the y just below the last line drawn.
+int drawWrappedText(const std::string& text, int x, int y, int fontSize, int maxWidth, Color color) {
+    const int lineStep = fontSize + 6;
+    std::string line;
+    auto flush = [&]() {
+        if (!line.empty()) DrawText(line.c_str(), x, y, fontSize, color);
+        y += lineStep;
+        line.clear();
+    };
+    size_t i = 0;
+    while (i < text.size()) {
+        if (text[i] == '\n') { flush(); ++i; continue; }
+        size_t j = i;
+        while (j < text.size() && text[j] != ' ' && text[j] != '\n') ++j;
+        std::string word = text.substr(i, j - i);
+        std::string candidate = line.empty() ? word : line + " " + word;
+        if (!line.empty() && MeasureText(candidate.c_str(), fontSize) > maxWidth) {
+            flush();               // current word won't fit — wrap first
+            line = word;
+        } else {
+            line = candidate;
+        }
+        i = j;
+        if (i < text.size() && text[i] == ' ') ++i;  // consume one separator space
+    }
+    flush();
+    return y;
+}
 }  // namespace
 
 DroidLibraryPage::~DroidLibraryPage() {
@@ -51,7 +82,11 @@ void DroidLibraryPage::activate() {
     camera_.fovy = 45.0f;
     camera_.projection = CAMERA_PERSPECTIVE;
 
+    // Open on the type the player currently controls (falls back to the first entry).
     index_ = 0;
+    for (int i = 0; i < (int)ids_.size(); ++i) {
+        if (ids_[i] == game_->playerUnitId) { index_ = i; break; }
+    }
     spin_ = 0.0f;
     rebuildDisplay();
 }
@@ -79,6 +114,9 @@ void DroidLibraryPage::rebuildDisplay() {
 
 void DroidLibraryPage::handleInput() {
     if (IsKeyPressed(KEY_ESCAPE)) { pages_->pop(); return; }
+    // Toggle the debug editor with the same key as the gameplay AI-debug overlay (V);
+    // gameplay input doesn't run while this page is on top, so mirror the toggle here.
+    if (IsKeyPressed(KEY_V)) game_->showAIDebug = !game_->showAIDebug;
     if (ids_.empty()) return;
     int n = (int)ids_.size();
     if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_RIGHT)) {
@@ -139,13 +177,14 @@ void DroidLibraryPage::render() {
             line(TextFormat("Armour: %.0f   Energy: %d", def->properties.armour, def->properties.energy));
             line(TextFormat("Speed %.0f  Accel %.0f  Decel %.0f",
                             def->maxSpeed, def->acceleration, def->deceleration));
+            line(TextFormat("Turn rate: %.1f rad/s%s", def->turnSpeed,
+                            def->turnSpeed > 0.0f ? "" : " (default)"));
             line(TextFormat("Turret: %s   Omni: %s",
                             def->properties.hasTurret ? "yes" : "no",
                             def->properties.omnidirectional ? "yes" : "no"));
             y += 10;
-            // Description (word-wrapped by drawing lines at a fixed width is overkill;
-            // print as-is, callers keep descriptions short).
-            DrawText(def->properties.description.c_str(), x, y, 16, LIGHTGRAY);
+            // Description: word-wrapped to the panel width, honoring any explicit '\n'.
+            drawWrappedText(def->properties.description, x, y, 16, 410, LIGHTGRAY);
         }
     }
 
@@ -157,6 +196,17 @@ void DroidLibraryPage::render() {
     if (game_->showAIDebug && !ids_.empty()) {
         UnitDefinition* mdef = game_->unitManager.getDefinitionMutable(ids_[index_]);
         if (mdef) {
+            // Live-apply to any spawned unit of this type. Because those instances share
+            // this exact definition object, accel/decel are already read live by the
+            // motor each frame; only maxSpeed (baked into linear damping at spawn) needs
+            // an explicit retune, done here so edits are in effect the moment we ESC back
+            // to the game. The controlled player droid is the primary target.
+            auto retune = [&](UnitInstance* u) {
+                if (u && u->definition == mdef) unit_apply_movement_tuning(u);
+            };
+            retune(game_->playerUnit);
+            for (UnitInstance* e : game_->enemyUnits) retune(e);
+
             int ex = 30, ey = 300, ew = 300;
             DrawText("DEBUG EDIT", ex, ey - 28, 18, YELLOW);
             auto slider = [&](const char* label, float* v, float lo, float hi) {
@@ -167,6 +217,7 @@ void DroidLibraryPage::render() {
             slider("maxSpeed", &mdef->maxSpeed, 0.0f, 500.0f);
             slider("accel", &mdef->acceleration, 0.0f, 1500.0f);
             slider("decel", &mdef->deceleration, 0.0f, 1500.0f);
+            slider("turn (rad/s)", &mdef->turnSpeed, 0.0f, 15.0f);
             slider("armour", &mdef->properties.armour, 0.0f, 1000.0f);
 
             if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 160, 32}, "Save to JSON")) {
@@ -182,8 +233,8 @@ void DroidLibraryPage::render() {
         }
     }
 
-    DrawText(game_->showAIDebug ? "UP/DOWN: browse   ESC: back   (debug edit on)"
-                                : "UP/DOWN: browse   ESC: back",
+    DrawText(game_->showAIDebug ? "UP/DOWN: browse   V: debug edit (on)   ESC: back"
+                                : "UP/DOWN: browse   V: debug edit   ESC: back",
              30, sh - 30, 16, GRAY);
     EndDrawing();
 }

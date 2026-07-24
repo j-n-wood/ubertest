@@ -145,6 +145,7 @@ struct UnitDefinition {
     float maxSpeed = 0.0f;                     // Top speed
     float acceleration = 0.0f;                 // Force authority while speeding up
     float deceleration = 0.0f;                 // Force authority while braking
+    float turnSpeed = 0.0f;                    // Max facing turn rate (rad/s); 0 = global default
 
     SectionDefinition rootSection;
     DroidProperties properties;               // Droid gameplay properties

@@ -57,7 +57,10 @@ void unit_attach_motor_joint(UnitInstance* unit, b2WorldId world, b2BodyId origi
                  * MOVEMENT_UNIT_SCALE * UNIT_MOTOR_AUTHORITY;
     }
     def.maxForce = maxForce;
-    def.maxTorque = UNIT_MOTOR_MAX_TORQUE;
+    // Per-type facing turn rate: bound the torque so the unit turns at up to turnSpeed
+    // rad/s instead of snapping (see unit_motor_max_torque / DEFAULT_TURN_SPEED).
+    def.maxTorque = unit_motor_max_torque(b2Body_GetInertiaTensor(unit->bodyId),
+                                          d ? d->turnSpeed : 0.0f);
     def.correctionFactor = UNIT_MOTOR_CORRECTION_FACTOR;
     def.collideConnected = false;
 
@@ -99,5 +102,27 @@ void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFac
         float mass = b2Body_GetMass(unit->bodyId);
         b2MotorJoint_SetMaxForce(unit->motorJoint,
                                  mass * rate * MOVEMENT_UNIT_SCALE * UNIT_MOTOR_AUTHORITY);
+    }
+}
+
+void unit_apply_movement_tuning(UnitInstance* unit) {
+    if (!unit || !b2Body_IsValid(unit->bodyId)) {
+        return;
+    }
+    // Mirror the terminal-speed formula in UnitManager::createInstance: terminal speed =
+    // maxSpeed*MOVEMENT_UNIT_SCALE when damping = acceleration*UNIT_MOTOR_AUTHORITY/maxSpeed.
+    // Keep the two in sync.
+    const UnitDefinition* def = unit->definition;
+    float linearDamping = UNIT_LINEAR_DAMPING;
+    if (def && def->maxSpeed > 0.0f && def->acceleration > 0.0f) {
+        linearDamping = def->acceleration * UNIT_MOTOR_AUTHORITY / def->maxSpeed;
+    }
+    b2Body_SetLinearDamping(unit->bodyId, linearDamping);
+
+    // Turn rate: re-derive the motor's max torque from the (possibly edited) turnSpeed.
+    if (b2Joint_IsValid(unit->motorJoint)) {
+        b2MotorJoint_SetMaxTorque(unit->motorJoint,
+            unit_motor_max_torque(b2Body_GetInertiaTensor(unit->bodyId),
+                                  def ? def->turnSpeed : 0.0f));
     }
 }

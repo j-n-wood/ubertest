@@ -36,10 +36,13 @@ target_include_directories(topdown_game PRIVATE ${CMAKE_SOURCE_DIR}/src ${SHARED
 target_link_libraries(topdown_game PRIVATE raylib box2d nlohmann_json::nlohmann_json tinyxml2)
 add_platform_libraries(topdown_game)
 
-# Copy assets post-build
-add_custom_command(TARGET topdown_game POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CPP_VERSION_ASSETS_DIR} $<TARGET_FILE_DIR:topdown_game>/assets)
+# Default the game to the source assets directory (absolute), so it loads AND saves the
+# real game-data files regardless of launch cwd. This makes runtime edits (e.g. the
+# console droid-library editor's "Save to JSON") persist to source and survive rebuilds.
+# Overridable at runtime with --asset-path. (Previously assets were copied next to the
+# binary and the game read that throwaway copy — edits went nowhere and were clobbered by
+# the copy on the next build.)
+target_compile_definitions(topdown_game PRIVATE GAME_SOURCE_ASSETS_DIR="${CPP_VERSION_ASSETS_DIR}")
 
 #------------------------------------------------------------------------------
 # Tools

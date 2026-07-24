@@ -51,14 +51,38 @@ range, pushes `ConsoleMenuPage`.
 
 ## Debug editing (Droid Library)
 
-When the game's debug flag (`showAIDebug`, toggled by **V**) is on, the Droid Library
-renders the tunable numeric fields — `maxSpeed`, `acceleration`, `deceleration`,
-`armour` — as raygui sliders bound to the in-memory `UnitDefinition`
+When the game's debug flag (`showAIDebug`) is on, the Droid Library renders the tunable
+numeric fields — `maxSpeed`, `acceleration`, `deceleration`, `turnSpeed` (facing turn
+rate, rad/s), `armour` — as raygui sliders bound to the in-memory `UnitDefinition`
 (`UnitManager::getDefinitionMutable(id)`). Edits take effect for future instances; a
 **Save to JSON** button calls `saveUnitDefinitionToFile(assetPath/units/<id>.json, def)`
-so tuning persists without a restart. The display droid is intentionally **not** rebuilt
+so tuning persists without a restart. `topdown_game` defaults `assetPath` to the absolute
+**source** assets directory (baked at build time via `GAME_SOURCE_ASSETS_DIR`), so saves
+land in the real game-data files and survive rebuilds — not a throwaway copy beside the
+binary. Override with `--asset-path` if needed. The display droid is intentionally **not** rebuilt
 per edit (these fields don't change its appearance and rebuilding reloads models every
 dragged frame).
+
+In gameplay, with debug mode on, **F3** jumps straight to the Droid Library (pushed
+directly onto gameplay, skipping the console menu) with its editor already up, so
+accel/decel can be tuned and ESC drops right back to the game to test. Edits **live-apply
+to already-spawned units of that type** (including the controlled player droid): those
+instances share the edited definition object, so `acceleration`/`deceleration` are read
+live by the motor each frame, and the library retunes `maxSpeed` (linear damping) and
+`turnSpeed` (motor max-torque) on any matching live instance via
+`unit_apply_movement_tuning`. No respawn or unit-type cycle is needed.
+
+`turnSpeed` bounds the facing turn rate (rad/s). The motor's angular authority
+(`maxTorque`) is derived per unit as `rotationalInertia · turnSpeed · UNIT_ANGULAR_DAMPING`,
+so terminal turn rate = `turnSpeed`; a value of 0 falls back to `DEFAULT_TURN_SPEED`.
+Previously `maxTorque` was a fixed constant against each unit's tiny rotational inertia
+(thousands of rad/s²), so facing snapped instantly to the mouse/AI angle.
+
+**V** toggles `showAIDebug` both in gameplay (the AI overlay) and from within the Droid
+Library — gameplay input doesn't run while a console page is on top, so the library
+mirrors the toggle on the same key so the editor can be turned on without leaving the
+console. The description text is word-wrapped to the panel width by `drawWrappedText`,
+which also honors any explicit `\n` in the JSON description.
 
 raygui is used for all interactive UI. It ships with raylib
 (`examples/shapes/raygui.h`); `RAYGUI_INCLUDE_DIR` exposes that directory and

@@ -123,4 +123,11 @@ void unit_attach_motor_joint(UnitInstance* unit, b2WorldId world, b2BodyId origi
 // the unit has no (valid) motor joint.
 void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFacing);
 
+// Re-apply the unit's per-type movement tuning (the linear-damping terminal-speed cap)
+// from its current definition to the live body. acceleration/deceleration are already
+// read live by unit_set_move_target every frame, but maxSpeed is baked into linear
+// damping at creation — call this after editing a definition's maxSpeed to retune an
+// existing instance without re-creating it. No-op if the body is invalid.
+void unit_apply_movement_tuning(UnitInstance* unit);
+
 #endif // UNIT_INSTANCE_H

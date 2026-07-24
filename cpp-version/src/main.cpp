@@ -54,7 +54,11 @@ void printUsage(const char* programName) {
 
 int main(int argc, char* argv[]) {
     // Parse arguments
-    const char* assetPath = "assets";  // Default
+#ifdef GAME_SOURCE_ASSETS_DIR
+    const char* assetPath = GAME_SOURCE_ASSETS_DIR;  // absolute source dir (edits persist)
+#else
+    const char* assetPath = "assets";  // Default (relative to cwd)
+#endif
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
 

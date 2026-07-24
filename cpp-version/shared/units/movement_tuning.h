@@ -34,6 +34,23 @@ inline constexpr float UNIT_MOTOR_CORRECTION_FACTOR = 0.2f;   // [0,1]
 inline constexpr float UNIT_LINEAR_DAMPING  = 4.0f;
 inline constexpr float UNIT_ANGULAR_DAMPING = 8.0f;
 
+// Per-type facing turn rate. The motor's angularOffset is the desired facing; left
+// unbounded (the old fixed UNIT_MOTOR_MAX_TORQUE against a unit's tiny rotational
+// inertia gives thousands of rad/s², so facing snapped instantly to the mouse/AI
+// angle). Instead the motor torque is derived per unit from a terminal turn rate:
+// with angular damping d, terminal angular velocity = maxTorque / (I * d), so choosing
+// maxTorque = I * turnSpeed * d makes the unit turn at up to `turnSpeed` rad/s and
+// bounds per-tick rotation. UnitDefinition::turnSpeed overrides this default when > 0.
+inline constexpr float DEFAULT_TURN_SPEED = 6.0f;  // rad/s (~1 revolution/second)
+
+// Motor max-torque for a unit with the given rotational inertia and per-type turn rate
+// (turnSpeed <= 0 falls back to DEFAULT_TURN_SPEED). Keep in sync with the terminal-rate
+// reasoning above. Used at motor creation and by unit_apply_movement_tuning for retune.
+inline float unit_motor_max_torque(float rotationalInertia, float turnSpeed) {
+    float rate = (turnSpeed > 0.0f) ? turnSpeed : DEFAULT_TURN_SPEED;
+    return rotationalInertia * rate * UNIT_ANGULAR_DAMPING;
+}
+
 // Converts the original droidclasses.txt speed/acceleration/deceleration numbers
 // into world units (u/s and u/s²). Chosen to match the ÷20 convention used for
 // projectile speeds; e.g. class 0 speed 200 -> 10 u/s. Tune globally.
