@@ -88,6 +88,17 @@ TsxLoadResult loadTsxTileset(const std::string& filePath) {
                         props.modelPath = val;
                     }
                 }
+                else if (strcmp(propName, "type") == 0) {
+                    const char* val = prop->Attribute("value");
+                    if (val) props.type = val;
+                }
+                else if (strcmp(propName, "orientation") == 0) {
+                    const char* val = prop->Attribute("value");
+                    if (val) props.orientation = val;
+                }
+                else if (strcmp(propName, "closed") == 0) {
+                    props.closed = prop->FloatAttribute("value", 1.0f);
+                }
             }
         }
 

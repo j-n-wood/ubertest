@@ -93,14 +93,28 @@ follow this and are the **first non-unit dynamic level entity**.
   row }` is produced by a TMX detector now; a `scene_convert::Door → DoorSpec`
   adapter is the future 3D path. `DoorManager` never sees TMX/tiles.
 
-### Tile / index convention
+### Tile tagging (custom TSX properties)
 
-Map cells store GIDs; `firstGid = 1`; the tileset PNG's 0-based indices are local
-IDs = `gid - firstGid`. **Horizontal** door: local `18`(closed)…`22`(open);
-**vertical**: local `27`(closed)…`31`(open). Detect via `localId = gid - firstGid`,
-`[18,22]`→H, `[27,31]`→V; frame `f∈0..4` ⇒ `localId = base + f` (base 18/27). Tiles
-are 64 px, `worldScale = 1.0` ⇒ 1 tile = 1 world unit; door collision box **1.0×0.5**
-(H) / **0.5×1.0** (V) world units, centred on the tile centre `(col+0.5, row+0.5)`.
+Doors are identified by **custom tile properties in the tileset** (`default.tsx`),
+not hardcoded atlas indices — parsed into `TmxTileProperties` by `tileset_loader`:
+
+- `type` (string) — `"door"` marks a door-frame tile.
+- `orientation` (string) — `"horizontal"` / `"vertical"`.
+- `closed` (float) — frame openness, `1.0` = closed … `0.0` = fully open.
+
+`game_detect_doors` scans cells, looks up `tileset.tileProperties[gid - firstGid]`,
+and for `isDoor()` tiles builds a `DoorSpec` (orientation + `initialClosed = closed`).
+
+**Tileset row = colour variant; animation moves along X only.** The atlas repeats
+the same tiles across several **rows**, each a different colour. A map places a door
+from whatever row matches its colour scheme. Animation therefore must stay on the
+**authored tile's row** and change only the **column (X)** — never hop to a door
+frame in another row (a different colour). So the `DoorRenderer` records each door's
+authored row (`(gid - firstGid) / tileset.columns`) and, per frame, picks the door
+tile with the nearest `closed` value **within that same row** (`localId / columns ==
+authoredRow`). This keeps the example maps on row 0 while letting a map move its door
+tiles to any other row. Tiles are 64 px, `worldScale = 1.0` ⇒ 1 tile = 1 world unit;
+door collision box **1.0×0.5** (H) / **0.5×1.0** (V), centred on `(col+0.5, row+0.5)`.
 
 ### State machine
 

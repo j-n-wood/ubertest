@@ -363,18 +363,20 @@ static std::vector<DoorSpec> game_detect_doors(const Game* game) {
             if (gid <= 0) continue;
             int localId = gid - firstGid;
 
+            // Door-ness, orientation, and initial openness come from custom TSX tile
+            // properties (type="door", orientation, closed), not hardcoded indices.
+            auto it = game->tileset.tileProperties.find(localId);
+            if (it == game->tileset.tileProperties.end() || !it->second.isDoor()) continue;
+            const TmxTileProperties& tp = it->second;
+
             DoorSpec s;
             s.col = col;
             s.row = row;
-            if (localId >= 18 && localId <= 22) {
-                s.orientation = DoorOrientation::Horizontal;
-                s.size = {1.0f, 0.5f};
-            } else if (localId >= 27 && localId <= 31) {
-                s.orientation = DoorOrientation::Vertical;
-                s.size = {0.5f, 1.0f};
-            } else {
-                continue;
-            }
+            s.orientation = (tp.orientation == "vertical") ? DoorOrientation::Vertical
+                                                           : DoorOrientation::Horizontal;
+            s.size = (s.orientation == DoorOrientation::Horizontal) ? Vector2{1.0f, 0.5f}
+                                                                    : Vector2{0.5f, 1.0f};
+            s.initialClosed = tp.closed;
             // Tile centre in physics/world coords (centred on origin, matching walls).
             s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
             specs.push_back(s);

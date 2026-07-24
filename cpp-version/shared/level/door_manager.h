@@ -33,6 +33,7 @@ struct DoorSpec {
     Vector2 size = {1.0f, 0.5f};      // collision box size (H: 1.0x0.5, V: 0.5x1.0)
     int col = 0;                       // source grid cell (for the 2D tile renderer)
     int row = 0;
+    float initialClosed = 1.0f;        // authored openness: 1 = closed, 0 = open
 };
 
 // Read-only render-state — the single seam a renderer reads.

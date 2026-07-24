@@ -6,6 +6,7 @@
 #include "level/door_manager.h"        // DoorView, DoorOrientation
 #include "rendering/scene_renderer.h"  // SceneRenderer
 #include <vector>
+#include <utility>
 
 //------------------------------------------------------------------------------
 // Door presentation (interim 2D). A consumer of DoorManager::views() — kept fully
@@ -35,7 +36,10 @@ public:
 
 private:
     void rebuildModel();
-    int frameFor(const DoorView& v) const;  // openFraction -> 0..4
+    void buildFrameTables();
+    // Pick the door-frame GID whose `closed` value best matches this openFraction,
+    // restricted to the authored tileset row (colour) so animation only moves in X.
+    int selectGid(DoorOrientation orientation, float openFraction, int authoredRow) const;
 
     TmxLevel doorLevel_{};        // all cells 0 except door cells = current-frame GID
     TmxTileset tileset_{};
@@ -44,10 +48,14 @@ private:
     Texture2D bump_{};
     SceneRenderer* renderer_ = nullptr;
 
-    LevelRenderData data_{};      // holds the door mesh + model
-    std::vector<int> frameCache_; // per-view current frame
-    std::vector<int> cellIndex_;  // per-view tile index (row*width+col)
-    std::vector<DoorOrientation> orient_;
+    // (closed-value, local tile id) frame tables per orientation, from TSX properties.
+    std::vector<std::pair<float, int>> hFrames_;
+    std::vector<std::pair<float, int>> vFrames_;
+
+    LevelRenderData data_{};       // holds the door mesh + model
+    std::vector<int> gidCache_;    // per-view currently-shown GID
+    std::vector<int> cellIndex_;   // per-view tile index (row*width+col)
+    std::vector<int> authoredRow_; // per-view tileset row of the authored door tile
 };
 
 #endif // DOOR_RENDERER_H

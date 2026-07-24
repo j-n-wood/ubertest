@@ -54,7 +54,13 @@ struct TmxTileProperties {
     // 3D object replacement (future)
     std::string modelPath;    // Empty = render as tile
 
+    // Semantic tile tagging (custom TSX properties)
+    std::string type;         // e.g. "door" (empty = plain tile)
+    std::string orientation;  // e.g. "horizontal" / "vertical" (for doors)
+    float closed = 1.0f;      // door frame openness: 1 = closed .. 0 = fully open
+
     bool hasCollision() const { return !collisionRects.empty(); }
+    bool isDoor() const { return type == "door"; }
 };
 
 //------------------------------------------------------------------------------

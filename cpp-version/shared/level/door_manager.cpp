@@ -72,6 +72,10 @@ void DoorManager::init(b2WorldId world, const std::vector<DoorSpec>& specs) {
         doors_.push_back(Door{});
         Door& d = doors_.back();
         d.spec = specs[i];
+        // Initial state from the authored tile (maps normally author doors closed).
+        d.sim.openFraction = std::clamp(1.0f - d.spec.initialClosed, 0.0f, 1.0f);
+        d.sim.state = (d.sim.openFraction >= 0.5f) ? DoorState::Open : DoorState::Closed;
+        d.solid = (d.sim.state != DoorState::Open);
         d.userData.tag = BodyTag::Door;
         d.userData.owner = reinterpret_cast<void*>(static_cast<uintptr_t>(i));
 
@@ -81,13 +85,12 @@ void DoorManager::init(b2WorldId world, const std::vector<DoorSpec>& specs) {
         bodyDef.userData = &d.userData;
         d.body = b2CreateBody(world_, &bodyDef);
 
-        // Solid collision shape (closed to start): blocks units + projectiles.
+        // Collision shape: blocks units + projectiles while solid (not fully open).
         b2Polygon box = b2MakeBox(d.spec.size.x * 0.5f, d.spec.size.y * 0.5f);
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.filter.categoryBits = CATEGORY_DOOR;
-        shapeDef.filter.maskBits = MASK_DOOR_SOLID;
+        shapeDef.filter.maskBits = d.solid ? MASK_DOOR_SOLID : 0;
         d.collisionShape = b2CreatePolygonShape(d.body, &shapeDef, &box);
-        d.solid = true;
     }
 
     rebuildViews();  // views() valid immediately (all doors start Closed)
