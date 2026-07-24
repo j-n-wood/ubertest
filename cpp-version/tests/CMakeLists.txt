@@ -24,6 +24,9 @@ add_executable(run_tests
     ai_test.cpp
     door_test.cpp
     charger_test.cpp
+    console_test.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/pages/page_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
@@ -46,6 +49,7 @@ target_link_libraries(run_tests PRIVATE
 target_include_directories(run_tests PRIVATE
     ${SHARED_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/shared
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 # Provide the project root (parent of cpp-version) so tests can find

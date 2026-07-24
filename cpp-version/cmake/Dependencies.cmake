@@ -14,6 +14,10 @@ if(VENDOR_DEPENDENCIES)
     set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(raylib)
 
+    # raygui is a single header bundled with raylib's examples; expose its dir so
+    # the game can build immediate-mode UI without a separate dependency.
+    set(RAYGUI_INCLUDE_DIR "${raylib_SOURCE_DIR}/examples/shapes" CACHE INTERNAL "raygui.h location")
+
     # Box2D - only when enabled (main game needs it, tools may not)
     if(ENABLE_BOX2D)
         FetchContent_Declare(box2d

@@ -11,6 +11,7 @@
 #include "level/tileset_loader.h"
 #include "level/level_renderer.h"
 #include "level/tile_properties_loader.h"
+#include "level/console_manager.h"
 #include "rendering/scene_renderer.h"
 #include "rendering/door_renderer.h"
 #include "rendering/charger_renderer.h"
@@ -75,6 +76,9 @@ struct Game {
     ChargerManager chargerManager;
     ChargerRenderer chargerRenderer;
 
+    // Consoles: static usable tiles (player-near-centre -> SPACE opens console page)
+    ConsoleManager consoleManager;
+
     // Camera
     Camera3D camera;
     float cameraHeight;        // Height above ground (Y position)
@@ -102,8 +106,10 @@ struct Game {
 
 // Initialize game with asset path, optional unit ID, and optional test config
 void game_init(Game* game, const char* assetPath = "assets", const char* unitId = nullptr, const RotationTestConfig* testConfig = nullptr);
-void game_update(Game* game, float dt);
-void game_render(Game* game);
+// The gameplay view-state's per-frame update/render (driven by GamePage via the
+// PageManager). Named *_gameplay because the console/title screens are other pages.
+void game_update_gameplay(Game* game, float dt);
+void game_render_gameplay(Game* game);
 void game_destroy(Game* game);
 
 #endif

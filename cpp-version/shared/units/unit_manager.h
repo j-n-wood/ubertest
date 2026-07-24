@@ -37,6 +37,10 @@ public:
     // Get a previously loaded definition by id
     [[nodiscard]] const UnitDefinition* getDefinition(std::string_view id) const;
 
+    // Mutable access to a loaded definition (for debug/runtime editing, e.g. the
+    // console droid-library editor). Returns nullptr if not loaded.
+    [[nodiscard]] UnitDefinition* getDefinitionMutable(std::string_view id);
+
     // Unload a definition from cache (allows reloading from file)
     void unloadDefinition(std::string_view id);
 

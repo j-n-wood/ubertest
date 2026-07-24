@@ -41,13 +41,13 @@ If you try to run `cmake -B build` from within the `tools/unit_test` directory, 
 
 ```bash
 # Test a simple single-section unit
-./unit_test assets/units/test_simple.json
+./unit_test tools/unit_test/test_units/test_simple.json
 
 # Test a multi-section unit with hierarchy
-./unit_test assets/units/test_multi.json
+./unit_test tools/unit_test/test_units/test_multi.json
 
 # Test breakable joints
-./unit_test assets/units/test_breakable.json
+./unit_test tools/unit_test/test_units/test_breakable.json
 ```
 
 ## Controls
@@ -106,7 +106,8 @@ tools/unit_test/
 
 ## Sample Unit Definitions
 
-Located in `assets/units/`:
+Located in `tools/unit_test/test_units/` (kept out of `assets/units/` so the game does
+not load these Suzanne/Duck test fixtures as real droid types):
 
 | File | Description |
 |------|-------------|

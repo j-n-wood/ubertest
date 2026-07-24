@@ -1,9 +1,12 @@
 #include "raylib.h"
 #include "game.h"
+#include "pages/page_manager.h"
+#include "pages/game_page.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 
 namespace fs = std::filesystem;
 
@@ -100,15 +103,23 @@ int main(int argc, char* argv[]) {
     }
 
     InitWindow(1280, 720, testConfig.enabled ? "Rotation Test" : "Top-Down Game");
+    // Disable raylib's built-in ESC-to-close: ESC is handled per-context instead
+    // (console pages pop back a level; gameplay input treats it as quit).
+    SetExitKey(KEY_NULL);
     SetTargetFPS(60);
 
     Game game = {0};
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
 
+    // View-states are pages on a stack; gameplay is the base GamePage. Other pages
+    // (console, future title) are pushed on top and drive update/render while active.
+    PageManager pages;
+    pages.push(std::make_unique<GamePage>(&game, &pages));
+
     while (!WindowShouldClose() && game.running) {
         float dt = GetFrameTime();
-        game_update(&game, dt);
-        game_render(&game);
+        pages.update(dt);
+        pages.render();
     }
 
     game_destroy(&game);

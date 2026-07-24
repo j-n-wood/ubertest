@@ -32,7 +32,7 @@ endfunction()
 #------------------------------------------------------------------------------
 file(GLOB_RECURSE GAME_SOURCES "src/*.cpp")
 add_executable(topdown_game ${GAME_SOURCES} ${SHARED_SOURCES} ${LEVEL_SHARED_SOURCES})
-target_include_directories(topdown_game PRIVATE ${CMAKE_SOURCE_DIR}/src ${SHARED_INCLUDE_DIR})
+target_include_directories(topdown_game PRIVATE ${CMAKE_SOURCE_DIR}/src ${SHARED_INCLUDE_DIR} ${RAYGUI_INCLUDE_DIR})
 target_link_libraries(topdown_game PRIVATE raylib box2d nlohmann_json::nlohmann_json tinyxml2)
 add_platform_libraries(topdown_game)
 

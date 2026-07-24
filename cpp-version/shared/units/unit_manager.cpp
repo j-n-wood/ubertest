@@ -82,6 +82,11 @@ const UnitDefinition* UnitManager::getDefinition(std::string_view id) const {
     return nullptr;
 }
 
+UnitDefinition* UnitManager::getDefinitionMutable(std::string_view id) {
+    auto it = m_definitions.find(std::string(id));
+    return (it != m_definitions.end()) ? it->second.get() : nullptr;
+}
+
 void UnitManager::unloadDefinition(std::string_view id) {
     m_definitions.erase(std::string(id));
 }

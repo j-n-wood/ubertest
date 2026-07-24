@@ -25,6 +25,8 @@ static void game_create_doors(Game* game);
 static std::vector<DoorSpec> game_detect_doors(const Game* game);
 static void game_create_chargers(Game* game);
 static std::vector<ChargerSpec> game_detect_chargers(const Game* game);
+static void game_create_consoles(Game* game);
+static std::vector<ConsoleSpec> game_detect_consoles(const Game* game);
 static void game_spawn_player(Game* game);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
@@ -105,9 +107,10 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     // Create collision bodies from tile data
     game_create_level_collision(game);
 
-    // Create door + charger entities from tile data
+    // Create door + charger + console entities from tile data
     game_create_doors(game);
     game_create_chargers(game);
+    game_create_consoles(game);
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f;  // May change based on unit type
@@ -453,6 +456,44 @@ static void game_create_chargers(Game* game) {
 }
 
 //------------------------------------------------------------------------------
+// Consoles
+//------------------------------------------------------------------------------
+
+// Scan the current level's tiles for console cells (custom property type="console").
+static std::vector<ConsoleSpec> game_detect_consoles(const Game* game) {
+    std::vector<ConsoleSpec> specs;
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
+        return specs;
+    }
+    const TmxLevel& lvl = game->levels[game->currentLevel];
+    const int firstGid = game->tileset.firstGid;
+    const float halfW = lvl.width * 0.5f;   // worldScale = 1.0
+    const float halfH = lvl.height * 0.5f;
+
+    for (int row = 0; row < lvl.height; row++) {
+        for (int col = 0; col < lvl.width; col++) {
+            int gid = lvl.tiles[row * lvl.width + col];
+            if (gid <= 0) continue;
+            auto it = game->tileset.tileProperties.find(gid - firstGid);
+            if (it == game->tileset.tileProperties.end() || it->second.type != "console") continue;
+
+            ConsoleSpec s;
+            s.col = col;
+            s.row = row;
+            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            specs.push_back(s);
+        }
+    }
+    return specs;
+}
+
+static void game_create_consoles(Game* game) {
+    std::vector<ConsoleSpec> specs = game_detect_consoles(game);
+    game->consoleManager.init(specs);
+    TraceLog(LOG_INFO, "Created %zu consoles from level data", specs.size());
+}
+
+//------------------------------------------------------------------------------
 // Player Spawning
 //------------------------------------------------------------------------------
 
@@ -740,9 +781,10 @@ static void game_switch_level(Game* game, int newLevel) {
     // 5. Create collision bodies for new level
     game_create_level_collision(game);
 
-    // 5b. Rebuild doors + chargers for new level (init() replaces the previous set)
+    // 5b. Rebuild doors + chargers + consoles for new level (replaces previous set)
     game_create_doors(game);
     game_create_chargers(game);
+    game_create_consoles(game);
 
     // 6. Spawn enemies for new level
     game_spawn_enemies(game);
@@ -916,7 +958,7 @@ static void game_update_unit_visibility(Game* game) {
 // Game Update
 //------------------------------------------------------------------------------
 
-void game_update(Game* game, float dt) {
+void game_update_gameplay(Game* game, float dt) {
     // Test mode: check frame count and report
     if (game->testConfig.enabled) {
         game->testFrameCount++;
@@ -1085,6 +1127,13 @@ void game_update(Game* game, float dt) {
         game->unitManager.update(simDt);
     }
 
+    // Console proximity (drives the "Press SPACE" prompt + console entry). Runs even
+    // while paused (player is stationary then) — it's a cheap distance check.
+    if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
+        b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
+        game->consoleManager.update((Vector2){pp.x, pp.y});
+    }
+
     // Camera follows player
     if (game->playerUnit && game->playerUnit->rootSection) {
         SectionInstance* root = game->playerUnit->rootSection.get();
@@ -1213,7 +1262,7 @@ static void game_draw_charger_debug_2d(Game* game) {
     }
 }
 
-void game_render(Game* game) {
+void game_render_gameplay(Game* game) {
     BeginDrawing();
     ClearBackground(DARKGRAY);
 
@@ -1325,6 +1374,13 @@ void game_render(Game* game) {
         DrawText(txt, GetScreenWidth() / 2 - w / 2, 40, 20, SKYBLUE);
     }
 
+    // Console-use prompt (player standing on a console tile).
+    if (game->consoleManager.playerInRange()) {
+        const char* txt = "Press SPACE to use console";
+        int w = MeasureText(txt, 20);
+        DrawText(txt, GetScreenWidth() / 2 - w / 2, GetScreenHeight() - 60, 20, YELLOW);
+    }
+
     EndDrawing();
 }
 
@@ -1374,6 +1430,7 @@ void game_destroy(Game* game) {
     game->doorRenderer.destroy();
     game->chargerManager.destroy();
     game->chargerRenderer.destroy();
+    game->consoleManager.destroy();
 
     // Destroy physics world
     physics_world_destroy(&game->physics);
