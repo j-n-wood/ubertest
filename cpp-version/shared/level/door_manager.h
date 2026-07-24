@@ -21,7 +21,7 @@ enum class DoorOrientation { Horizontal, Vertical };
 enum class DoorState { Closed, Opening, Open, Closing };
 
 // Tuning (world units / seconds).
-inline constexpr float DOOR_OPEN_TIME     = 0.4f;  // time to fully open (5 tiles * 0.1s)
+inline constexpr float DOOR_OPEN_TIME     = 0.2f;  // time to fully open
 inline constexpr float DOOR_CLOSE_DELAY   = 2.0f;  // delay after last unit leaves before closing
 inline constexpr float DOOR_SENSOR_MARGIN = 1.5f;  // extra size around the door for the open sensor
 
