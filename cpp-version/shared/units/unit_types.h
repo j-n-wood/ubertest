@@ -146,6 +146,8 @@ struct UnitDefinition {
     float acceleration = 0.0f;                 // Force authority while speeding up
     float deceleration = 0.0f;                 // Force authority while braking
     float turnSpeed = 0.0f;                    // Max facing turn rate (rad/s); 0 = global default
+    float coastDamping = -1.0f;                // Linear damping while coasting (drive released);
+                                               // <0 = disabled (crisp stop), lower = floatier drift
 
     SectionDefinition rootSection;
     DroidProperties properties;               // Droid gameplay properties

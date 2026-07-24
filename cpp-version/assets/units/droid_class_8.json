@@ -1,41 +1,41 @@
 {
-  "name": "Class 8",
+  "acceleration": 115.88771057128906,
+  "collisionRadius": 0.4000000059604645,
+  "deceleration": 600.0,
   "id": "droid_class_8",
-  "collisionRadius": 0.400000,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 90.000000,
-  "acceleration": 280.000000,
-  "deceleration": 600.000000,
+  "maxSpeed": 90.0,
+  "name": "Class 8",
   "properties": {
-    "classId": 8,
-    "typeCode": 420,
-    "energy": 4,
     "armour": 50.0,
-    "weapon": -1,
-    "droidType": 1,
-    "driveType": 4,
     "brainType": 1,
+    "classId": 8,
+    "description": "Slow maintenance robot, for external use. Confined to drive maintenance during hyperdrive.",
+    "driveType": 4,
+    "droidType": 1,
+    "energy": 4,
     "hasTurret": true,
-    "description": "Slow maintenance robot, for external use. Confined to drive maintenance during hyperdrive."
+    "omnidirectional": false,
+    "typeCode": 420,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 30.0,
   "rootSection": {
-    "name": "section_0",
     "model": "models/gonk.gltf",
-    "offset": [-0.000000, 0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
+    "name": "section_0",
     "physics": {
-      "shape": {
-        "type": "box",
-        "width": 0.517906,
-        "height": 0.831088
-      },
+      "angularDamping": 8.0,
       "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
       "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
-    "children": []
-  }
+      "restitution": 0.0,
+      "shape": {
+        "height": 0.8310880064964294,
+        "type": "box",
+        "width": 0.5179060101509094
+      }
+    }
+  },
+  "turnSpeed": 3.2104837894439697
 }

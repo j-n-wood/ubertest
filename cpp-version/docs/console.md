@@ -53,7 +53,8 @@ range, pushes `ConsoleMenuPage`.
 
 When the game's debug flag (`showAIDebug`) is on, the Droid Library renders the tunable
 numeric fields — `maxSpeed`, `acceleration`, `deceleration`, `turnSpeed` (facing turn
-rate, rad/s), `armour` — as raygui sliders bound to the in-memory `UnitDefinition`
+rate, rad/s), `coastDamping` (float, `<0` = off), `armour` — as raygui sliders bound to
+the in-memory `UnitDefinition`
 (`UnitManager::getDefinitionMutable(id)`). Edits take effect for future instances; a
 **Save to JSON** button calls `saveUnitDefinitionToFile(assetPath/units/<id>.json, def)`
 so tuning persists without a restart. `topdown_game` defaults `assetPath` to the absolute
@@ -77,6 +78,16 @@ live by the motor each frame, and the library retunes `maxSpeed` (linear damping
 so terminal turn rate = `turnSpeed`; a value of 0 falls back to `DEFAULT_TURN_SPEED`.
 Previously `maxTorque` was a fixed constant against each unit's tiny rotational inertia
 (thousands of rad/s²), so facing snapped instantly to the mouse/AI angle.
+
+`coastDamping` makes a type feel floaty. When the drive input is released (the move target
+becomes the unit's current position, within `UNIT_HOLD_THRESHOLD`) and `coastDamping >= 0`,
+`unit_set_move_target` drops the motor drive force to zero and sets the body's linear
+damping to `coastDamping`, so the unit coasts to a stop under that damping alone — lower =
+longer drift, `0` = drifts until friction/contact. `coastDamping < 0` (the default)
+disables it: holding uses the normal `deceleration` braking force and base driving damping
+(`unit_base_linear_damping`), i.e. a crisp stop. Because `unit_set_move_target` runs every
+frame, edits are live. Most noticeable on high-`acceleration`/low-`deceleration`,
+player-controlled types.
 
 **V** toggles `showAIDebug` both in gameplay (the AI overlay) and from within the Droid
 Library — gameplay input doesn't run while a console page is on top, so the library

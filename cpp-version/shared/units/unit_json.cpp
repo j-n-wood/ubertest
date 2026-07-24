@@ -333,6 +333,7 @@ bool loadUnitDefinitionFromFile(std::string_view path, UnitDefinition& outDefini
         outDefinition.acceleration = j.value("acceleration", 0.0f);
         outDefinition.deceleration = j.value("deceleration", 0.0f);
         outDefinition.turnSpeed    = j.value("turnSpeed", 0.0f);
+        outDefinition.coastDamping = j.value("coastDamping", -1.0f);
 
         if (j.contains("properties")) {
             outDefinition.properties = parseDroidProperties(j["properties"]);
@@ -369,6 +370,7 @@ bool saveUnitDefinitionToFile(std::string_view path, const UnitDefinition& defin
         j["acceleration"] = definition.acceleration;
         j["deceleration"] = definition.deceleration;
         j["turnSpeed"] = definition.turnSpeed;
+        j["coastDamping"] = definition.coastDamping;
 
         j["properties"] = droidPropertiesToJson(definition.properties);
 
@@ -406,6 +408,7 @@ bool parseUnitDefinitionFromString(std::string_view jsonString, UnitDefinition& 
         outDefinition.acceleration = j.value("acceleration", 0.0f);
         outDefinition.deceleration = j.value("deceleration", 0.0f);
         outDefinition.turnSpeed    = j.value("turnSpeed", 0.0f);
+        outDefinition.coastDamping = j.value("coastDamping", -1.0f);
 
         if (j.contains("properties")) {
             outDefinition.properties = parseDroidProperties(j["properties"]);
@@ -441,6 +444,7 @@ std::string serializeUnitDefinitionToString(const UnitDefinition& definition, bo
         j["acceleration"] = definition.acceleration;
         j["deceleration"] = definition.deceleration;
         j["turnSpeed"] = definition.turnSpeed;
+        j["coastDamping"] = definition.coastDamping;
 
         j["properties"] = droidPropertiesToJson(definition.properties);
 

@@ -1,60 +1,68 @@
 {
-  "name": "Class 9",
+  "acceleration": 271.1817626953125,
+  "collisionRadius": 0.4000000059604645,
+  "deceleration": 189.5012664794922,
   "id": "droid_class_9",
-  "collisionRadius": 0.400000,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 200.000000,
-  "acceleration": 320.000000,
-  "deceleration": 320.000000,
+  "maxSpeed": 139.35958862304688,
+  "name": "Class 9",
   "properties": {
-    "classId": 9,
-    "typeCode": 476,
-    "energy": 4,
     "armour": 40.0,
-    "weapon": 1,
-    "droidType": 1,
-    "driveType": 0,
     "brainType": 1,
+    "classId": 9,
+    "description": "General purpose maintenance robot. Multiple grips allow efficient repairs.",
+    "driveType": 0,
+    "droidType": 1,
+    "energy": 4,
     "hasTurret": true,
-    "description": "General purpose maintenance robot. Multiple grips allow efficient repairs."
+    "omnidirectional": false,
+    "typeCode": 476,
+    "visualRadius": 0.0,
+    "weapon": 1
   },
+  "proximityRadius": 30.0,
   "rootSection": {
-    "name": "section_0",
-    "model": "models/476.gltf",
-    "offset": [-0.000000, 0.000000, 0.304800],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
-    "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.169037
-      },
-      "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
-      "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
     "children": [
       {
-        "name": "section_1",
         "model": "models/hemihead_med.gltf",
-        "offset": [-0.000000, 0.000000, 0.177800],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "name": "section_1",
+        "offset": [
+          -0.0,
+          0.0,
+          0.1777999997138977
+        ],
         "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.230505
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.23050500452518463,
+            "type": "circle"
+          }
+        }
       }
-    ]
-  }
+    ],
+    "model": "models/476.gltf",
+    "name": "section_0",
+    "offset": [
+      -0.0,
+      0.0,
+      0.30480000376701355
+    ],
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.16903699934482574,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 0.0
 }

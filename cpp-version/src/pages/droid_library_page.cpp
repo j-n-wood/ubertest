@@ -179,6 +179,8 @@ void DroidLibraryPage::render() {
                             def->maxSpeed, def->acceleration, def->deceleration));
             line(TextFormat("Turn rate: %.1f rad/s%s", def->turnSpeed,
                             def->turnSpeed > 0.0f ? "" : " (default)"));
+            if (def->coastDamping < 0.0f) line("Coast damp: off");
+            else line(TextFormat("Coast damp: %.1f", def->coastDamping));
             line(TextFormat("Turret: %s   Omni: %s",
                             def->properties.hasTurret ? "yes" : "no",
                             def->properties.omnidirectional ? "yes" : "no"));
@@ -218,6 +220,7 @@ void DroidLibraryPage::render() {
             slider("accel", &mdef->acceleration, 0.0f, 1500.0f);
             slider("decel", &mdef->deceleration, 0.0f, 1500.0f);
             slider("turn (rad/s)", &mdef->turnSpeed, 0.0f, 15.0f);
+            slider("coastDamp", &mdef->coastDamping, -1.0f, 8.0f);  // <0 = off (crisp stop)
             slider("armour", &mdef->properties.armour, 0.0f, 1000.0f);
 
             if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 160, 32}, "Save to JSON")) {

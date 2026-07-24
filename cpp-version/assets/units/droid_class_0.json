@@ -1,40 +1,39 @@
 {
-  "name": "Class 0",
+  "acceleration": 146.4224853515625,
+  "collisionRadius": 0.20000000298023224,
+  "deceleration": 113.37065124511719,
   "id": "droid_class_0",
-  "collisionRadius": 0.200000,
-  "proximityRadius": 16.000000,
-  "maxSpeed": 200.000000,
-  "acceleration": 300.000000,
-  "deceleration": 300.000000,
+  "maxSpeed": 122.92996215820313,
+  "name": "Class 0",
   "properties": {
-    "classId": 0,
-    "typeCode": 101,
-    "energy": 0,
     "armour": 40.0,
-    "weapon": 0,
-    "droidType": 0,
-    "driveType": 0,
     "brainType": 0,
+    "classId": 0,
+    "description": "Robot activity influence device.",
+    "driveType": 0,
+    "droidType": 0,
+    "energy": 0,
     "hasTurret": false,
-    "description": "Robot activity influence device."
+    "omnidirectional": false,
+    "typeCode": 101,
+    "visualRadius": 0.0,
+    "weapon": 0
   },
+  "proximityRadius": 16.0,
   "rootSection": {
-    "name": "section_0",
     "model": "models/101.gltf",
-    "offset": [-0.000000, 0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
+    "name": "section_0",
     "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.247632
-      },
+      "angularDamping": 8.0,
       "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
       "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
-    "children": []
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.2476319968700409,
+        "type": "circle"
+      }
+    }
   }
 }

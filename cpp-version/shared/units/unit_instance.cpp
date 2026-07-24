@@ -92,16 +92,30 @@ void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFac
         float dy = targetPos.y - pos.y;
         float dist = sqrtf(dx * dx + dy * dy);
 
-        // Braking when holding position (target ~= here) or when current motion
-        // opposes the target direction; otherwise accelerating.
-        float speedToward = (dist > 1e-4f) ? (vel.x * dx + vel.y * dy) / dist : 0.0f;
-        bool braking = (dist < 0.05f) || (speedToward < 0.0f);
+        // "Holding": the target is (approximately) the current position — drive input was
+        // released or the unit parked. Distinct from a course-correction brake (moving
+        // away from a still-distant target), which stays a normal deceleration.
+        bool holding = (dist < UNIT_HOLD_THRESHOLD);
+        bool coasting = holding && (def->coastDamping >= 0.0f);
 
-        float rate = braking ? def->deceleration : def->acceleration;
-        if (rate <= 0.0f) rate = def->acceleration;  // decel unspecified -> use accel
-        float mass = b2Body_GetMass(unit->bodyId);
-        b2MotorJoint_SetMaxForce(unit->motorJoint,
-                                 mass * rate * MOVEMENT_UNIT_SCALE * UNIT_MOTOR_AUTHORITY);
+        if (coasting) {
+            // Coast: no drive force, glide to a stop under coastDamping alone (see the
+            // coast-model comment in movement_tuning.h). Facing (maxTorque) is untouched.
+            b2Body_SetLinearDamping(unit->bodyId, def->coastDamping);
+            b2MotorJoint_SetMaxForce(unit->motorJoint, 0.0f);
+        } else {
+            // Normal drive/brake: restore the base driving damping (terminal-speed cap)
+            // and set the force authority from acceleration / deceleration.
+            b2Body_SetLinearDamping(unit->bodyId,
+                                    unit_base_linear_damping(def->maxSpeed, def->acceleration));
+            float speedToward = (dist > 1e-4f) ? (vel.x * dx + vel.y * dy) / dist : 0.0f;
+            bool braking = holding || (speedToward < 0.0f);
+            float rate = braking ? def->deceleration : def->acceleration;
+            if (rate <= 0.0f) rate = def->acceleration;  // decel unspecified -> use accel
+            float mass = b2Body_GetMass(unit->bodyId);
+            b2MotorJoint_SetMaxForce(unit->motorJoint,
+                                     mass * rate * MOVEMENT_UNIT_SCALE * UNIT_MOTOR_AUTHORITY);
+        }
     }
 }
 
@@ -109,15 +123,12 @@ void unit_apply_movement_tuning(UnitInstance* unit) {
     if (!unit || !b2Body_IsValid(unit->bodyId)) {
         return;
     }
-    // Mirror the terminal-speed formula in UnitManager::createInstance: terminal speed =
-    // maxSpeed*MOVEMENT_UNIT_SCALE when damping = acceleration*UNIT_MOTOR_AUTHORITY/maxSpeed.
-    // Keep the two in sync.
+    // Base driving damping (terminal-speed cap). unit_set_move_target overrides this per
+    // frame while coasting; this sets the resting value for the driving case.
     const UnitDefinition* def = unit->definition;
-    float linearDamping = UNIT_LINEAR_DAMPING;
-    if (def && def->maxSpeed > 0.0f && def->acceleration > 0.0f) {
-        linearDamping = def->acceleration * UNIT_MOTOR_AUTHORITY / def->maxSpeed;
-    }
-    b2Body_SetLinearDamping(unit->bodyId, linearDamping);
+    b2Body_SetLinearDamping(unit->bodyId,
+        unit_base_linear_damping(def ? def->maxSpeed : 0.0f,
+                                 def ? def->acceleration : 0.0f));
 
     // Turn rate: re-derive the motor's max torque from the (possibly edited) turnSpeed.
     if (b2Joint_IsValid(unit->motorJoint)) {

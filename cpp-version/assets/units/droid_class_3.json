@@ -1,138 +1,156 @@
 {
-  "name": "Class 3",
+  "acceleration": 300.0,
+  "coastDamping": 3.2402894496917725,
+  "collisionRadius": 0.23999999463558197,
+  "deceleration": 70.41565704345703,
   "id": "droid_class_3",
-  "collisionRadius": 0.240000,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 200.000000,
-  "acceleration": 300.000000,
-  "deceleration": 300.000000,
+  "maxSpeed": 173.2091827392578,
+  "name": "Class 3",
   "properties": {
-    "classId": 3,
-    "typeCode": 247,
-    "energy": 2,
     "armour": 20.0,
-    "weapon": -1,
-    "droidType": 1,
-    "driveType": 1,
     "brainType": 1,
+    "classId": 3,
+    "description": "General-purpose service robot, one of the first civilian robots with an anti-grav drive.",
+    "driveType": 1,
+    "droidType": 1,
+    "energy": 2,
     "hasTurret": true,
-    "description": "General-purpose service robot, one of the first civilian robots with an anti-grav drive."
+    "omnidirectional": false,
+    "typeCode": 247,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 30.0,
   "rootSection": {
-    "name": "section_0",
-    "model": "models/servant_torso.gltf",
-    "offset": [-0.000000, 0.000000, 0.304800],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
-    "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.225279
-      },
-      "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
-      "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
     "children": [
       {
-        "name": "section_1",
         "model": "models/ag_base_small.gltf",
-        "offset": [-0.000000, 0.000000, -0.050800],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "name": "section_1",
+        "offset": [
+          -0.0,
+          0.0,
+          -0.05079999938607216
+        ],
         "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.152400
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.15240000188350677,
+            "type": "circle"
+          }
+        }
       },
       {
-        "name": "section_2",
         "model": "models/utility_ring.gltf",
-        "offset": [-0.000000, 0.000000, -0.025400],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "name": "section_2",
+        "offset": [
+          -0.0,
+          0.0,
+          -0.02539999969303608
+        ],
         "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.164592
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.16459199786186218,
+            "type": "circle"
+          }
+        }
       },
       {
-        "name": "section_3",
         "model": "models/trap_head_small.gltf",
-        "offset": [-0.000000, 0.000000, 0.381000],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "name": "section_3",
+        "offset": [
+          -0.0,
+          0.0,
+          0.38100001215934753
+        ],
         "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.182423
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.18242299556732178,
+            "type": "circle"
+          }
+        }
       },
       {
+        "model": "models/servant_arm.gltf",
         "name": "section_4",
-        "model": "models/servant_arm.gltf",
-        "offset": [-0.254000, 0.000000, 0.203200],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "offset": [
+          -0.2540000081062317,
+          0.0,
+          0.20319999754428864
+        ],
         "physics": {
-          "shape": {
-            "type": "box",
-            "width": 0.199950,
-            "height": 0.059270
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "height": 0.05926999822258949,
+            "type": "box",
+            "width": 0.19994999468326569
+          }
+        }
       },
       {
-        "name": "section_5",
+        "localRotation": 3.140000104904175,
         "model": "models/servant_arm.gltf",
-        "offset": [0.254000, 0.000000, 0.203200],
-        "localRotation": 3.140000,
-        "scale": [1, 1, 1],
+        "name": "section_5",
+        "offset": [
+          0.2540000081062317,
+          0.0,
+          0.20319999754428864
+        ],
         "physics": {
-          "shape": {
-            "type": "box",
-            "width": 0.199950,
-            "height": 0.059270
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "height": 0.05926999822258949,
+            "type": "box",
+            "width": 0.19994999468326569
+          }
+        }
       }
-    ]
-  }
+    ],
+    "model": "models/servant_torso.gltf",
+    "name": "section_0",
+    "offset": [
+      -0.0,
+      0.0,
+      0.30480000376701355
+    ],
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.22527900338172913,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 0.0
 }

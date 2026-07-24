@@ -65,6 +65,28 @@ inline constexpr float MOVEMENT_UNIT_SCALE = 0.05f;
 // so top speed stays maxSpeed*MOVEMENT_UNIT_SCALE while the motor pushes hard.
 inline constexpr float UNIT_MOTOR_AUTHORITY = 10.0f;
 
+// Distance (world units) below which a unit's move target is treated as "holding" its
+// current position — i.e. drive input was released or the unit parked. The coast
+// behaviour engages only in this case, not while actively driving to a target.
+inline constexpr float UNIT_HOLD_THRESHOLD = 0.05f;
+
+// Base driving linear damping: sized so terminal velocity == maxSpeed*MOVEMENT_UNIT_SCALE
+// (damping = acceleration*UNIT_MOTOR_AUTHORITY/maxSpeed). Units without per-type movement
+// data (maxSpeed == 0) fall back to the global constant. Shared by createInstance,
+// unit_apply_movement_tuning, and the driving branch of unit_set_move_target.
+inline float unit_base_linear_damping(float maxSpeed, float acceleration) {
+    if (maxSpeed > 0.0f && acceleration > 0.0f) {
+        return acceleration * UNIT_MOTOR_AUTHORITY / maxSpeed;
+    }
+    return UNIT_LINEAR_DAMPING;
+}
+
+// Coast model: when a unit is holding (drive released, dist < UNIT_HOLD_THRESHOLD) and its
+// per-type coastDamping >= 0, the body's linear damping is set to coastDamping and the
+// motor's drive force is dropped to zero, so the unit coasts to a stop under that damping
+// alone (lower = longer float/drift). coastDamping < 0 disables coasting: holding uses the
+// normal deceleration braking force + base driving damping (crisp stop, the default).
+
 // Facing angle (a physics body angle θ) that makes a unit visually face the world
 // direction (dx, dz). The renderer draws a unit facing (-sinθ, cosθ) (model +Z
 // forward, drawn at -worldRotation about +Y — see unit_manager renderSection), so

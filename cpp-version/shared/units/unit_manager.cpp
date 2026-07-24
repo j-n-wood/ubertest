@@ -156,11 +156,8 @@ UnitInstance* UnitManager::createInstance(
     // cruise at exactly maxSpeed*MOVEMENT_UNIT_SCALE while the authority factor
     // still boosts absolute force (it cancels out of terminal speed). Units with
     // no movement data fall back to the global damping constant.
-    float linearDamping = UNIT_LINEAR_DAMPING;
-    if (definition->maxSpeed > 0.0f && definition->acceleration > 0.0f) {
-        linearDamping = definition->acceleration * UNIT_MOTOR_AUTHORITY / definition->maxSpeed;
-    }
-    bodyDef.linearDamping = linearDamping;
+    bodyDef.linearDamping = unit_base_linear_damping(definition->maxSpeed,
+                                                     definition->acceleration);
     bodyDef.angularDamping = UNIT_ANGULAR_DAMPING;
     // Never sleep: units are driven by a motor joint whose target we update every
     // frame, and b2MotorJoint_Set*Offset does NOT wake a sleeping body. A resting

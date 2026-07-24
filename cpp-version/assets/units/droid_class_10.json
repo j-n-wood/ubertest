@@ -1,40 +1,40 @@
 {
-  "name": "Class 10",
+  "acceleration": 300.0,
+  "collisionRadius": 0.4000000059604645,
+  "deceleration": 300.0,
   "id": "droid_class_10",
-  "collisionRadius": 0.400000,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 160.000000,
-  "acceleration": 300.000000,
-  "deceleration": 300.000000,
+  "maxSpeed": 118.86553192138672,
+  "name": "Class 10",
   "properties": {
-    "classId": 10,
-    "typeCode": 493,
-    "energy": 4,
     "armour": 45.0,
-    "weapon": -1,
-    "droidType": 1,
-    "driveType": 4,
     "brainType": 1,
+    "classId": 10,
+    "description": "General purpose maintenance robot. Specialised for computer and network repairs.",
+    "driveType": 4,
+    "droidType": 1,
+    "energy": 4,
     "hasTurret": false,
-    "description": "General purpose maintenance robot. Specialised for computer and network repairs."
+    "omnidirectional": false,
+    "typeCode": 493,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 30.0,
   "rootSection": {
-    "name": "section_0",
     "model": "models/r5d2.gltf",
-    "offset": [-0.000000, 0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
+    "name": "section_0",
     "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.378764
-      },
+      "angularDamping": 8.0,
       "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
       "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
-    "children": []
-  }
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.37876400351524353,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 0.0
 }
