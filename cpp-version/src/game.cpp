@@ -22,6 +22,7 @@ static bool game_load_levels(Game* game);
 static bool game_build_level_render_data(Game* game);
 static void game_create_level_collision(Game* game);
 static void game_create_doors(Game* game);
+static std::vector<DoorSpec> game_detect_doors(const Game* game);
 static void game_spawn_player(Game* game);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
@@ -265,19 +266,27 @@ static bool game_build_level_render_data(Game* game) {
     TraceLog(LOG_INFO, "Generated %zu collision rects for level %d",
              collision.rects.size(), game->currentLevel);
 
+    // Exclude door cells from the baked tile mesh — doors are drawn by DoorRenderer
+    // (animated). Collision above is unaffected: door tiles carry no collision rects.
+    TmxLevel meshLevel = level;
+    for (const DoorSpec& s : game_detect_doors(game)) {
+        int idx = s.row * meshLevel.width + s.col;
+        if (idx >= 0 && idx < (int)meshLevel.tiles.size()) meshLevel.tiles[idx] = 0;
+    }
+
     // Create render data structure
-    data = createLevelRenderData(level, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
+    data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
 
     // Generate mesh based on available resources
     if (game->tileProperties.valid && game->bumpAtlasTexture.id > 0) {
         // CustomTiles mode with bump mapping
         data.tileMesh = createLevelTileMeshCustom(
-            level, game->tileset, game->tileProperties,
+            meshLevel, game->tileset, game->tileProperties,
             game->bumpAtlasTexture.width, game->bumpAtlasTexture.height, 1.0f);
         TraceLog(LOG_INFO, "Created CustomTiles mesh");
     } else {
         // Fallback to standard Tilemap mode
-        data.tileMesh = createLevelTileMesh(level, game->tileset, 1.0f);
+        data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, 1.0f);
         TraceLog(LOG_INFO, "Created Tilemap mesh (fallback)");
     }
 
@@ -377,6 +386,14 @@ static std::vector<DoorSpec> game_detect_doors(const Game* game) {
 static void game_create_doors(Game* game) {
     std::vector<DoorSpec> specs = game_detect_doors(game);
     game->doorManager.init(game->physics.world_id, specs);
+
+    // Build the interim 2D door renderer from the current door set.
+    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ? game->bumpAtlasTexture : Texture2D{0};
+        game->doorRenderer.build(game->levels[game->currentLevel], game->tileset,
+                                 game->tileProperties, game->atlasTexture, bumpTex,
+                                 &game->sceneRenderer, game->doorManager.views());
+    }
     TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
 }
 
@@ -948,8 +965,9 @@ void game_update(Game* game, float dt) {
     // Collision response: non-hostile units pause/retreat after bumping obstacles.
     game->aiManager.processCollisions(game->physics.world_id);
 
-    // Doors: fold this step's sensor events into open/close state + collision toggle.
+    // Doors: advance open/close state + collision toggle, then refresh the visual.
     game->doorManager.update(dt);
+    game->doorRenderer.update(game->doorManager.views());
 
     // Update projectiles (lifetime, contact events, cleanup)
     game->projectileManager.update(dt);
@@ -1084,6 +1102,9 @@ void game_render(Game* game) {
         }
     }
 
+    // Draw animated doors (excluded from the baked tile mesh above)
+    game->doorRenderer.render();
+
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
 
@@ -1205,8 +1226,9 @@ void game_destroy(Game* game) {
     // Destroy scene renderer
     sceneRendererDestroy(&game->sceneRenderer);
 
-    // Destroy door bodies before the physics world goes away
+    // Destroy door bodies before the physics world goes away, and the door mesh
     game->doorManager.destroy();
+    game->doorRenderer.destroy();
 
     // Destroy physics world
     physics_world_destroy(&game->physics);

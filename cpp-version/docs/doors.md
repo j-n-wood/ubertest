@@ -78,9 +78,15 @@ follow this and are the **first non-unit dynamic level entity**.
 - **Render-state boundary:** `DoorView { orientation, worldPos, size, state,
   openFraction }`, returned read-only from `DoorManager::views()` — the single seam a
   renderer consumes.
-- **Presentation (interim 2D):** a dedicated door renderer builds its own small
-  dynamic mesh (reusing the tile-mesh builder + `getTileUV`) and draws it with the
-  scene shader for bump/lighting parity. A future 3D renderer or a debug overlay
+- **Presentation (interim 2D):** `DoorRenderer` (`shared/rendering/door_renderer.{h,cpp}`)
+  consumes `DoorView`s. It builds a **"door-only" level** (all cells empty except door
+  cells set to the current animation-frame GID) and runs it through the *same*
+  `createLevelTileMeshCustom` / `createLevelTileModel` path as the level tiles — so
+  doors get identical bump/lighting — rebuilding only when a door's discrete frame
+  changes (`openFraction → frame 0..4 → GID`). Door cells are excluded from the baked
+  level mesh (`game_build_level_render_data` zeroes them) so only the animated door
+  draws there. `UnloadModel` keeps the shared atlas/bump/shader alive, so rebuilding
+  the small door model is cheap and safe. A future 3D renderer or the debug overlay
   consumes the same `DoorView`s. (No multi-renderer framework is built now — the
   read-only boundary just makes it a later opt-in.)
 - **Source-agnostic spawn:** a `DoorSpec { orientation, physicsCenter, size, col,
@@ -131,11 +137,14 @@ normal-speed unit arrives, doors typically don't block units unless fast-moving.
 
 ### Delivery stages
 
-1. **Stage 1** — simulation core (sensor + state machine + `openFraction`) and the
-   2D door renderer (tile-index animation). Doors visibly open/close as units
-   approach; still non-solid.
-2. **Stage 2** — conditional collision body toggled by state, plus the AI/projectile
-   crossover above.
+1. **Stage 1 (done)** — simulation core (proximity sensor + state machine +
+   `openFraction`) and the 2D door renderer (tile-index animation). Doors visibly
+   open/close as units approach.
+2. **Stage 2 (done)** — conditional collision body toggled by state, plus the
+   AI/projectile crossover above.
+
+Both stages are implemented and covered by tests; the tile animation is
+build-verified and awaits an in-game visual check.
 
 ### Files
 

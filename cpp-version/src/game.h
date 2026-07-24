@@ -12,6 +12,7 @@
 #include "level/level_renderer.h"
 #include "level/tile_properties_loader.h"
 #include "rendering/scene_renderer.h"
+#include "rendering/door_renderer.h"
 #include "units/unit_manager.h"
 #include "combat/projectile_manager.h"
 #include "ai/ai_manager.h"
@@ -65,8 +66,9 @@ struct Game {
     ProjectileManager projectileManager;
     AIManager aiManager;
 
-    // Doors (simulation; presentation reads doorManager.views())
+    // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;
+    DoorRenderer doorRenderer;
 
     // Camera
     Camera3D camera;
