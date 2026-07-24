@@ -162,6 +162,14 @@ void AIManager::processCollisions(b2WorldId worldId) {
             continue;
         }
 
+        // Ignore door contacts — a unit must not reroute off a door; the door opens
+        // on proximity. (Doors are transparent to pathClear already: it casts vs
+        // CATEGORY_STATIC only.)
+        if ((udA && udA->tag == BodyTag::Door) ||
+            (udB && udB->tag == BodyTag::Door)) {
+            continue;
+        }
+
         bool aUnit = udA && udA->tag == BodyTag::Unit;
         bool bUnit = udB && udB->tag == BodyTag::Unit;
         auto* unitA = aUnit ? static_cast<UnitInstance*>(udA->owner) : nullptr;

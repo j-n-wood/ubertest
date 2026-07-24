@@ -19,13 +19,11 @@ The engine foundation is complete:
 | Combat stats | Done | Stage 1 complete — UnitCombatState, damage model, 10 tests passing |
 | Weapons & projectiles | Done | Stage 2 complete — 9 weapons from data file, projectile lifecycle, 10 tests passing |
 | Enemy spawning | Done | Stage 3 complete — level_spawns.json (3 ships × 16 levels), type-based random spawn resolution, 4 tests passing |
+| AI movement & aggression | Done | Stage 4 complete — waypoint patrol, chase/flee states, turret/omni/standard firing, 14 tests passing |
 
 What GAME.md defines but is **not yet implemented**:
 
 - Combat rendering (projectile visuals, player firing)
-- Enemy spawning at waypoints
-- AI behaviour (aggression, patrol, attack)
-- Combat (projectiles, damage dealing, unit destruction from combat)
 - Unit capture mechanic (the core gameplay loop)
 - Level navigation via lifts
 - Level/ship completion and progression
@@ -57,6 +55,24 @@ The unit instance collection is authoritative for all positions, orientations, a
 
 **Do:** `processContactEvents()` reads `BodyUserData` from Box2D bodies to find `UnitInstance*` directly
 **Don't:** build a `vector<Target>` each frame by copying position/radius/state from unit instances
+
+### 4. Player and AI are simulated identically (remote-control model)
+
+The game concept is that the player gains **remote control** of a unit: player-generated instructions replace the AI's, but the thing being controlled — and how it is simulated — is unchanged. Therefore movement, rotation, and control are **identical** for an AI-driven unit and the player-driven unit. Only the *source* of the desired target differs (AI waypoint logic vs. player input).
+
+This is enforced structurally:
+- Every movable unit (including the player) is created through the same `UnitManager::createInstance()` path and receives a `b2MotorJoint` anchoring it to a static world-origin body.
+- The joint's `linearOffset` is the desired world position and `angularOffset` the desired world facing. Both the AI and the player set them through the **single** shared entry point `unit_set_move_target(unit, targetPos, facing)`.
+- There is one shared parameter set in [`shared/units/movement_tuning.h`](../shared/units/movement_tuning.h) (`UNIT_MOTOR_MAX_FORCE`, `UNIT_MOTOR_MAX_TORQUE`, `UNIT_MOTOR_CORRECTION_FACTOR`, `UNIT_MOVE_LOOKAHEAD`, `TURRET_SLEW_RATE`) used as a fallback. No player-specific override — tune globally.
+
+**Per-type movement limits.** Each `UnitDefinition` carries `maxSpeed`, `acceleration`, and `deceleration` taken verbatim from the original `droidclasses.txt` data (parsed by `droidclass_parser`, emitted by `unit_generator`, read by `unit_json`). The movement layer scales them with `MOVEMENT_UNIT_SCALE` and maps them onto the motor joint. Force authority is **decoupled** from top speed via `UNIT_MOTOR_AUTHORITY`: per-frame `maxForce = mass × acceleration × MOVEMENT_UNIT_SCALE × UNIT_MOTOR_AUTHORITY` while speeding up toward the target (or `× deceleration` while braking — holding position or reversing), and per-unit `linearDamping = acceleration × UNIT_MOTOR_AUTHORITY / maxSpeed`. The authority factor cancels out of terminal velocity (`= maxSpeed × MOVEMENT_UNIT_SCALE`) but boosts absolute force so units can overcome contacts instead of jamming/freezing on collision. This is still type-level, not driver-level — an AI-driven and player-driven instance of the same type behave identically. A unit with no movement data (`maxSpeed == 0`, e.g. test fixtures) falls back to the global constants. **Debug:** `F1`/`F2` cycle the player-controlled unit type at runtime (`game_cycle_player_unit`) so each type's speed/accel/decel can be tested in place.
+
+**Facing convention.** The renderer draws a unit facing world direction `(-sinθ, cosθ)` for physics body angle `θ` (model +Z forward, drawn at `-worldRotation` about +Y). The single helper `facing_angle_to(dx, dz)` in `movement_tuning.h` returns the `θ` that faces `(dx, dz)`; the player, AI body facing, turret head tracking, and fire-alignment (`canFire`) all use it so every facing agrees.
+
+**Why a motor joint instead of open-loop force?** Movement is a target-seeking constraint solved *simultaneously with contacts* inside `b2World_Step`, with bounded force/torque. Collisions negotiate with the drive rather than overpowering it, so a unit knocked off course recovers smoothly instead of flying off (the failure mode of the previous constant-force model). Turret/head facing remains a render-only scalar (`facingAngle`), slewed the shortest way toward its target — no physics body for cosmetic sections.
+
+**Do:** `unit_set_move_target(unit, carrot, facing)` for both AI and player; one tuning header.
+**Don't:** apply `b2Body_ApplyForceToCenter`/`b2Body_ApplyTorque` for locomotion, or give the player a separate control path or tuning.
 
 ### Reference documents
 
@@ -215,12 +231,11 @@ All 10 tests pass. Weapons loaded from data file. Droid weapon assignments match
 ### What's added
 
 - `LevelSpawnDef` struct: per-level spawn profile (9 type counts) + placed droids list
-- `TypeClassEntry` mapping: type groups (1–9) → droid class IDs, loaded from JSON
-- `SpawnResult` struct: resolved spawn entry (classId, waypointIndex, angle)
-- `loadSpawnConfigFromFile()` / `loadSpawnConfigFromJson()` — JSON-driven spawn table
+- `buildTypeClassMap()` — derives type-to-class mapping from loaded `DroidProperties` (type = `typeCode / 100`)
+- `loadShipSpawns()` — loads per-ship spawn data from `assets/ships/<shipN>/spawns.json`
 - `resolveSpawns()` — resolves type profiles to concrete class IDs with random selection within type groups, assigns distinct waypoints, avoids player waypoint, handles insufficient waypoints gracefully
-- `getSpawnDef()` / `getLevelName()` — access spawn definitions by ship/level index
-- `level_spawns.json` — spawn data for 3 ships × 16 levels, converted from original `PROFILE` data in mapfiles
+- `getSpawnDef()` — access spawn definitions by ship/level index
+- Per-ship `spawns.json` files — spawn data for each ship's 16 levels, converted from original `PROFILE` data in mapfiles
 - Placed droid support (e.g., Ship 1 Level 8 has Command Cyborg at waypoint 7)
 
 ### Data extraction from original
@@ -270,44 +285,145 @@ All 4 spawn tests pass. Levels are populated with correct unit types and counts.
 
 ---
 
-## Stage 4 — AI: Movement & Aggression
+## Stage 4 — AI: Movement & Aggression ✓ COMPLETE
 
-**Goal:** Enemy units have basic behavioural states. Aggressive units pursue and attack the player.
+**Goal:** All enemy units patrol between waypoints. Armed units that detect or are attacked by the player become hostile and pursue via waypoints, firing when in range.
 
-**Design notes:** Follow the [Design Patterns](#design-patterns) established in earlier stages. AI operates directly on `UnitInstance` references from the unit manager — no separate "AI entity" list. Detection uses `Vector2Distance()` between unit positions read from Box2D bodies. Movement applies forces to Box2D bodies via `b2Body_ApplyForceToCenter()`. Attack state triggers weapon fire through `ProjectileManager::spawn()` using the unit's `b2WorldId`. AI tests create a Box2D world and step the simulation.
+**Design notes:** Follow the [Design Patterns](#design-patterns) established in earlier stages. AI operates directly on `UnitInstance` references from the unit manager — no separate "AI entity" list. Detection uses `Vector2Distance()` between unit positions read from Box2D bodies. Movement drives each unit's `b2MotorJoint` target via `unit_set_move_target()` — identical to player control (see [Design Pattern 4](#4-player-and-ai-are-simulated-identically-remote-control-model)). Attack state triggers weapon fire through `ProjectileManager::spawn()` using the unit's `b2WorldId`. AI tests create a Box2D world and step the simulation. All droid movement is constrained to waypoint paths — droids never move off the waypoint graph.
+
+### Waypoint patrol system
+
+All droids begin in a **Patrol** state. Patrol uses the waypoint link graph defined in the TMX level files.
+
+**TMX waypoint data available at runtime:**
+- `TmxWaypoint` struct: `id`, `x`, `y` (pixel coords), `links` (vector of connected waypoint IDs)
+- Stored on `TmxLevel::waypoints` — parsed from `<objectgroup name="waypoints">`
+- `LevelRenderData::waypointPositions` — pre-converted to 3D world coordinates (via `tmxPixelToWorld()`)
+- `LevelRenderData::waypointLinks` — deduplicated index pairs for visualization
+- Each waypoint has 1–4 `link-N` properties referencing other waypoint IDs, forming a bidirectional navigation graph
+
+**Patrol behaviour:**
+1. Each droid is assigned a **current waypoint** (its spawn waypoint from Stage 3) and a **target waypoint** (initially null)
+2. When idle at a waypoint (no target), choose a random linked waypoint as the next destination
+3. Apply a **back-avoidance bias**: the waypoint the droid just arrived from has reduced selection probability (e.g. 0.2× weight vs 1.0× for other links), unless it is the only option — this prevents droids ping-ponging on two-waypoint corridors
+4. Move toward the target waypoint by setting the unit's motor-joint target to a bounded "carrot" ahead along the heading via `unit_set_move_target()` (same control path as player movement — see Design Pattern 4)
+5. On arrival (within a threshold distance of the target), select the next waypoint. If the next waypoint is approximately colinear with the arrival direction (i.e. the droid would continue in roughly the same heading), skip the dwell pause and continue moving immediately. Otherwise, pause briefly (random 0.5–2.0s dwell time) before heading to the next waypoint. Colinearity is tested by the dot product of the arrival direction and the new heading — above a threshold (e.g. 0.7) counts as colinear
+6. The AI needs an index-based adjacency list built from `TmxWaypoint::links` at level load time, mapping each waypoint index to its connected waypoint indices (similar to the ID→index resolution already done in `level_renderer.cpp` lines 444–461)
+
+### Aggression and hostility
+
+Aggression is predicated on the **presence of a weapon** (weapon ≥ 0), not brain type. Unarmed droids never become hostile — they flee if damaged.
+
+**Transitions to hostile:**
+- Armed droids become hostile when the player enters their `proximityRadius` detection range
+- Any droid that takes damage becomes hostile (armed → Chase, unarmed → Flee)
+
+**Disengagement:**
+- Hostile droids return to normal waypoint patrol if the player moves beyond visual range (`visualRadius`) or out of line of sight
+- On disengagement, the droid resumes random waypoint patrol from its current position and target waypoint
+
+### Collision response (non-hostile only)
+
+Keeps wandering droids from jamming against each other or walls, adapted from the original uberdroid `collide()`/`blocked()`. Handled in `AIManager` (`onCollision`/`processCollisions`, called from the game loop after `b2World_Step` using Box2D contact events; projectile contacts are ignored — those are damage). Only **non-hostile** units react — a chasing/fleeing unit pushes straight through.
+
+**Redirect, don't stop.** On collision a unit *redirects* — it heads back toward its prior waypoint (`targetWaypoint = previousWaypoint`; if already doing that or it has none, the target is dropped so the next tick re-selects, and the back-avoidance bias steers it off the blocked route). It keeps moving the whole time. A short decision cooldown (`AI_COLLIDE_COOLDOWN`) debounces the redirect so a sustained contact doesn't re-decide every frame.
+
+**Fine arrival tolerance.** `AI_WAYPOINT_ARRIVAL_DIST` is small (0.15) so a unit reaches close to a waypoint's centre before turning toward the next. The map is tile-based with narrow doorways; the old coarse tolerance (0.5) let units turn half a tile early, cutting angled paths that clipped solid tiles. Reaching centre keeps trajectories aligned to the grid-laid waypoint links.
+
+**Stuck detection + off-course recovery.** A wall contact emits a Box2D begin-touch event only *once*, so it can't keep nudging a unit that stays pinned — such a unit would "just stop". Instead, `updatePatrol` watches speed: if a unit is trying to move toward its target but stays below `AI_STUCK_SPEED` for `AI_STUCK_TIME`, it recovers. *How* it recovers depends on a circle cast (`pathClear`) from the unit to its target:
+
+- **Path wall-clear** (blocked by another unit / a deadlock): abandon the route, set it as `previousWaypoint`, drop the target and reselect — back-avoidance steers elsewhere.
+- **Path wall-blocked** (the unit has been knocked off the graph, so the straight line to its target now crosses a wall): re-acquire the graph by heading to the **nearest reachable waypoint** (`nearestReachableWaypoint` — nearest node whose path is itself wall-clear; ported from the original `domain::nearestWaypoint`).
+
+`pathClear` uses `b2World_CastCircle` with a spherical width equal to the unit's collision radius, filtered to `CATEGORY_STATIC` so **other units are not treated as blockers**. The timer resets whenever the target changes. This is the general recovery for wall-pinning, off-course displacement, and mutual deadlocks alike.
+
+**Wall sliding.** Unit shapes are near-frictionless (`UNIT_CONTACT_FRICTION ≈ 0`). The contact solver truncates the into-wall velocity component; with almost no friction the motor's tangential component carries the unit *along* the wall instead of pinning. This is the first line of defence when a straight path to a waypoint grazes an obstacle — the unit slides around it — with stuck-detection/re-acquire as the fallback for genuine dead-ends.
+
+> Known limitations (flagged in `ai_manager.cpp`, not yet solved):
+> - **Straight-line reachability.** `pathClear` is a single line-of-sight cast, so interior geometry (pillars, tables, stub walls) can make a trivially-reachable waypoint fail the cast when the direct line clips it. The real fix is routing over the waypoint graph (BFS/A* on `adjacency_`) or intermediate steering points; wall sliding mitigates most cases meanwhile.
+> - **Door tiles** are currently plain `CATEGORY_STATIC` and so block the cast; they want their own category so a unit's cast ignores an open door while a projectile still respects a closed one.
+> - **Unit ranking.** Casts exclude other units outright rather than ranking/soft-avoiding paths that pass near them.
+
+> Earlier iterations "stunned" the unit (held position on contact, retreated only after a frustration counter). That was removed: in a cluster, contacts with several different obstacles refreshed the stun every frame and reset the counter, locking units permanently. The rule of thumb is *stop moving toward the collision, not stop moving altogether*.
+
+**Debug overlay (`V`).** Draws the waypoint graph (nodes + links) and a line from each AI unit to its intended target waypoint, plus a per-unit label showing state (`P`/`C`/`F`), target waypoint index, and `R` while a collision-redirect cooldown is active. See `game_draw_ai_debug_3d`/`_2d`.
+
+### Waypoint-based chase
+
+Hostile armed droids do **not** leave the waypoint graph. Chase behaviour uses waypoint selection biased toward the player rather than arbitrary movement:
+
+- Instead of choosing a random linked waypoint, choose the linked waypoint that is **closest to the player's current position** (greedy waypoint pursuit)
+- This keeps all movement on established paths and avoids needing return-to-patrol logic
+- Droids continue moving along waypoint paths while hostile; firing is independent of waypoint arrival (see Aiming and firing below)
+
+### Aiming and firing
+
+Droids can fire **at any point** during movement — firing is not gated on reaching a waypoint. The conditions are range, cooldown, and (for most weapons) facing.
+
+**Orientation rules (non-combat):**
+- All droids orient their body to face their direction of movement along waypoint paths
+
+**Orientation rules (combat — hostile state):**
+- **Standard droids** (no turret, not omnidirectional): turn their entire body to face the player. Since their facing is tied to movement direction, they must **stop moving to turn and fire**. When within weapon `optimumRange` of the player, they halt in place, turn to aim, and fire. They resume waypoint movement after firing or if the player moves out of range
+- **Turret droids** (`hasTurret` flag): the head section turns independently to aim the weapon at the player while the body continues to face the movement direction. They do **not** stop to fire — they keep moving along waypoints while the head tracks the player
+- **Omnidirectional droids** (`OMNIDIRECTIONAL` flag): their body facing is decoupled from movement direction. They turn their body to face the player while continuing to move. They do **not** stop to fire. Their head also faces the player
+- All hostile droids turn their **head** to face the player. For non-turret droids this means the whole body turns (head follows body). For turret droids only the head turns independently
+
+**Weapon section identification:**
+- The weapon is mounted on either the body or the head, depending on the droid type
+- Turret droids fire from the head section (the turret); all others fire from the body
+- `FIREOFFSET` property (from droidclasses.txt) gives the projectile spawn offset relative to the firing section
+
+**Firing conditions:**
+- Player is within weapon `maxRange`
+- Weapon cooldown has elapsed
+- The firing section (body or head) is facing the player within an angular threshold
+- **Exception — Disruptor** (weapon type `Area`): area-effect weapon that damages everything within range with line of sight. No facing condition required — fires in all directions simultaneously
+
+**Movement consequences of firing:**
+- Standard droids halt within optimum range to turn and fire → they stay at approximately optimum distance
+- Turret and omnidirectional droids keep moving → they may close to less than optimum range since they don't stop to engage
 
 ### What's added
 
-- `AIState` enum: `Idle`, `Patrol`, `Chase`, `Attack`, `Flee`
-- `AIComponent` per enemy unit: state, aggression flag (from `brainType`/`droidType`), detection radius (from `proximityRadius`)
+- `AIState` enum: `Patrol`, `Chase`, `Flee`
+- `AIComponent` per enemy unit: state, current waypoint index, target waypoint index, previous waypoint index (for back-avoidance), dwell timer, hostile flag, detection radius (from `proximityRadius`), visual range (from `visualRadius`)
+- Waypoint adjacency list: built at level load from `TmxWaypoint::links`, stored as `vector<vector<int>>` indexed by waypoint index
 - `ai_update(dt)` state machine:
-  - **Idle/Patrol:** wander between nearby waypoints
-  - **Chase:** move toward player when within detection radius
-  - **Attack:** fire weapon when in range
-  - Non-aggressive units remain Idle unless attacked
-- Waypoint-based pathfinding using the existing waypoint link graph from TMX data
+  - **Patrol:** move between linked waypoints with back-avoidance bias and dwell pauses; all droids start here
+  - **Chase:** armed hostile droids select waypoints biased toward player; standard droids halt to fire when in optimum range; turret/omnidirectional droids fire while moving; disengage if player leaves visual range
+  - **Flee:** unarmed droids that take damage select waypoints biased away from player
+- Aiming system: head orientation (all hostile droids face head toward player), body orientation (standard + omnidirectional droids face body toward player; turret droids face body along movement)
 - Apply forces to enemy physics bodies (same force model as player)
 
 ### Files
 
-- `shared/ai/ai_component.h` / `ai_component.cpp` — state machine and behaviour
-- `shared/ai/ai_manager.h` / `ai_manager.cpp` — updates all AI components
+- `shared/ai/ai_component.h` / `ai_component.cpp` — AIState, AIComponent, state machine, waypoint selection, aiming logic
+- `shared/ai/ai_manager.h` / `ai_manager.cpp` — updates all AI components, builds waypoint adjacency list
 - `tests/ai_test.cpp` — unit tests
 
 ### GoogleTest coverage
 
 | Test | Validates |
 |------|-----------|
-| `AI.IdleToChaseOnDetection` | Transitions when player enters detection radius |
-| `AI.ChaseToAttackInRange` | Transitions when within weapon range |
-| `AI.NonAggressiveStaysIdle` | Non-aggressive units ignore player |
-| `AI.NonAggressiveRetaliates` | Becomes aggressive after taking damage |
-| `AI.PatrolFollowsWaypointLinks` | Walks along connected waypoints |
-| `AI.FleeOnLowHealth` | Optional retreat behaviour |
+| `AI.PatrolSelectsLinkedWaypoint` | Target waypoint is always a linked neighbour of the current waypoint |
+| `AI.PatrolBackAvoidanceBias` | Previous waypoint is chosen less frequently (statistical test over many selections) |
+| `AI.PatrolDwellAtWaypoint` | Droid pauses at waypoint before selecting next target |
+| `AI.ArmedDroidBecomesHostileOnDetection` | Armed droid transitions Patrol → Chase when player enters detection radius |
+| `AI.UnarmedDroidIgnoresPlayer` | Unarmed droid continues patrol when player is nearby |
+| `AI.DamageTriggerHostileArmed` | Armed droid taking damage transitions to Chase |
+| `AI.DamageTriggerFleeUnarmed` | Unarmed droid taking damage transitions to Flee |
+| `AI.ChaseSelectsWaypointCloserToPlayer` | Hostile droid picks linked waypoint nearest to player position |
+| `AI.StandardDroidHaltsToFire` | Non-turret, non-omnidirectional droid stops in place when within optimum range and facing player |
+| `AI.TurretDroidFiresWhileMoving` | Turret droid continues moving between waypoints while head tracks and fires |
+| `AI.OmnidirectionalFiresWhileMoving` | Omnidirectional droid continues moving while body faces player and fires |
+| `AI.DisruptorIgnoresFacing` | Area-effect weapon fires without facing condition |
+| `AI.DisengageOnVisualRangeLost` | Hostile droid returns to Patrol when player exceeds visual range |
+| `AI.FleeSelectsWaypointAwayFromPlayer` | Fleeing droid picks linked waypoint farthest from player |
 
 ### Gate
 
-All AI state tests pass. Enemies visibly patrol waypoints, chase the player, and fire weapons.
+All AI state tests pass. Enemies visibly patrol waypoints, armed droids chase via waypoints and fire, turret/omnidirectional droids fire on the move.
 
 ---
 

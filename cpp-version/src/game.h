@@ -15,6 +15,7 @@
 #include "units/unit_manager.h"
 #include "combat/projectile_manager.h"
 #include "ai/ai_manager.h"
+#include "level/door_manager.h"
 
 #include <vector>
 #include <string>
@@ -63,6 +64,9 @@ struct Game {
     // Combat & AI
     ProjectileManager projectileManager;
     AIManager aiManager;
+
+    // Doors (simulation; presentation reads doorManager.views())
+    DoorManager doorManager;
 
     // Camera
     Camera3D camera;

@@ -3,6 +3,9 @@
   "id": "droid_class_2",
   "collisionRadius": 0.200000,
   "proximityRadius": 30.000000,
+  "maxSpeed": 90.000000,
+  "acceleration": 200.000000,
+  "deceleration": 500.000000,
   "properties": {
     "classId": 2,
     "typeCode": 139,

@@ -21,6 +21,7 @@ static constexpr int LIFT_TILE_GID_B = 17;
 static bool game_load_levels(Game* game);
 static bool game_build_level_render_data(Game* game);
 static void game_create_level_collision(Game* game);
+static void game_create_doors(Game* game);
 static void game_spawn_player(Game* game);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
@@ -100,6 +101,9 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
 
     // Create collision bodies from tile data
     game_create_level_collision(game);
+
+    // Create door entities from tile data
+    game_create_doors(game);
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f;  // May change based on unit type
@@ -325,6 +329,55 @@ static void game_create_level_collision(Game* game) {
 
     TraceLog(LOG_INFO, "Created %zu collision bodies from level data",
              game->collisionBodies.size());
+}
+
+//------------------------------------------------------------------------------
+// Doors
+//------------------------------------------------------------------------------
+
+// Scan the current level's tiles for door cells and build source-agnostic specs.
+// Local tile ids (gid - firstGid): 18-22 = horizontal door frames, 27-31 = vertical.
+// Maps are authored closed (18/27) but any frame is accepted.
+static std::vector<DoorSpec> game_detect_doors(const Game* game) {
+    std::vector<DoorSpec> specs;
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
+        return specs;
+    }
+    const TmxLevel& lvl = game->levels[game->currentLevel];
+    const int firstGid = game->tileset.firstGid;
+    const float halfW = lvl.width * 0.5f;   // worldScale = 1.0
+    const float halfH = lvl.height * 0.5f;
+
+    for (int row = 0; row < lvl.height; row++) {
+        for (int col = 0; col < lvl.width; col++) {
+            int gid = lvl.tiles[row * lvl.width + col];
+            if (gid <= 0) continue;
+            int localId = gid - firstGid;
+
+            DoorSpec s;
+            s.col = col;
+            s.row = row;
+            if (localId >= 18 && localId <= 22) {
+                s.orientation = DoorOrientation::Horizontal;
+                s.size = {1.0f, 0.5f};
+            } else if (localId >= 27 && localId <= 31) {
+                s.orientation = DoorOrientation::Vertical;
+                s.size = {0.5f, 1.0f};
+            } else {
+                continue;
+            }
+            // Tile centre in physics/world coords (centred on origin, matching walls).
+            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            specs.push_back(s);
+        }
+    }
+    return specs;
+}
+
+static void game_create_doors(Game* game) {
+    std::vector<DoorSpec> specs = game_detect_doors(game);
+    game->doorManager.init(game->physics.world_id, specs);
+    TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
 }
 
 //------------------------------------------------------------------------------
@@ -615,6 +668,9 @@ static void game_switch_level(Game* game, int newLevel) {
     // 5. Create collision bodies for new level
     game_create_level_collision(game);
 
+    // 5b. Rebuild doors for new level (init() destroys the previous level's doors)
+    game_create_doors(game);
+
     // 6. Spawn enemies for new level
     game_spawn_enemies(game);
 
@@ -892,6 +948,9 @@ void game_update(Game* game, float dt) {
     // Collision response: non-hostile units pause/retreat after bumping obstacles.
     game->aiManager.processCollisions(game->physics.world_id);
 
+    // Doors: fold this step's sensor events into open/close state + collision toggle.
+    game->doorManager.update(dt);
+
     // Update projectiles (lifetime, contact events, cleanup)
     game->projectileManager.update(dt);
     game->projectileManager.syncFromPhysics();
@@ -969,6 +1028,44 @@ static void game_draw_ai_debug_2d(Game* game) {
     }
 }
 
+// Door debug overlay (toggled with V): a second consumer of DoorManager::views().
+// Colour by state; the solid "blocking extent" shrinks along the span as it opens.
+static Color game_door_state_color(DoorState s) {
+    switch (s) {
+        case DoorState::Open:    return GREEN;
+        case DoorState::Opening: return ORANGE;
+        case DoorState::Closing: return GOLD;
+        default:                 return RED;   // Closed
+    }
+}
+
+static void game_draw_door_debug_3d(Game* game) {
+    for (const DoorView& d : game->doorManager.views()) {
+        Color col = game_door_state_color(d.state);
+        Vector3 pos = {d.worldPos.x, 0.25f, d.worldPos.y};
+        // Full doorway footprint (always visible), plus a solid block that retracts
+        // along the door's span as openFraction goes 0 -> 1.
+        DrawCubeWires(pos, d.size.x, 0.5f, d.size.y, col);
+        float remain = 1.0f - d.openFraction;
+        float sx = (d.orientation == DoorOrientation::Horizontal) ? d.size.x * remain : d.size.x;
+        float sy = (d.orientation == DoorOrientation::Vertical)   ? d.size.y * remain : d.size.y;
+        if (sx > 0.01f && sy > 0.01f) {
+            DrawCube(pos, sx, 0.4f, sy, col);
+        }
+    }
+}
+
+static void game_draw_door_debug_2d(Game* game) {
+    for (const DoorView& d : game->doorManager.views()) {
+        Vector2 screen = GetWorldToScreen((Vector3){d.worldPos.x, 0.6f, d.worldPos.y}, game->camera);
+        const char* st = d.state == DoorState::Open    ? "OPEN"    :
+                         d.state == DoorState::Opening ? "OPENING" :
+                         d.state == DoorState::Closing ? "CLOSING" : "CLOSED";
+        DrawText(TextFormat("%s %.0f%%", st, d.openFraction * 100.0f),
+                 (int)screen.x - 22, (int)screen.y, 10, game_door_state_color(d.state));
+    }
+}
+
 void game_render(Game* game) {
     BeginDrawing();
     ClearBackground(DARKGRAY);
@@ -1001,16 +1098,18 @@ void game_render(Game* game) {
         game->unitManager.renderDebug();
     }
 
-    // Debug: waypoint graph + AI intended targets (toggle V)
+    // Debug: waypoint graph + AI intended targets + door state (toggle V)
     if (game->showAIDebug) {
         game_draw_ai_debug_3d(game);
+        game_draw_door_debug_3d(game);
     }
 
     EndMode3D();
 
-    // Debug: per-unit AI state labels (toggle V)
+    // Debug: per-unit AI state + per-door state labels (toggle V)
     if (game->showAIDebug) {
         game_draw_ai_debug_2d(game);
+        game_draw_door_debug_2d(game);
     }
 
     // HUD
@@ -1059,7 +1158,7 @@ void game_render(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints/doors | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
 
     EndDrawing();
@@ -1105,6 +1204,9 @@ void game_destroy(Game* game) {
 
     // Destroy scene renderer
     sceneRendererDestroy(&game->sceneRenderer);
+
+    // Destroy door bodies before the physics world goes away
+    game->doorManager.destroy();
 
     // Destroy physics world
     physics_world_destroy(&game->physics);
