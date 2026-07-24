@@ -23,12 +23,14 @@ add_executable(run_tests
     spawn_test.cpp
     ai_test.cpp
     door_test.cpp
+    charger_test.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/spawn_config.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/door_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/charger_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/ai/ai_manager.cpp
     ${SCENE_CONVERT_SOURCES}
 )

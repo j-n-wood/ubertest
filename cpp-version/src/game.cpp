@@ -23,6 +23,8 @@ static bool game_build_level_render_data(Game* game);
 static void game_create_level_collision(Game* game);
 static void game_create_doors(Game* game);
 static std::vector<DoorSpec> game_detect_doors(const Game* game);
+static void game_create_chargers(Game* game);
+static std::vector<ChargerSpec> game_detect_chargers(const Game* game);
 static void game_spawn_player(Game* game);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
@@ -103,8 +105,9 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     // Create collision bodies from tile data
     game_create_level_collision(game);
 
-    // Create door entities from tile data
+    // Create door + charger entities from tile data
     game_create_doors(game);
+    game_create_chargers(game);
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f;  // May change based on unit type
@@ -266,10 +269,15 @@ static bool game_build_level_render_data(Game* game) {
     TraceLog(LOG_INFO, "Generated %zu collision rects for level %d",
              collision.rects.size(), game->currentLevel);
 
-    // Exclude door cells from the baked tile mesh — doors are drawn by DoorRenderer
-    // (animated). Collision above is unaffected: door tiles carry no collision rects.
+    // Exclude door + charger cells from the baked tile mesh — those are drawn
+    // (animated) by their own renderers. Collision is unaffected: door tiles carry
+    // no collision rects and chargers are non-colliding.
     TmxLevel meshLevel = level;
     for (const DoorSpec& s : game_detect_doors(game)) {
+        int idx = s.row * meshLevel.width + s.col;
+        if (idx >= 0 && idx < (int)meshLevel.tiles.size()) meshLevel.tiles[idx] = 0;
+    }
+    for (const ChargerSpec& s : game_detect_chargers(game)) {
         int idx = s.row * meshLevel.width + s.col;
         if (idx >= 0 && idx < (int)meshLevel.tiles.size()) meshLevel.tiles[idx] = 0;
     }
@@ -397,6 +405,51 @@ static void game_create_doors(Game* game) {
                                  &game->sceneRenderer, game->doorManager.views());
     }
     TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
+}
+
+//------------------------------------------------------------------------------
+// Chargers
+//------------------------------------------------------------------------------
+
+// Scan the current level's tiles for charger cells (custom property type="charger").
+static std::vector<ChargerSpec> game_detect_chargers(const Game* game) {
+    std::vector<ChargerSpec> specs;
+    if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
+        return specs;
+    }
+    const TmxLevel& lvl = game->levels[game->currentLevel];
+    const int firstGid = game->tileset.firstGid;
+    const float halfW = lvl.width * 0.5f;   // worldScale = 1.0
+    const float halfH = lvl.height * 0.5f;
+
+    for (int row = 0; row < lvl.height; row++) {
+        for (int col = 0; col < lvl.width; col++) {
+            int gid = lvl.tiles[row * lvl.width + col];
+            if (gid <= 0) continue;
+            auto it = game->tileset.tileProperties.find(gid - firstGid);
+            if (it == game->tileset.tileProperties.end() || it->second.type != "charger") continue;
+
+            ChargerSpec s;
+            s.col = col;
+            s.row = row;
+            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            specs.push_back(s);
+        }
+    }
+    return specs;
+}
+
+static void game_create_chargers(Game* game) {
+    std::vector<ChargerSpec> specs = game_detect_chargers(game);
+    game->chargerManager.init(game->physics.world_id, specs);
+
+    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ? game->bumpAtlasTexture : Texture2D{0};
+        game->chargerRenderer.build(game->levels[game->currentLevel], game->tileset,
+                                    game->tileProperties, game->atlasTexture, bumpTex,
+                                    &game->sceneRenderer, game->chargerManager.views());
+    }
+    TraceLog(LOG_INFO, "Created %zu chargers from level data", specs.size());
 }
 
 //------------------------------------------------------------------------------
@@ -687,8 +740,9 @@ static void game_switch_level(Game* game, int newLevel) {
     // 5. Create collision bodies for new level
     game_create_level_collision(game);
 
-    // 5b. Rebuild doors for new level (init() destroys the previous level's doors)
+    // 5b. Rebuild doors + chargers for new level (init() replaces the previous set)
     game_create_doors(game);
+    game_create_chargers(game);
 
     // 6. Spawn enemies for new level
     game_spawn_enemies(game);
@@ -1003,6 +1057,10 @@ void game_update(Game* game, float dt) {
     game->doorManager.update(dt);
     game->doorRenderer.update(game->doorManager.views());
 
+    // Chargers: update IDLE/CHARGING proximity state + free-running tile animation.
+    game->chargerManager.update(dt);
+    game->chargerRenderer.update(dt, game->chargerManager.views());
+
     // Line-of-sight: only units the player can see are rendered (render flag only).
     game_update_unit_visibility(game);
 
@@ -1126,6 +1184,23 @@ static void game_draw_door_debug_2d(Game* game) {
     }
 }
 
+// Charger debug (V overlay): footprint + IDLE/CHARGING state.
+static void game_draw_charger_debug_3d(Game* game) {
+    for (const ChargerView& c : game->chargerManager.views()) {
+        Color col = (c.state == ChargerState::Charging) ? YELLOW : SKYBLUE;
+        DrawCubeWires((Vector3){c.worldPos.x, 0.2f, c.worldPos.y}, c.size.x, 0.3f, c.size.y, col);
+    }
+}
+
+static void game_draw_charger_debug_2d(Game* game) {
+    for (const ChargerView& c : game->chargerManager.views()) {
+        Vector2 screen = GetWorldToScreen((Vector3){c.worldPos.x, 0.5f, c.worldPos.y}, game->camera);
+        const char* st = (c.state == ChargerState::Charging) ? "CHG" : "IDLE";
+        Color col = (c.state == ChargerState::Charging) ? YELLOW : SKYBLUE;
+        DrawText(st, (int)screen.x - 12, (int)screen.y, 10, col);
+    }
+}
+
 void game_render(Game* game) {
     BeginDrawing();
     ClearBackground(DARKGRAY);
@@ -1144,8 +1219,9 @@ void game_render(Game* game) {
         }
     }
 
-    // Draw animated doors (excluded from the baked tile mesh above)
+    // Draw animated doors + chargers (excluded from the baked tile mesh above)
     game->doorRenderer.render();
+    game->chargerRenderer.render();
 
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
@@ -1165,14 +1241,16 @@ void game_render(Game* game) {
     if (game->showAIDebug) {
         game_draw_ai_debug_3d(game);
         game_draw_door_debug_3d(game);
+        game_draw_charger_debug_3d(game);
     }
 
     EndMode3D();
 
-    // Debug: per-unit AI state + per-door state labels (toggle V)
+    // Debug: per-unit AI state + per-door/charger state labels (toggle V)
     if (game->showAIDebug) {
         game_draw_ai_debug_2d(game);
         game_draw_door_debug_2d(game);
+        game_draw_charger_debug_2d(game);
     }
 
     // HUD
@@ -1271,6 +1349,8 @@ void game_destroy(Game* game) {
     // Destroy door bodies before the physics world goes away, and the door mesh
     game->doorManager.destroy();
     game->doorRenderer.destroy();
+    game->chargerManager.destroy();
+    game->chargerRenderer.destroy();
 
     // Destroy physics world
     physics_world_destroy(&game->physics);

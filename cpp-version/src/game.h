@@ -13,6 +13,7 @@
 #include "level/tile_properties_loader.h"
 #include "rendering/scene_renderer.h"
 #include "rendering/door_renderer.h"
+#include "rendering/charger_renderer.h"
 #include "units/unit_manager.h"
 #include "combat/projectile_manager.h"
 #include "ai/ai_manager.h"
@@ -69,6 +70,10 @@ struct Game {
     // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;
     DoorRenderer doorRenderer;
+
+    // Chargers: animated walkable objects (proximity IDLE/CHARGING + free-run anim)
+    ChargerManager chargerManager;
+    ChargerRenderer chargerRenderer;
 
     // Camera
     Camera3D camera;
