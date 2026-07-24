@@ -61,6 +61,16 @@ private:
     AIComponent* findComponent(UnitInstance* unit);
     void handleCollision(AIComponent& ai, UnitInstance* other);
 
+    // Off-course recovery / path validation
+    // pathClear: is a straight move of the given (spherical) radius from `from` to
+    // `to` free of solid walls? Casts against CATEGORY_STATIC only, so other units
+    // do not count as blockers. nearestWaypoint: closest node by distance.
+    // nearestReachableWaypoint: closest node whose path from `pos` is wall-clear
+    // (falls back to the plain nearest if none qualify).
+    bool pathClear(Vector2 from, Vector2 to, float radius) const;
+    int  nearestWaypoint(Vector2 pos) const;
+    int  nearestReachableWaypoint(Vector2 pos, float radius) const;
+
     // Movement and rotation helpers.
     // setMotion drives the unit toward `moveTarget` (via a bounded carrot) while
     // facing `facing`, by setting its motor-joint target. holdPosition parks the
@@ -79,6 +89,9 @@ private:
     std::vector<AIComponent> components_;
     std::vector<Vector3> waypointPositions_;
     std::vector<std::vector<int>> adjacency_;
+
+    // Cached each update() so movement helpers can raycast against the world.
+    b2WorldId m_worldId = b2_nullWorldId;
 };
 
 #endif // AI_MANAGER_H

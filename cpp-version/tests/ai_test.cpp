@@ -653,6 +653,46 @@ TEST_F(AITestFixture, StuckUnitAbandonsBlockedRoute) {
     EXPECT_NE(ai.targetWaypoint, 2) << "A stuck unit reselects a different route";
 }
 
+TEST_F(AITestFixture, OffCourseUnitReacquiresNearestReachableWaypoint) {
+    UnitInstance unit;
+    initSingleEnemy(unit, unarmedDef, 1, -10);
+    auto& ai = aiManager.components()[0];
+    ai.hostile = false;
+    ai.currentWaypoint = 1;
+    ai.previousWaypoint = 0;
+    ai.targetWaypoint = 2;
+
+    // Wall across the straight path toward wp2 (10,0). Static shape proxies are
+    // queryable immediately at creation, so no physics step is needed.
+    b2BodyDef wallDef = b2DefaultBodyDef();
+    wallDef.type = b2_staticBody;
+    wallDef.position = {7.5f, 0.0f};
+    b2BodyId wall = b2CreateBody(worldId, &wallDef);
+    b2Polygon box = b2MakeBox(0.5f, 3.0f);
+    b2ShapeDef sd = b2DefaultShapeDef();
+    sd.filter.categoryBits = CATEGORY_STATIC;
+    sd.filter.maskBits = 0xFFFF;
+    b2CreatePolygonShape(wall, &sd, &box);
+
+    // Park the unit OFF the graph at (5,2): near wp1 (5,0) but not on it, with the
+    // wall between it and wp2. No stepping -> speed stays 0 (stuck). The nearest
+    // reachable waypoint is wp1, which it must travel to (so it won't immediately
+    // "arrive" and mask the re-acquire).
+    b2Body_SetTransform(unit.bodyId, (b2Vec2){5.0f, 2.0f}, b2MakeRot(0.0f));
+    b2Body_SetLinearVelocity(unit.bodyId, (b2Vec2){0, 0});
+
+    Vector2 playerPos = {100.0f, 100.0f};
+    int frames = static_cast<int>(AI_STUCK_TIME / 0.016f) + 5;
+    for (int i = 0; i < frames; i++) {
+        aiManager.update(0.016f, playerPos, worldId, nullptr);
+    }
+
+    // The wall blocks the path to wp2, so the unit re-acquires the nearest reachable
+    // waypoint (wp1) rather than taking the unit-deadlock reselect path.
+    EXPECT_EQ(ai.currentWaypoint, -1) << "Re-acquire resets currentWaypoint";
+    EXPECT_EQ(ai.targetWaypoint, 1) << "Re-acquire heads to the nearest reachable waypoint";
+}
+
 TEST_F(AITestFixture, HostileUnitIgnoresCollision) {
     UnitInstance unit;
     initSingleEnemy(unit, armedDef, 1, -10);

@@ -65,4 +65,10 @@ inline constexpr float UNIT_MOVE_LOOKAHEAD = 0.75f;
 // scalar (no physics body); it rotates the shortest way toward its target angle.
 inline constexpr float TURRET_SLEW_RATE = 8.0f;
 
+// Contact friction for unit shapes. Kept ~0 so units slide along walls (and past
+// each other) instead of sticking — the physics-native way to let a unit escape
+// when its path to a waypoint grazes an obstacle. Motor force + linear damping
+// govern speed, so friction has no role in movement feel here.
+inline constexpr float UNIT_CONTACT_FRICTION = 0.0f;
+
 #endif // MOVEMENT_TUNING_H

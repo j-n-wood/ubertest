@@ -169,7 +169,12 @@ UnitInstance* UnitManager::createInstance(
     // Create circle shape using unit's collision radius
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = 1.0f;
-    shapeDef.friction = 0.3f;
+    // Near-frictionless so a unit that hits a wall at an angle SLIDES along it
+    // (the contact solver truncates the into-wall velocity; low friction lets the
+    // motor's tangential component carry it along). This is the primary escape when
+    // a straight path to a waypoint clips an obstacle. Deceleration comes from
+    // linearDamping, not contact friction, so dropping this doesn't affect feel.
+    shapeDef.friction = UNIT_CONTACT_FRICTION;
     shapeDef.restitution = 0.0f;
     shapeDef.filter.categoryBits = CATEGORY_UNIT;
     shapeDef.filter.maskBits = MASK_UNIT;

@@ -27,6 +27,14 @@ float randomFloat(float min, float max) {
     return min + t * (max - min);
 }
 
+// Circle-cast hit sink: records whether the cast hit anything and stops at the
+// first (closest) hit.
+struct WallCastCtx { bool hit = false; };
+float wallCastCallback(b2ShapeId, b2Vec2, b2Vec2, float, void* ctx) {
+    static_cast<WallCastCtx*>(ctx)->hit = true;
+    return 0.0f;  // terminate — we only need to know that something was hit
+}
+
 // Step `current` toward `target` by at most maxStep radians, taking the shortest
 // way around the circle (so an angle near 0/2π slews the short way to a nearby
 // target instead of spinning almost all the way around).
@@ -84,6 +92,7 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
 
 void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
                        ProjectileManager* projectiles) {
+    m_worldId = worldId;  // cache for movement helpers (raycasts)
     for (auto& ai : components_) {
         if (!ai.unit || !ai.unit->active) continue;
 
@@ -194,6 +203,72 @@ void AIManager::handleCollision(AIComponent& ai, UnitInstance* other) {
 }
 
 //------------------------------------------------------------------------------
+// Off-course recovery / path validation
+//------------------------------------------------------------------------------
+//
+// LIMITATION (flagged, not yet solved): reachability here is a single STRAIGHT-LINE
+// cast. In open rooms with interior geometry — pillars, tables, stub walls — a
+// waypoint can be trivially reachable by a short detour around the obstacle yet
+// fail this cast because the direct line clips it. nearestReachableWaypoint() will
+// then skip such waypoints and, if a whole cluster is occluded, fall back to the
+// plain nearest (possibly itself occluded), so a unit can sit re-targeting a
+// waypoint it can't straight-line reach.
+//
+// Proper fix (future): route over the waypoint graph instead of line-of-sight —
+// e.g. BFS/A* over `adjacency_`, picking the nearest waypoint the unit can reach
+// AND whose next hop is clear, or inserting intermediate steering points. Until
+// then the near-frictionless wall SLIDING (see UNIT_CONTACT_FRICTION) is the
+// mitigation: a unit whose path grazes an obstacle slides around it rather than
+// pinning, which covers most pillar/table/stub-wall cases in practice.
+
+bool AIManager::pathClear(Vector2 from, Vector2 to, float radius) const {
+    if (B2_IS_NULL(m_worldId)) return true;
+    Vector2 d = Vector2Subtract(to, from);
+    float len = Vector2Length(d);
+    if (len < 0.001f) return true;
+
+    b2Circle circle;
+    circle.center = {0.0f, 0.0f};
+    circle.radius = (radius > 0.01f) ? radius : 0.1f;  // spherical width ~ unit collision radius
+    b2Transform xf;
+    xf.p = {from.x, from.y};
+    xf.q = b2MakeRot(0.0f);
+    b2Vec2 translation = {d.x, d.y};
+    // Cast as a unit against walls only — other units are not treated as blockers.
+    b2QueryFilter filter;
+    filter.categoryBits = CATEGORY_UNIT;
+    filter.maskBits = CATEGORY_STATIC;
+
+    WallCastCtx ctx;
+    b2World_CastCircle(m_worldId, &circle, xf, translation, filter, wallCastCallback, &ctx);
+    return !ctx.hit;
+}
+
+int AIManager::nearestWaypoint(Vector2 pos) const {
+    int best = -1;
+    float bestDist = 1e30f;
+    for (int i = 0; i < static_cast<int>(waypointPositions_.size()); i++) {
+        float d = Vector2Distance(pos, waypointPos2D(i));
+        if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+}
+
+int AIManager::nearestReachableWaypoint(Vector2 pos, float radius) const {
+    // Consider waypoints nearest-first; return the first with a wall-clear path.
+    std::vector<std::pair<float, int>> order;
+    order.reserve(waypointPositions_.size());
+    for (int i = 0; i < static_cast<int>(waypointPositions_.size()); i++) {
+        order.push_back({Vector2Distance(pos, waypointPos2D(i)), i});
+    }
+    std::sort(order.begin(), order.end());
+    for (const auto& [dist, idx] : order) {
+        if (pathClear(pos, waypointPos2D(idx), radius)) return idx;
+    }
+    return order.empty() ? -1 : order.front().second;  // fallback: plain nearest
+}
+
+//------------------------------------------------------------------------------
 // Patrol
 //------------------------------------------------------------------------------
 
@@ -271,8 +346,21 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
     if (speed < AI_STUCK_SPEED) {
         ai.stuckTimer += dt;
         if (ai.stuckTimer > AI_STUCK_TIME) {
-            ai.previousWaypoint = ai.targetWaypoint;  // avoid the blocked route on reselect
-            ai.targetWaypoint = -1;
+            float radius = ai.unit->definition ? ai.unit->definition->collisionRadius : 0.2f;
+            if (!pathClear(unitPos, targetPos, radius)) {
+                // A wall lies between us and the target — we've been knocked off the
+                // graph. Re-acquire by heading to the nearest waypoint we can
+                // actually reach on a wall-clear path.
+                int n = nearestReachableWaypoint(unitPos, radius);
+                ai.previousWaypoint = -1;
+                ai.currentWaypoint = -1;
+                ai.targetWaypoint = n;
+            } else {
+                // Path to the target is wall-clear (blocked by a unit/deadlock) —
+                // abandon it and reselect, biased away from the blocked direction.
+                ai.previousWaypoint = ai.targetWaypoint;
+                ai.targetWaypoint = -1;
+            }
             ai.stuckTimer = 0.0f;
             return;
         }
