@@ -2,6 +2,7 @@
 #include "pages/page_manager.h"
 #include "pages/console_menu_page.h"
 #include "pages/droid_library_page.h"
+#include "pages/ship_view_page.h"
 #include "game.h"
 #include "raylib.h"
 #include <memory>
@@ -12,6 +13,12 @@ void GamePage::update(float dt) {
     // Open the console when standing on a console tile and pressing SPACE.
     if (game_->consoleManager.playerInRange() && IsKeyPressed(KEY_SPACE)) {
         pages_->push(std::make_unique<ConsoleMenuPage>(game_, pages_));
+    }
+
+    // Open the ship view when standing on a lift tile and pressing SPACE. (Lift and
+    // console tiles are distinct, so at most one of these fires.)
+    if (game_->liftManager.onLift() && IsKeyPressed(KEY_SPACE)) {
+        pages_->push(std::make_unique<ShipViewPage>(game_, pages_));
     }
 
     // Debug shortcut (F3, only in debug mode): jump straight to the droid library —

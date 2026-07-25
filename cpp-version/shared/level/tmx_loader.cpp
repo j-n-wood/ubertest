@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <sstream>
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 
 namespace fs = std::filesystem;
 using namespace tinyxml2;
@@ -60,6 +62,25 @@ static std::vector<int> parseWaypointLinks(XMLElement* objectElem) {
 }
 
 //------------------------------------------------------------------------------
+// Helper: read a named integer custom property from an object. Returns true and
+// writes *out if the property exists.
+//------------------------------------------------------------------------------
+static bool findIntProperty(XMLElement* objectElem, const char* propName, int* out) {
+    XMLElement* propsElem = objectElem->FirstChildElement("properties");
+    if (!propsElem) return false;
+    for (XMLElement* prop = propsElem->FirstChildElement("property");
+         prop != nullptr;
+         prop = prop->NextSiblingElement("property")) {
+        const char* name = prop->Attribute("name");
+        if (name && strcmp(name, propName) == 0) {
+            *out = prop->IntAttribute("value", 0);
+            return true;
+        }
+    }
+    return false;
+}
+
+//------------------------------------------------------------------------------
 // Load a single TMX level file
 //------------------------------------------------------------------------------
 TmxLoadResult loadTmxLevel(const std::string& filePath) {
@@ -86,8 +107,9 @@ TmxLoadResult loadTmxLevel(const std::string& filePath) {
     result.level.tileWidth = mapElem->IntAttribute("tilewidth", 64);
     result.level.tileHeight = mapElem->IntAttribute("tileheight", 64);
 
-    // Extract level name from filename
+    // Extract level name + stable deck number from filename
     result.level.name = extractLevelName(fs::path(filePath).filename().string());
+    result.level.number = extractLevelNumber(fs::path(filePath).filename().string());
 
     // Find tileset reference
     XMLElement* tilesetElem = mapElem->FirstChildElement("tileset");
@@ -122,7 +144,11 @@ TmxLoadResult loadTmxLevel(const std::string& filePath) {
         return result;
     }
 
-    // Find waypoints in object layer
+    // Find objects in object layers: lift markers (any object carrying an "elevator"
+    // custom property) and waypoints (point objects). Tile size is needed to convert an
+    // object's pixel position to a tile coordinate.
+    const int tileW = result.level.tileWidth > 0 ? result.level.tileWidth : 64;
+    const int tileH = result.level.tileHeight > 0 ? result.level.tileHeight : 64;
     for (XMLElement* objGroupElem = mapElem->FirstChildElement("objectgroup");
          objGroupElem != nullptr;
          objGroupElem = objGroupElem->NextSiblingElement("objectgroup")) {
@@ -130,6 +156,22 @@ TmxLoadResult loadTmxLevel(const std::string& filePath) {
         for (XMLElement* objElem = objGroupElem->FirstChildElement("object");
              objElem != nullptr;
              objElem = objElem->NextSiblingElement("object")) {
+
+            // Lift marker: an object with an "elevator" custom property. Takes priority
+            // over the waypoint interpretation so a lift point object isn't also a waypoint.
+            int elevator = 0, stopIndex = 0;
+            if (findIntProperty(objElem, "elevator", &elevator)) {
+                findIntProperty(objElem, "stop_index", &stopIndex);
+                float ox = objElem->FloatAttribute("x", 0.0f);
+                float oy = objElem->FloatAttribute("y", 0.0f);
+                TmxLift lift;
+                lift.col = static_cast<int>(ox / tileW);
+                lift.row = static_cast<int>(oy / tileH);
+                lift.elevator = elevator;
+                lift.stopIndex = stopIndex;
+                result.level.lifts.push_back(lift);
+                continue;
+            }
 
             // Check if it's a point object (waypoint)
             XMLElement* pointElem = objElem->FirstChildElement("point");
@@ -220,4 +262,22 @@ std::string extractLevelName(const std::string& filename) {
     }
 
     return name;
+}
+
+//------------------------------------------------------------------------------
+// Extract deck number from filename ("level_<N>_name.tmx" -> N; -1 if absent)
+//------------------------------------------------------------------------------
+int extractLevelNumber(const std::string& filename) {
+    // Expect "level_<N>_..."; read the digits between the first two underscores.
+    size_t firstUnderscore = filename.find('_');
+    if (firstUnderscore == std::string::npos) return -1;
+    size_t start = firstUnderscore + 1;
+    size_t end = filename.find('_', start);
+    std::string digits = (end == std::string::npos) ? filename.substr(start)
+                                                     : filename.substr(start, end - start);
+    if (digits.empty()) return -1;
+    for (char c : digits) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) return -1;
+    }
+    return std::atoi(digits.c_str());
 }

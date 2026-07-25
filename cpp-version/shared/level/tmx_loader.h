@@ -22,4 +22,8 @@ std::vector<TmxLoadResult> loadTmxLevelsFromDirectory(const std::string& directo
 // Get level name from filename (e.g., "level_0_maintenance.tmx" -> "Maintenance")
 std::string extractLevelName(const std::string& filename);
 
+// Get the deck number from filename (e.g., "level_12_upper_cargo.tmx" -> 12).
+// Returns -1 if no "level_<N>_" prefix is present.
+int extractLevelNumber(const std::string& filename);
+
 #endif // TMX_LOADER_H

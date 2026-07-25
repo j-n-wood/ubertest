@@ -13,10 +13,6 @@ namespace fs = std::filesystem;
 
 #define PI 3.14159265358979323846f
 
-// Lift tile GIDs in the TMX tileset (from tiles 0.json annotations)
-static constexpr int LIFT_TILE_GID_A = 16;
-static constexpr int LIFT_TILE_GID_B = 17;
-
 // Forward declarations
 static bool game_load_levels(Game* game);
 static bool game_build_level_render_data(Game* game);
@@ -31,7 +27,8 @@ static void game_spawn_player(Game* game);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
 static void game_switch_level(Game* game, int newLevel);
-static std::vector<Vector2> game_find_lift_positions(const Game* game, int level);
+static void game_change_level(Game* game, int newLevel, const Vector2* target);
+static void game_teleport_player(Game* game, Vector2 targetPos);
 static void game_update_player_rotation(Game* game);
 static void game_cycle_player_unit(Game* game, int direction);
 
@@ -157,6 +154,18 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         TraceLog(LOG_INFO, "Loaded spawn data from %s", spawnPath.c_str());
     } else {
         TraceLog(LOG_WARNING, "Failed to load spawn data from %s", spawnPath.c_str());
+    }
+
+    // Build the elevator graph from every level's lift objects (persists across
+    // level switches — stops reference stable runtime level indices).
+    game->liftManager.build(game->levels);
+
+    // Load the side-on ship rendering data (for the ship-view page).
+    std::string shipMapPath = game->assetPath + "/ships/ship1/shipmap.json";
+    if (game->shipMap.load(shipMapPath)) {
+        TraceLog(LOG_INFO, "Loaded ship map from %s", shipMapPath.c_str());
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load ship map from %s", shipMapPath.c_str());
     }
 
     // Spawn enemies for the starting level
@@ -523,6 +532,19 @@ static void game_spawn_player(Game* game) {
         }
     }
 
+    // Prefer a lift tile on the starting level (so the player begins on a lift, ready to
+    // travel). Falls back to the waypoint spawn above if the level has no lift.
+    if (!game->testConfig.enabled &&
+        game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+        const TmxLevel& lvl = game->levels[game->currentLevel];
+        if (!lvl.lifts.empty()) {
+            const TmxLift& lift = lvl.lifts[0];
+            spawnPos = {lift.col + 0.5f - lvl.width * 0.5f,
+                        lift.row + 0.5f - lvl.height * 0.5f};
+            TraceLog(LOG_INFO, "Spawning player on lift tile: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+        }
+    }
+
     // In test mode, offset spawn position to avoid nearby geometry
     if (game->testConfig.enabled) {
         spawnPos.x += -1.0f;  // Offset in physics X (world X)
@@ -723,44 +745,71 @@ static void game_despawn_enemies(Game* game) {
 }
 
 //------------------------------------------------------------------------------
-// Lift Tile Detection
+// Level Switching + player placement
 //------------------------------------------------------------------------------
 
-static std::vector<Vector2> game_find_lift_positions(const Game* game, int level) {
-    std::vector<Vector2> positions;
-    if (level < 0 || level >= (int)game->levels.size()) return positions;
+// Teleport the player to a world/physics position, clearing nearby enemies first so
+// the player doesn't materialise inside one. Re-points the motor-joint target so the
+// unit holds the new spot rather than being dragged back toward its old target.
+static void game_teleport_player(Game* game, Vector2 targetPos) {
+    if (!game->playerUnit || !b2Body_IsValid(game->playerUnit->bodyId)) return;
 
-    const TmxLevel& lvl = game->levels[level];
+    // Move player out of the way during collision resolution
+    float playerAngle = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
+    b2Body_SetTransform(game->playerUnit->bodyId,
+                        (b2Vec2){-100.0f, -100.0f},
+                        b2Body_GetRotation(game->playerUnit->bodyId));
+    b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
+    b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+    unit_set_move_target(game->playerUnit, {-100.0f, -100.0f}, playerAngle);
 
-    for (int row = 0; row < lvl.height; row++) {
-        for (int col = 0; col < lvl.width; col++) {
-            int gid = lvl.tiles[row * lvl.width + col];
-            if (gid == LIFT_TILE_GID_A || gid == LIFT_TILE_GID_B) {
-                // Tile center in world/physics coordinates (worldScale = 1.0)
-                float px = col + 0.5f;
-                float py = row + 0.5f;
-                positions.push_back({px, py});
-            }
+    // Simulate enemies away from the target if any are nearby
+    const float clearRadius = 1.5f;
+    float dt = 1.0f / 60.0f;
+    int maxSteps = 300;  // up to 5 seconds of simulation
+    Vector2 fakePlayerPos = {-1000.0f, -1000.0f};  // Keep enemies in patrol mode
+
+    for (int step = 0; step < maxSteps; step++) {
+        bool collision = false;
+        for (auto* enemy : game->enemyUnits) {
+            if (!enemy || !enemy->active || !enemy->rootSection) continue;
+            Vector2 ePos = enemy->rootSection->worldPosition;
+            float dx = ePos.x - targetPos.x;
+            float dy = ePos.y - targetPos.y;
+            float dist = sqrtf(dx * dx + dy * dy);
+            if (dist < clearRadius) { collision = true; break; }
         }
+        if (!collision) break;
+
+        game->aiManager.update(dt, fakePlayerPos,
+                               game->physics.world_id,
+                               &game->projectileManager);
+        physics_world_step(&game->physics, dt);
+        game->unitManager.update(dt);
     }
 
-    return positions;
+    b2Body_SetTransform(game->playerUnit->bodyId,
+                        (b2Vec2){targetPos.x, targetPos.y},
+                        b2Body_GetRotation(game->playerUnit->bodyId));
+    b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
+    b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
+    unit_set_move_target(game->playerUnit, targetPos,
+                         b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId)));
+    game->unitManager.update(0);
+
+    TraceLog(LOG_INFO, "Moved player to (%.1f, %.1f) on level %d",
+             targetPos.x, targetPos.y, game->currentLevel);
 }
 
-//------------------------------------------------------------------------------
-// Debug Level Switching
-//------------------------------------------------------------------------------
-
-static void game_switch_level(Game* game, int newLevel) {
+// Rebuild the level and place the player. If `target` is non-null the player is
+// teleported there; otherwise the first lift stop on the new level is used (if any).
+static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     if (newLevel < 0 || newLevel >= (int)game->levels.size()) return;
-    if (newLevel == game->currentLevel) return;
 
     TraceLog(LOG_INFO, "Switching from level %d to level %d", game->currentLevel, newLevel);
 
-    // 1. Despawn all enemies
     game_despawn_enemies(game);
 
-    // 2. Destroy current collision bodies (static Box2D bodies)
     for (auto& body : game->collisionBodies) {
         if (body.valid) {
             b2DestroyBody(body.body_id);
@@ -769,90 +818,45 @@ static void game_switch_level(Game* game, int newLevel) {
     }
     game->collisionBodies.clear();
 
-    // 3. Switch level
     game->currentLevel = newLevel;
 
-    // 4. Build render data and collision data for new level
     if (!game_build_level_render_data(game)) {
         TraceLog(LOG_ERROR, "Failed to build render data for level %d", newLevel);
         return;
     }
-
-    // 5. Create collision bodies for new level
     game_create_level_collision(game);
-
-    // 5b. Rebuild doors + chargers + consoles for new level (replaces previous set)
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
-
-    // 6. Spawn enemies for new level
     game_spawn_enemies(game);
 
-    // 7. Find lift positions in the new level and teleport player
-    auto liftPositions = game_find_lift_positions(game, newLevel);
-
-    if (!liftPositions.empty() && game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
-        Vector2 targetPos = liftPositions[0];
-
-        // Move player out of the way during collision resolution
-        float playerAngle = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
-        b2Body_SetTransform(game->playerUnit->bodyId,
-                            (b2Vec2){-100.0f, -100.0f},
-                            b2Body_GetRotation(game->playerUnit->bodyId));
-        b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
-        b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
-        // Follow the teleport with the joint target so the motor doesn't drag the
-        // player back toward its old target during the clear-out simulation below.
-        unit_set_move_target(game->playerUnit, {-100.0f, -100.0f}, playerAngle);
-
-        // Simulate enemies away from the lift position if any are nearby
-        const float clearRadius = 1.5f;
-        float dt = 1.0f / 60.0f;
-        int maxSteps = 300;  // up to 5 seconds of simulation
-        Vector2 fakePlayerPos = {-1000.0f, -1000.0f};  // Keep enemies in patrol mode
-
-        for (int step = 0; step < maxSteps; step++) {
-            bool collision = false;
-            for (auto* enemy : game->enemyUnits) {
-                if (!enemy || !enemy->active || !enemy->rootSection) continue;
-                Vector2 ePos = enemy->rootSection->worldPosition;
-                float dx = ePos.x - targetPos.x;
-                float dy = ePos.y - targetPos.y;
-                float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < clearRadius) {
-                    collision = true;
-                    break;
-                }
-            }
-            if (!collision) break;
-
-            // Advance AI and physics to move enemies along patrol routes
-            game->aiManager.update(dt, fakePlayerPos,
-                                   game->physics.world_id,
-                                   &game->projectileManager);
-            physics_world_step(&game->physics, dt);
-            game->unitManager.update(dt);
+    // Place the player: explicit target (lift stop) or the first lift stop on this level.
+    Vector2 tp{};
+    bool have = false;
+    if (target) {
+        tp = *target;
+        have = true;
+    } else {
+        for (const LiftStop& s : game->liftManager.stops()) {
+            if (s.level == newLevel) { tp = s.physicsCenter; have = true; break; }
         }
+    }
+    if (have) game_teleport_player(game, tp);
+    else TraceLog(LOG_WARNING, "No lift on level %d; player stays put", newLevel);
+}
 
-        // Teleport player to lift position
-        b2Body_SetTransform(game->playerUnit->bodyId,
-                            (b2Vec2){targetPos.x, targetPos.y},
-                            b2Body_GetRotation(game->playerUnit->bodyId));
-        b2Body_SetLinearVelocity(game->playerUnit->bodyId, (b2Vec2){0, 0});
-        b2Body_SetAngularVelocity(game->playerUnit->bodyId, 0);
-        // Re-point the joint target at the new position so the player holds the
-        // lift spot instead of being pulled back toward the old target.
-        unit_set_move_target(game->playerUnit, targetPos,
-                             b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId)));
+// Debug level switching (PAGE_UP/PAGE_DOWN): place at the level's first lift stop.
+static void game_switch_level(Game* game, int newLevel) {
+    if (newLevel == game->currentLevel) return;
+    game_change_level(game, newLevel, nullptr);
+}
 
-        // Sync unit positions from physics
-        game->unitManager.update(0);
-
-        TraceLog(LOG_INFO, "Moved player to lift at (%.1f, %.1f) on level %d",
-                 targetPos.x, targetPos.y, newLevel);
-    } else if (liftPositions.empty()) {
-        TraceLog(LOG_WARNING, "No lift tiles found on level %d, player stays at current position", newLevel);
+// Lift use: move the player to a specific stop, switching level if needed.
+void game_switch_to_stop(Game* game, const LiftStop& stop) {
+    if (stop.level == game->currentLevel) {
+        game_teleport_player(game, stop.physicsCenter);
+    } else {
+        game_change_level(game, stop.level, &stop.physicsCenter);
     }
 }
 
@@ -1127,11 +1131,12 @@ void game_update_gameplay(Game* game, float dt) {
         game->unitManager.update(simDt);
     }
 
-    // Console proximity (drives the "Press SPACE" prompt + console entry). Runs even
-    // while paused (player is stationary then) — it's a cheap distance check.
+    // Console + lift proximity (drive the "Press SPACE" prompts + entry actions). Runs
+    // even while paused (player is stationary then) — cheap distance checks.
     if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
         b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
         game->consoleManager.update((Vector2){pp.x, pp.y});
+        game->liftManager.update((Vector2){pp.x, pp.y}, game->currentLevel);
     }
 
     // Camera follows player
@@ -1379,6 +1384,13 @@ void game_render_gameplay(Game* game) {
         const char* txt = "Press SPACE to use console";
         int w = MeasureText(txt, 20);
         DrawText(txt, GetScreenWidth() / 2 - w / 2, GetScreenHeight() - 60, 20, YELLOW);
+    }
+
+    // Lift-use prompt (player standing on a lift tile).
+    if (game->liftManager.onLift()) {
+        const char* txt = "Press SPACE - ship lift";
+        int w = MeasureText(txt, 20);
+        DrawText(txt, GetScreenWidth() / 2 - w / 2, GetScreenHeight() - 60, 20, SKYBLUE);
     }
 
     EndDrawing();

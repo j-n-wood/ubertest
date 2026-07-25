@@ -119,10 +119,10 @@ void DroidLibraryPage::handleInput() {
     if (IsKeyPressed(KEY_V)) game_->showAIDebug = !game_->showAIDebug;
     if (ids_.empty()) return;
     int n = (int)ids_.size();
-    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_RIGHT)) {
+    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_W)) {
         index_ = wrapIndex(index_, +1, n);
         rebuildDisplay();
-    } else if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_LEFT)) {
+    } else if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_S)) {
         index_ = wrapIndex(index_, -1, n);
         rebuildDisplay();
     }
@@ -236,8 +236,8 @@ void DroidLibraryPage::render() {
         }
     }
 
-    DrawText(game_->showAIDebug ? "UP/DOWN: browse   V: debug edit (on)   ESC: back"
-                                : "UP/DOWN: browse   V: debug edit   ESC: back",
+    DrawText(game_->showAIDebug ? "W/S or UP/DOWN: browse   V: debug edit (on)   ESC: back"
+                                : "W/S or UP/DOWN: browse   V: debug edit   ESC: back",
              30, sh - 30, 16, GRAY);
     EndDrawing();
 }

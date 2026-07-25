@@ -12,6 +12,8 @@
 #include "level/level_renderer.h"
 #include "level/tile_properties_loader.h"
 #include "level/console_manager.h"
+#include "level/lift_manager.h"
+#include "level/ship_map.h"
 #include "rendering/scene_renderer.h"
 #include "rendering/door_renderer.h"
 #include "rendering/charger_renderer.h"
@@ -79,6 +81,11 @@ struct Game {
     // Consoles: static usable tiles (player-near-centre -> SPACE opens console page)
     ConsoleManager consoleManager;
 
+    // Lifts: elevator graph built from in-map lift objects (SPACE opens the ship view);
+    // shipMap holds the side-on rendering rects (shipmap.json).
+    LiftManager liftManager;
+    ShipMap shipMap;
+
     // Camera
     Camera3D camera;
     float cameraHeight;        // Height above ground (Y position)
@@ -111,5 +118,9 @@ void game_init(Game* game, const char* assetPath = "assets", const char* unitId 
 void game_update_gameplay(Game* game, float dt);
 void game_render_gameplay(Game* game);
 void game_destroy(Game* game);
+
+// Move the player to a lift stop, switching level if the stop is on another deck.
+// Called by the ship-view page when the player confirms a destination.
+void game_switch_to_stop(Game* game, const LiftStop& stop);
 
 #endif

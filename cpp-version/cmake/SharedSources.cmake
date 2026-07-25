@@ -19,6 +19,8 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/level/door_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/charger_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp
 )
 
 # Level loading sources (TMX/TSX parsing, tile rendering, collision, spawning)

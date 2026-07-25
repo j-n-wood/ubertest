@@ -25,7 +25,11 @@ add_executable(run_tests
     door_test.cpp
     charger_test.cpp
     console_test.cpp
+    lift_test.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
     ${CMAKE_SOURCE_DIR}/src/pages/page_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp

@@ -25,6 +25,19 @@ struct TmxWaypoint {
 };
 
 //------------------------------------------------------------------------------
+// Lift marker (from a TMX object-layer point object with elevator/stop_index
+// custom properties). Identifies a lift tile as stop `stopIndex` on elevator
+// `elevator`; the LiftManager groups these across levels into elevator chains.
+//------------------------------------------------------------------------------
+
+struct TmxLift {
+    int col = 0;              // Tile column (object pixel x / tileWidth)
+    int row = 0;              // Tile row    (object pixel y / tileHeight)
+    int elevator = 0;         // Which elevator/shaft this lift accesses
+    int stopIndex = 0;        // Position on that elevator (0-based, ascending)
+};
+
+//------------------------------------------------------------------------------
 // Tile Collision Shape (from TSX objectgroup)
 //------------------------------------------------------------------------------
 
@@ -90,12 +103,15 @@ struct TmxTileset {
 struct TmxLevel {
     std::string name;
     std::string filePath;     // Source TMX file path
+    int number = -1;          // Stable deck number parsed from "level_<N>_name.tmx"
+                              // (array index != N because files sort lexicographically)
     int width = 0;            // Grid width in tiles
     int height = 0;           // Grid height in tiles
     int tileWidth = 64;       // Tile size in pixels
     int tileHeight = 64;
     std::vector<int> tiles;   // Row-major tile IDs (0 = empty, 1+ = tile)
     std::vector<TmxWaypoint> waypoints;
+    std::vector<TmxLift> lifts; // Lift markers from the object layer
     std::string tilesetSource; // Reference to TSX file (e.g., "default.tsx")
 };
 
