@@ -164,4 +164,8 @@
             <point/>
         </object>
     </objectgroup>
+ <objectgroup id="90" name="lifts">
+  <object id="900" x="544" y="480"><properties><property name="elevator" type="int" value="3"/><property name="stop_index" type="int" value="1"/></properties><point/></object>
+  <object id="901" x="992" y="352"><properties><property name="elevator" type="int" value="6"/><property name="stop_index" type="int" value="4"/></properties><point/></object>
+ </objectgroup>
 </map>
