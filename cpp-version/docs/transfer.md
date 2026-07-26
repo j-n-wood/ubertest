@@ -80,11 +80,32 @@ unit (Controlling/Transferring) and "on" when Free.
 components whose `controlled` is set, so a piloted unit is neither AI-driven nor
 collision-redirected. `AIManager::findComponent(unit)` locates the component to toggle.
 
+## Level transitions
+
+A piloted unit travels with the player. On a level switch (`game_change_level`), the
+captured unit's class **and current health** are recorded (`transfer_captured_class` /
+`transfer_captured_health`) before transfer control is released; after the player device is
+migrated into the new level's world, a unit of that class is re-piloted at the device and
+its carried health restored (`transfer_recapture_class(class, health)`), so a damaged droid
+stays damaged. The captured unit is created in the **active level's world** (units live in
+per-level worlds — see [levels.md](levels.md)); it is a respawn keyed by class+health, not a
+physical body move. The device itself migrates worlds via `unit_rebind_world`.
+
 ## F1 / F2 (debug capture)
 
 F1/F2 are a debug tool to test piloting without hunting for a droid: they create a captured
 unit of the next/prev class (skipping class 0) at the device position and enter Controlling,
 or change the current captured unit's type. The device itself always stays type 0.
+
+## Debugging collisions
+
+Hold **B** in-game to draw *every* shape in the active world — including bodies not attached
+to any game object — coloured by type (static=red, dynamic=green, kinematic=blue). It draws
+each shape's true geometry (a **circle** for units, a box for polygon colliders), not its
+AABB. Unlike the per-object overlays (**C** = level collision, **U** = unit shapes), it
+iterates the whole Box2D world (`b2World_OverlapAABB` over a world-spanning box), so it
+exposes stray/orphaned colliders behind "invisible wall" movement blocks. (With per-level
+worlds it only ever shows the active level.)
 
 ## Deferred
 

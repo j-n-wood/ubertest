@@ -71,6 +71,7 @@ void DroidLibraryPage::activate() {
     world_ = b2CreateWorld(&wd);
     std::string modelsPath = game_->assetPath + "/models/";
     units_.init(world_, modelsPath.c_str());
+    units_.setModelCache(&game_->modelCache);  // reuse the game's shared models
 
     // 3/4 orbit camera (matches the unit_test display pedestal).
     float dist = 3.0f, pitch = 45.0f * DEG2RAD, yaw = -45.0f * DEG2RAD;
@@ -152,6 +153,19 @@ void DroidLibraryPage::render() {
     BeginMode3D(camera_);
     DrawGrid(10, 0.3f);
     units_.renderAll();
+    // Debug: draw the collision radius as a ground-level ring (physics origin = world
+    // origin here). Reads the definition's live collisionRadius, so the editor slider
+    // updates it immediately. Drawn at the floor so it doesn't clip through the model;
+    // if it's still hard to read we can disable the depth test.
+    if (game_->showAIDebug && !ids_.empty()) {
+        const UnitDefinition* d = game_->unitManager.getDefinition(ids_[index_]);
+        if (d) {
+            Vector3 c = {0.0f, 0.02f, 0.0f};
+            DrawCircle3D(c, d->collisionRadius, (Vector3){1, 0, 0}, 90.0f, GREEN);
+            // A couple of nested rings make the thin outline easier to see.
+            DrawCircle3D(c, d->collisionRadius * 0.98f, (Vector3){1, 0, 0}, 90.0f, LIME);
+        }
+    }
     EndMode3D();
 
     // Header.
@@ -222,6 +236,12 @@ void DroidLibraryPage::render() {
             slider("turn (rad/s)", &mdef->turnSpeed, 0.0f, 15.0f);
             slider("coastDamp", &mdef->coastDamping, -1.0f, 8.0f);  // <0 = off (crisp stop)
             slider("armour", &mdef->properties.armour, 0.0f, 1000.0f);
+            // Collision radius: fine format, capped at the tile-fit limit (0.425) so the
+            // saved value isn't re-clamped on reload. Drives the ground ring in the 3D view.
+            GuiSlider((Rectangle){(float)ex + 90, (float)ey, (float)ew, 20}, "collRadius",
+                      TextFormat("%.3f", mdef->collisionRadius),
+                      &mdef->collisionRadius, 0.05f, 0.425f);
+            ey += 30;
 
             if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 160, 32}, "Save to JSON")) {
                 std::string path = game_->assetPath + "/units/" + ids_[index_] + ".json";

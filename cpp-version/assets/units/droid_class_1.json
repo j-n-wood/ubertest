@@ -1,40 +1,46 @@
 {
-  "name": "Class 1",
+  "acceleration": 200.0,
+  "coastDamping": -1.0,
+  "collisionRadius": 0.42500001192092896,
+  "deceleration": 500.0,
   "id": "droid_class_1",
-  "collisionRadius": 0.200000,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 100.000000,
-  "acceleration": 200.000000,
-  "deceleration": 500.000000,
+  "maxSpeed": 100.0,
+  "name": "Class 1",
   "properties": {
-    "classId": 1,
-    "typeCode": 123,
-    "energy": 1,
     "armour": 20.0,
-    "weapon": -1,
-    "droidType": 1,
-    "driveType": 0,
     "brainType": 1,
+    "classId": 1,
+    "description": "Simple cleaning robot. A common device used to maintain a clean ship.",
+    "driveType": 0,
+    "droidType": 1,
+    "energy": 1,
     "hasTurret": false,
-    "description": "Simple cleaning robot. A common device used to maintain a clean ship."
+    "omnidirectional": false,
+    "typeCode": 123,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 30.0,
   "rootSection": {
-    "name": "section_0",
     "model": "models/123.gltf",
-    "offset": [-0.000000, 0.000000, 0.076200],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
+    "name": "section_0",
+    "offset": [
+      -0.0,
+      0.0,
+      0.07620000094175339
+    ],
     "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.514350
-      },
+      "angularDamping": 8.0,
       "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
       "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
-    "children": []
-  }
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.5143499970436096,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 0.0
 }

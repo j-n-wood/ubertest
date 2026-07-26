@@ -1,7 +1,7 @@
 {
   "name": "Class 22",
   "id": "droid_class_22",
-  "collisionRadius": 1.000000,
+  "collisionRadius": 0.425,
   "proximityRadius": 36.000000,
   "maxSpeed": 120.000000,
   "acceleration": 400.000000,

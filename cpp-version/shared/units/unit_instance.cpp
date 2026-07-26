@@ -17,11 +17,12 @@ SectionInstance::~SectionInstance() {
         animCount = 0;
     }
 
-    // Unload model
-    if (hasModel) {
+    // Unload the model only if this section owns it. Shared models come from the
+    // ModelCache, which owns their GPU buffers and unloads them once.
+    if (hasModel && ownsModel) {
         UnloadModel(model);
-        hasModel = false;
     }
+    hasModel = false;
 }
 
 //------------------------------------------------------------------------------
@@ -158,4 +159,61 @@ void unit_set_collision_enabled(UnitInstance* unit, bool enabled) {
         f.groupIndex = unit->collisionGroupId;
     }
     b2Shape_SetFilter(shape, f);
+}
+
+void unit_rebind_world(UnitInstance* unit, b2WorldId newWorld, b2BodyId newOrigin,
+                       Vector2 pos, float facing) {
+    if (!unit || !unit->definition) return;
+    const UnitDefinition* def = unit->definition;
+
+    // Preserve the current collision filter (may be the disabled {0,0} device state).
+    b2Filter filter;
+    filter.categoryBits = CATEGORY_UNIT;
+    filter.maskBits = MASK_UNIT;
+    filter.groupIndex = unit->collisionGroupId;
+    if (b2Body_IsValid(unit->bodyId)) {
+        b2ShapeId sid = b2_nullShapeId;
+        if (b2Body_GetShapes(unit->bodyId, &sid, 1) >= 1 && b2Shape_IsValid(sid)) {
+            filter = b2Shape_GetFilter(sid);
+        }
+    }
+
+    // Destroy the old body + motor joint (they belong to the old world).
+    if (b2Joint_IsValid(unit->motorJoint)) {
+        b2DestroyJoint(unit->motorJoint);
+        unit->motorJoint = b2_nullJointId;
+    }
+    if (b2Body_IsValid(unit->bodyId)) {
+        b2DestroyBody(unit->bodyId);
+        unit->bodyId = b2_nullBodyId;
+    }
+
+    // Recreate in the new world (mirrors UnitManager::createInstance's body setup).
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_dynamicBody;
+    bodyDef.position = {pos.x, pos.y};
+    bodyDef.rotation = b2MakeRot(facing);
+    bodyDef.linearDamping = unit_base_linear_damping(def->maxSpeed, def->acceleration);
+    bodyDef.angularDamping = UNIT_ANGULAR_DAMPING;
+    bodyDef.enableSleep = false;
+    bodyDef.userData = &unit->bodyUserData;  // owner still points at this unit
+    unit->bodyId = b2CreateBody(newWorld, &bodyDef);
+
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = 1.0f;
+    shapeDef.friction = UNIT_CONTACT_FRICTION;
+    shapeDef.restitution = 0.0f;
+    shapeDef.filter = filter;  // preserved (enabled or disabled)
+    b2Circle circle;
+    circle.center = {0, 0};
+    circle.radius = def->collisionRadius > 0.0f ? def->collisionRadius : 0.2f;
+    b2CreateCircleShape(unit->bodyId, &shapeDef, &circle);
+
+    unit_attach_motor_joint(unit, newWorld, newOrigin);
+    unit_apply_movement_tuning(unit);  // motor max-torque + damping for this type
+
+    if (unit->rootSection) {
+        unit->rootSection->worldPosition = pos;
+        unit->rootSection->worldRotation = facing;
+    }
 }

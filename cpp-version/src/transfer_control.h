@@ -57,4 +57,12 @@ void transfer_reset(Game* game);
 // skipping class 0; the device itself stays type 0.
 void transfer_debug_cycle(Game* game, int direction);
 
+// Cross-level carry: `transfer_captured_class` returns the piloted unit's class number
+// (or -1 if not piloting), captured BEFORE the old level is despawned;
+// `transfer_recapture_class` respawns that class at the device's position on the new
+// level and resumes piloting it. Call the latter after the player has been placed.
+int transfer_captured_class(Game* game);
+float transfer_captured_health(Game* game);  // current health of the piloted unit, or -1
+void transfer_recapture_class(Game* game, int classId, float health = -1.0f);
+
 #endif // TRANSFER_CONTROL_H

@@ -2,6 +2,7 @@
 #include "transfer_control.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
+#include "units/heal.h"
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -9,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
+#include <random>
 
 namespace fs = std::filesystem;
 
@@ -31,6 +33,9 @@ static void game_switch_level(Game* game, int newLevel);
 static void game_change_level(Game* game, int newLevel, const Vector2* target);
 static void game_teleport_player(Game* game, Vector2 targetPos);
 static void game_update_player_rotation(Game* game);
+static void game_deactivate_level(Game* game, int level);
+static void game_reactivate_current_level(Game* game);
+static void game_reap_dead(Game* game);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -87,6 +92,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     // UnitManager strips "models/" prefix and appends to base path, so use assets/models/
     std::string modelsPath = game->assetPath + "/models/";
     game->unitManager.init(game->physics.world_id, modelsPath.c_str());
+    game->unitManager.setModelCache(&game->modelCache);  // share GLTF models across instances
 
     // Load all levels
     if (!game_load_levels(game)) {
@@ -95,8 +101,31 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         return;
     }
 
+    // One retained Box2D world per level (separate worlds => no cross-level overlap; only
+    // the active world is stepped). Level 0 reuses the world created by physics_world_init;
+    // the rest are fresh. Each world gets a static origin body for unit motor joints.
+    {
+        int n = (int)game->levels.size();
+        game->levelWorlds.assign(n, b2_nullWorldId);
+        game->levelOrigins.assign(n, b2_nullBodyId);
+        game->levelUnits.assign(n, {});
+        game->levelPopulated.assign(n, false);
+        game->levelLastActive.assign(n, 0.0);
+        for (int L = 0; L < n; ++L) {
+            if (L == 0) {
+                game->levelWorlds[0] = game->physics.world_id;  // reuse the init world
+            } else {
+                b2WorldDef wd = b2DefaultWorldDef();
+                wd.gravity = (b2Vec2){0.0f, 0.0f};
+                game->levelWorlds[L] = b2CreateWorld(&wd);
+            }
+            game->levelOrigins[L] = unit_create_origin_body(game->levelWorlds[L]);
+        }
+    }
+
     // Build render data for starting level (level_0_maintenance)
     game->currentLevel = 0;
+    game->physics.world_id = game->levelWorlds[0];  // active world
     if (!game_build_level_render_data(game)) {
         TraceLog(LOG_ERROR, "Failed to build render data for level %d", game->currentLevel);
     }
@@ -623,7 +652,12 @@ static void game_spawn_enemies(Game* game) {
         return;
     }
 
-    // Create enemy instances
+    // Create the level's persistent roster in ITS OWN world (they live there for the
+    // ship's lifetime; frozen when the level is inactive). Fixed once per level.
+    const int L = game->currentLevel;
+    b2WorldId world = game->levelWorlds[L];
+    b2BodyId origin = game->levelOrigins[L];
+    game->levelUnits[L].clear();
     game->enemyUnits.clear();
     std::vector<UnitInstance*> enemies;
 
@@ -638,14 +672,18 @@ static void game_spawn_enemies(Game* game) {
         Vector3 wpPos = renderData.waypointPositions[spawn.waypointIndex];
         Vector2 spawnPos = {wpPos.x, wpPos.z};  // World X,Z -> Physics X,Y
 
-        UnitInstance* enemy = game->unitManager.createInstance(defId, spawnPos, spawn.angle);
+        UnitInstance* enemy = game->unitManager.createInstance(defId, spawnPos, spawn.angle,
+                                                               world, origin);
         if (enemy) {
+            enemy->levelIndex = L;
             enemies.push_back(enemy);
+            game->levelUnits[L].push_back(enemy);
             game->enemyUnits.push_back(enemy);
         } else {
             TraceLog(LOG_WARNING, "Failed to create enemy '%s'", defId.c_str());
         }
     }
+    game->levelPopulated[L] = true;
 
     // Apply lighting shader to all unit models (including new enemies)
     game->unitManager.applyShaderToModels(
@@ -657,7 +695,7 @@ static void game_spawn_enemies(Game* game) {
         renderData.waypointAdjacency,
         enemies);
 
-    TraceLog(LOG_INFO, "Spawned %zu enemies on level %d", enemies.size(), game->currentLevel);
+    TraceLog(LOG_INFO, "Populated %zu enemies on level %d", enemies.size(), L);
 }
 
 static void game_despawn_enemies(Game* game) {
@@ -730,29 +768,120 @@ static void game_teleport_player(Game* game, Vector2 targetPos) {
              targetPos.x, targetPos.y, game->currentLevel);
 }
 
-// Rebuild the level and place the player. If `target` is non-null the player is
-// teleported there; otherwise the first lift stop on the new level is used (if any).
-static void game_change_level(Game* game, int newLevel, const Vector2* target) {
-    if (newLevel < 0 || newLevel >= (int)game->levels.size()) return;
-
-    TraceLog(LOG_INFO, "Switching from level %d to level %d", game->currentLevel, newLevel);
-
-    // Drop any transfer control first: the captured unit is about to be despawned, and
-    // the device (which persists across levels) must have its collision re-enabled.
-    transfer_reset(game);
-
-    game_despawn_enemies(game);
+// Freeze a level being left: its droids stop updating/rendering (active=false) and remain
+// in their own world (positions persist). Also tears down the transient collision bodies
+// of that level's world; doors/chargers are rebuilt on the next activation.
+static void game_deactivate_level(Game* game, int level) {
+    if (level < 0 || level >= (int)game->levelUnits.size()) return;
+    for (UnitInstance* u : game->levelUnits[level]) {
+        if (u) u->active = false;
+    }
+    game->levelLastActive[level] = game->gameClock;
+    game->aiManager.components().clear();
 
     for (auto& body : game->collisionBodies) {
-        if (body.valid) {
-            b2DestroyBody(body.body_id);
-            body.valid = false;
-        }
+        if (body.valid) { b2DestroyBody(body.body_id); body.valid = false; }
     }
     game->collisionBodies.clear();
+}
 
+// Re-enter a level that was already populated: wake its droids (they are where they were
+// left), REPOSITION them to random waypoints (activation always re-scatters the roster),
+// heal them for the time away, and rebuild fresh patrol AI from the new positions.
+static void game_reactivate_current_level(Game* game) {
+    const int L = game->currentLevel;
+    if (L < 0 || L >= (int)game->levelUnits.size()) return;
+    const LevelRenderData& rd = game->levelRenderData[L];
+
+    const double away = game->gameClock - game->levelLastActive[L];
+
+    // Random waypoint ASSIGNMENT: shuffle a local list of waypoint indices (the waypoints
+    // themselves are never modified) so each activation puts droids on different waypoints.
+    static std::mt19937 rng{std::random_device{}()};
+    std::vector<int> wpOrder(rd.waypointPositions.size());
+    for (int i = 0; i < (int)wpOrder.size(); ++i) wpOrder[i] = i;
+    std::shuffle(wpOrder.begin(), wpOrder.end(), rng);
+
+    game->enemyUnits.clear();
+    std::vector<SpawnEntry> spawns;
+    std::vector<UnitInstance*> enemies;
+    int wi = 0;
+    for (UnitInstance* u : game->levelUnits[L]) {
+        if (!u || !u->definition || !b2Body_IsValid(u->bodyId)) continue;
+        u->active = true;
+        // Regenerate health for the time the level was inactive (single pass).
+        u->combatState.currentHealth = away_healed_health(
+            u->combatState.currentHealth, u->combatState.maxHealth,
+            away, AWAY_HEAL_FRACTION_PER_SEC);
+        game->enemyUnits.push_back(u);
+
+        // Reposition to the next assigned waypoint — random re-scatter on activation.
+        int wp = wpOrder.empty() ? -1 : wpOrder[wi++ % (int)wpOrder.size()];
+        if (wp >= 0) {
+            Vector3 wpPos = rd.waypointPositions[wp];
+            Vector2 pos = {wpPos.x, wpPos.z};
+            b2Rot rot = b2Body_GetRotation(u->bodyId);
+            b2Body_SetTransform(u->bodyId, (b2Vec2){pos.x, pos.y}, rot);
+            b2Body_SetLinearVelocity(u->bodyId, (b2Vec2){0, 0});
+            b2Body_SetAngularVelocity(u->bodyId, 0.0f);
+            unit_set_move_target(u, pos, b2Rot_GetAngle(rot));
+        }
+
+        SpawnEntry e;
+        e.classId = u->definition->properties.classId;
+        e.waypointIndex = (wp >= 0) ? wp : 0;
+        e.angle = b2Rot_GetAngle(b2Body_GetRotation(u->bodyId));
+        spawns.push_back(e);
+        enemies.push_back(u);
+    }
+    game->aiManager.init(spawns, rd.waypointPositions, rd.waypointAdjacency, enemies);
+    TraceLog(LOG_INFO, "Reactivated + rescattered %zu droids on level %d", enemies.size(), L);
+}
+
+// Remove droids that have been destroyed (health depleted) from the active roster. The
+// captured unit is handled by the transfer controller, so it is skipped here.
+static void game_reap_dead(Game* game) {
+    const int L = game->currentLevel;
+    if (L < 0 || L >= (int)game->levelUnits.size()) return;
+
+    std::vector<UnitInstance*> dead;
+    for (UnitInstance* u : game->enemyUnits) {
+        if (!u || u == game->transfer.captured) continue;
+        if (!u->combatState.alive || u->combatState.currentHealth <= 0.0f) dead.push_back(u);
+    }
+    if (dead.empty()) return;
+
+    auto drop = [](std::vector<UnitInstance*>& v, UnitInstance* u) {
+        v.erase(std::remove(v.begin(), v.end(), u), v.end());
+    };
+    for (UnitInstance* u : dead) {
+        game->aiManager.forgetUnit(u);
+        drop(game->levelUnits[L], u);
+        drop(game->enemyUnits, u);
+        game->unitManager.destroyInstance(u);  // permanent — won't return on re-entry
+    }
+}
+
+// Switch levels: freeze the old level, activate the new level's world + geometry, migrate
+// the player device (and any carried unit type) into the new world, and populate or
+// reactivate the new level's droids. `target` is the arrival tile (a lift stop) or null.
+static void game_change_level(Game* game, int newLevel, const Vector2* target) {
+    if (newLevel < 0 || newLevel >= (int)game->levels.size()) return;
+    int oldLevel = game->currentLevel;
+    TraceLog(LOG_INFO, "Switching from level %d to level %d", oldLevel, newLevel);
+
+    // Release transfer control (device collision restored); a carried unit type + its
+    // current health are re-piloted on the new level after the switch.
+    int carriedClass = transfer_captured_class(game);
+    float carriedHealth = transfer_captured_health(game);
+    transfer_reset(game);
+
+    // Freeze the level we're leaving (droids persist frozen in its world).
+    game_deactivate_level(game, oldLevel);
+
+    // Activate the new level's world + geometry.
     game->currentLevel = newLevel;
-
+    game->physics.world_id = game->levelWorlds[newLevel];
     if (!game_build_level_render_data(game)) {
         TraceLog(LOG_ERROR, "Failed to build render data for level %d", newLevel);
         return;
@@ -761,21 +890,33 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
-    game_spawn_enemies(game);
 
-    // Place the player: explicit target (lift stop) or the first lift stop on this level.
-    Vector2 tp{};
+    // Arrival placement (lift stop or the level's first lift stop).
+    Vector2 tp{0, 0};
     bool have = false;
-    if (target) {
-        tp = *target;
-        have = true;
-    } else {
+    if (target) { tp = *target; have = true; }
+    else {
         for (const LiftStop& s : game->liftManager.stops()) {
             if (s.level == newLevel) { tp = s.physicsCenter; have = true; break; }
         }
     }
-    if (have) game_teleport_player(game, tp);
-    else TraceLog(LOG_WARNING, "No lift on level %d; player stays put", newLevel);
+    if (!have) TraceLog(LOG_WARNING, "No lift on level %d; player placed at origin", newLevel);
+
+    // Migrate the persistent player device into the new level's world at the arrival tile.
+    if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
+        float ang = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
+        unit_rebind_world(game->playerUnit, game->levelWorlds[newLevel],
+                          game->levelOrigins[newLevel], tp, ang);
+    }
+
+    // Populate on first visit; otherwise wake the persistent roster.
+    if (!game->levelPopulated[newLevel]) game_spawn_enemies(game);
+    else game_reactivate_current_level(game);
+
+    game->unitManager.update(0);  // sync render transforms in the new world
+
+    // Resume piloting the carried unit type on the new level, restoring its health.
+    if (carriedClass >= 0) transfer_recapture_class(game, carriedClass, carriedHealth);
 }
 
 // Debug level switching (PAGE_UP/PAGE_DOWN): place at the level's first lift stop.
@@ -1045,8 +1186,14 @@ void game_update_gameplay(Game* game, float dt) {
         game->projectileManager.processContactEvents(game->physics.world_id);
         game->projectileManager.cleanup();
 
+        // Remove droids destroyed this step (permanent for the level).
+        game_reap_dead(game);
+
         // Update unit manager (syncs physics transforms)
         game->unitManager.update(simDt);
+
+        // Advance the play clock (drives away-level heal timing).
+        game->gameClock += simDt;
     }
 
     // Console + lift proximity (drive the "Press SPACE" prompts + entry actions). Runs
@@ -1185,6 +1332,39 @@ static void game_draw_charger_debug_2d(Game* game) {
     }
 }
 
+// Debug (hold B): draw EVERY shape in the physics world — including bodies not attached to
+// any game object — coloured by body type (static=red, dynamic=green, kinematic=blue).
+// Draws the shape's true geometry (circle for units, box for polygons) rather than the
+// AABB, so units read as circles. Iterates via a world-spanning overlap query, revealing
+// stray/orphaned colliders behind "invisible wall" blocks the per-object debug can't show.
+static bool game_physics_bounds_cb(b2ShapeId shapeId, void* /*ctx*/) {
+    b2BodyId body = b2Shape_GetBody(shapeId);
+    b2BodyType type = b2Body_GetType(body);
+    Color col = (type == b2_staticBody) ? RED : (type == b2_dynamicBody) ? GREEN : SKYBLUE;
+
+    if (b2Shape_GetType(shapeId) == b2_circleShape) {
+        b2Circle c = b2Shape_GetCircle(shapeId);
+        b2Vec2 wc = b2Body_GetWorldPoint(body, c.center);  // shape centre in world space
+        // Circle laid flat in the ground (XZ) plane; physics Y maps to world Z.
+        DrawCircle3D((Vector3){wc.x, 0.3f, wc.y}, c.radius, (Vector3){1, 0, 0}, 90.0f, col);
+    } else {
+        b2AABB aabb = b2Shape_GetAABB(shapeId);
+        Vector3 center = {(aabb.lowerBound.x + aabb.upperBound.x) * 0.5f, 0.3f,
+                          (aabb.lowerBound.y + aabb.upperBound.y) * 0.5f};
+        DrawCubeWires(center, aabb.upperBound.x - aabb.lowerBound.x, 0.6f,
+                      aabb.upperBound.y - aabb.lowerBound.y, col);
+    }
+    return true;  // continue enumeration
+}
+
+static void game_draw_physics_bounds_3d(Game* game) {
+    b2AABB huge = {(b2Vec2){-1.0e6f, -1.0e6f}, (b2Vec2){1.0e6f, 1.0e6f}};
+    b2QueryFilter filter = b2DefaultQueryFilter();
+    filter.categoryBits = ~0ULL;   // match shapes of any category...
+    filter.maskBits = ~0ULL;       // ...regardless of their mask
+    b2World_OverlapAABB(game->physics.world_id, huge, filter, game_physics_bounds_cb, nullptr);
+}
+
 void game_render_gameplay(Game* game) {
     BeginDrawing();
     ClearBackground(DARKGRAY);
@@ -1221,6 +1401,11 @@ void game_render_gameplay(Game* game) {
         game->unitManager.renderDebug();
     }
 
+    // Debug: bounds of ALL physics bodies incl. orphans (hold B)
+    if (IsKeyDown(KEY_B)) {
+        game_draw_physics_bounds_3d(game);
+    }
+
     // Debug: waypoint graph + AI intended targets + door state (toggle V)
     if (game->showAIDebug) {
         game_draw_ai_debug_3d(game);
@@ -1244,7 +1429,7 @@ void game_render_gameplay(Game* game) {
         "0:Normal", "1:Normals", "2:LightDir",
         "3:Specular", "4:ViewDir", "5:HalfDir", "6:BumpMap"
     };
-    DrawText(TextFormat("Debug: %s (C=collision, U=units, N=normalmap)",
+    DrawText(TextFormat("Debug: %s (C=collision, U=units, B=all-bodies, N=normalmap)",
              debugModes[game->debugMode]), 10, 30, 16, WHITE);
 
     // Level info
@@ -1323,9 +1508,13 @@ void game_destroy(Game* game) {
     game_despawn_enemies(game);
     clearSpawnConfig();
 
-    // Destroy unit manager (cleans up all units and their physics)
+    // Destroy unit manager (cleans up all units and their physics). Section instances with
+    // shared models leave those GPU buffers alone; the ModelCache frees them next.
     game->unitManager.destroy();
     game->playerUnit = nullptr;
+
+    // Unload shared models (before the GL context closes).
+    game->modelCache.destroy();
 
     // Free level render data
     for (auto& data : game->levelRenderData) {
@@ -1355,13 +1544,20 @@ void game_destroy(Game* game) {
     // Destroy scene renderer
     sceneRendererDestroy(&game->sceneRenderer);
 
-    // Destroy door bodies before the physics world goes away, and the door mesh
+    // Destroy door bodies before the physics worlds go away, and the door mesh
     game->doorManager.destroy();
     game->doorRenderer.destroy();
     game->chargerManager.destroy();
     game->chargerRenderer.destroy();
     game->consoleManager.destroy();
 
-    // Destroy physics world
-    physics_world_destroy(&game->physics);
+    // Destroy every per-level world (frees origins, collision, and any remaining bodies).
+    // Unit bodies were already freed by unitManager.destroy() above. game->physics.world_id
+    // aliases one of these, so don't destroy it separately.
+    for (b2WorldId w : game->levelWorlds) {
+        if (!B2_IS_NULL(w)) b2DestroyWorld(w);
+    }
+    game->levelWorlds.clear();
+    game->levelOrigins.clear();
+    game->physics.world_id = b2_nullWorldId;
 }

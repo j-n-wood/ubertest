@@ -3,6 +3,7 @@
 
 #include "unit_types.h"
 #include "unit_instance.h"
+#include "model_cache.h"
 #include <unordered_map>
 #include <memory>
 #include <string>
@@ -26,6 +27,11 @@ public:
     // modelsBasePath: optional base path for resolving model references (can be nullptr)
     void init(b2WorldId worldId, const char* modelsBasePath = nullptr);
     void destroy();
+
+    // Share model data across instances (and across managers/levels). When set, static
+    // section models are fetched shared from the cache instead of per-instance LoadModel;
+    // animated models are still loaded per-instance. Not owned. See ModelCache.
+    void setModelCache(ModelCache* cache) { m_modelCache = cache; }
 
     //--------------------------------------------------------------------------
     // Definition Management
@@ -54,18 +60,23 @@ public:
     // Instance Management
     //--------------------------------------------------------------------------
 
-    // Create an instance from a definition ID
+    // Create an instance from a definition ID. `world`/`origin` override the manager's
+    // default world (for per-level worlds); null = use the init() world/origin.
     [[nodiscard]] UnitInstance* createInstance(
         std::string_view definitionId,
         Vector2 position,
-        float rotation
+        float rotation,
+        b2WorldId world = b2_nullWorldId,
+        b2BodyId origin = b2_nullBodyId
     );
 
-    // Create an instance from a definition pointer
+    // Create an instance from a definition pointer (see above re: world/origin).
     [[nodiscard]] UnitInstance* createInstance(
         const UnitDefinition* definition,
         Vector2 position,
-        float rotation
+        float rotation,
+        b2WorldId world = b2_nullWorldId,
+        b2BodyId origin = b2_nullBodyId
     );
 
     // Destroy an instance
@@ -121,6 +132,9 @@ private:
 
     // Base path for resolving model references within unit definitions
     std::string m_modelsBasePath;
+
+    // Shared model cache (not owned); null = per-instance LoadModel (legacy behaviour).
+    ModelCache* m_modelCache = nullptr;
 
     // Definition cache (id -> definition)
     std::unordered_map<std::string, std::unique_ptr<UnitDefinition>> m_definitions;

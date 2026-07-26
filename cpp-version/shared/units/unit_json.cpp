@@ -5,6 +5,15 @@
 
 using json = nlohmann::json;
 
+// A map tile is 1.0 world unit (1 m). Cap a unit's collision radius so its diameter stays
+// under a tile (0.425 -> 0.85 diameter) and it can pass 1-tile doorways. The source JSONs
+// are also capped to this value; this stays as a defensive limit on load.
+static constexpr float MAX_UNIT_COLLISION_RADIUS = 0.425f;
+
+static float capCollisionRadius(float r) {
+    return (r > MAX_UNIT_COLLISION_RADIUS) ? MAX_UNIT_COLLISION_RADIUS : r;
+}
+
 //------------------------------------------------------------------------------
 // Helper Functions
 //------------------------------------------------------------------------------
@@ -325,7 +334,7 @@ bool loadUnitDefinitionFromFile(std::string_view path, UnitDefinition& outDefini
         outDefinition.id = j.value("id", "");
 
         // Unit-level physics radii
-        outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
+        outDefinition.collisionRadius = capCollisionRadius(j.value("collisionRadius", 0.5f));
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
         // Per-type movement limits (original units; 0 = unspecified -> global fallback)
@@ -400,7 +409,7 @@ bool parseUnitDefinitionFromString(std::string_view jsonString, UnitDefinition& 
         outDefinition.id = j.value("id", "");
 
         // Unit-level physics radii
-        outDefinition.collisionRadius = j.value("collisionRadius", 0.5f);
+        outDefinition.collisionRadius = capCollisionRadius(j.value("collisionRadius", 0.5f));
         outDefinition.proximityRadius = j.value("proximityRadius", 1.0f);
 
         // Per-type movement limits (original units; 0 = unspecified -> global fallback)

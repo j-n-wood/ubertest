@@ -111,8 +111,13 @@ void destroyUnit(Game* g, UnitInstance* u) {
     if (!u) return;
     if (u == g->transfer.captured) destroyWeld(g);
     g->aiManager.forgetUnit(u);
-    auto& ev = g->enemyUnits;
-    ev.erase(std::remove(ev.begin(), ev.end(), u), ev.end());
+    auto drop = [](std::vector<UnitInstance*>& v, UnitInstance* x) {
+        v.erase(std::remove(v.begin(), v.end(), x), v.end());
+    };
+    drop(g->enemyUnits, u);
+    if (u->levelIndex >= 0 && u->levelIndex < (int)g->levelUnits.size()) {
+        drop(g->levelUnits[u->levelIndex], u);
+    }
     g->unitManager.destroyInstance(u);
 }
 
@@ -133,6 +138,31 @@ int classNumOf(const std::string& id) {
     const char* prefix = "droid_class_";
     if (id.rfind(prefix, 0) == 0) return std::atoi(id.c_str() + std::strlen(prefix));
     return -1;
+}
+
+// Create a fresh unit of `defId` at (pos, angle), track it, and pilot it (overlay +
+// weld). Shared by the debug cycle and cross-level carry. Returns false on failure.
+bool enterControllingNewUnit(Game* g, const std::string& defId, Vector2 pos, float angle) {
+    // Create the captured unit in the ACTIVE level's world so it shares physics with the
+    // player device (which lives in that world).
+    const int L = g->currentLevel;
+    b2WorldId world = (L >= 0 && L < (int)g->levelWorlds.size()) ? g->levelWorlds[L] : b2_nullWorldId;
+    b2BodyId origin = (L >= 0 && L < (int)g->levelOrigins.size()) ? g->levelOrigins[L] : b2_nullBodyId;
+    UnitInstance* u = g->unitManager.createInstance(defId, pos, angle, world, origin);
+    if (!u) {
+        g->transfer.mode = ControlMode::Free;
+        deviceExitOverlay(g);
+        return false;
+    }
+    u->levelIndex = L;
+    g->unitManager.applyShaderToModels(sceneRendererGetShader(&g->sceneRenderer));
+    g->enemyUnits.push_back(u);
+    if (L >= 0 && L < (int)g->levelUnits.size()) g->levelUnits[L].push_back(u);  // roster member
+    g->transfer.captured = u;
+    g->transfer.mode = ControlMode::Controlling;
+    deviceEnterOverlay(g);
+    createWeld(g);
+    return true;
 }
 
 }  // namespace
@@ -242,18 +272,38 @@ void transfer_debug_cycle(Game* game, int direction) {
 
     if (game->transfer.captured) { destroyUnit(game, game->transfer.captured); game->transfer.captured = nullptr; }
 
-    UnitInstance* u = game->unitManager.createInstance(ids[next], pos, angle);
-    if (!u) {
-        game->transfer.mode = ControlMode::Free;
-        deviceExitOverlay(game);
-        return;
+    if (enterControllingNewUnit(game, ids[next], pos, angle)) {
+        TraceLog(LOG_INFO, "Transfer debug: now piloting %s", ids[next].c_str());
     }
-    game->unitManager.applyShaderToModels(sceneRendererGetShader(&game->sceneRenderer));
-    game->enemyUnits.push_back(u);  // tracked so level-switch despawn cleans it up
+}
 
-    game->transfer.captured = u;
-    game->transfer.mode = ControlMode::Controlling;
-    deviceEnterOverlay(game);
-    createWeld(game);
-    TraceLog(LOG_INFO, "Transfer debug: now piloting %s", ids[next].c_str());
+int transfer_captured_class(Game* game) {
+    const TransferState& st = game->transfer;
+    if (st.mode == ControlMode::Controlling && st.captured && st.captured->definition) {
+        return classNumOf(st.captured->definition->id);
+    }
+    return -1;
+}
+
+float transfer_captured_health(Game* game) {
+    const TransferState& st = game->transfer;
+    if (st.mode == ControlMode::Controlling && st.captured) {
+        return st.captured->combatState.currentHealth;
+    }
+    return -1.0f;
+}
+
+void transfer_recapture_class(Game* game, int classId, float health) {
+    if (classId < 0 || !game->playerUnit || !b2Body_IsValid(game->playerUnit->bodyId)) return;
+    // Respawn the carried class at the device's (post-migration) position and resume
+    // piloting it, restoring its carried health so a damaged droid stays damaged.
+    Vector2 pos = bodyPos(game->playerUnit);
+    if (enterControllingNewUnit(game, "droid_class_" + std::to_string(classId), pos,
+                                game->playerDesiredRotation) &&
+        health >= 0.0f && game->transfer.captured) {
+        UnitInstance* u = game->transfer.captured;
+        float maxH = u->combatState.maxHealth;
+        u->combatState.currentHealth = (maxH > 0.0f && health > maxH) ? maxH : health;
+        u->combatState.alive = (u->combatState.currentHealth > 0.0f);
+    }
 }

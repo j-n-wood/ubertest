@@ -52,6 +52,16 @@ struct Game {
     std::vector<LevelCollisionData> levelCollisionData;
     int currentLevel;
 
+    // Per-level physics worlds (one per level, retained for the ship's lifetime). Only the
+    // active level's world (== physics.world_id) is stepped/rendered; inactive levels'
+    // droids freeze in place in their own world. See docs/levels.md.
+    std::vector<b2WorldId> levelWorlds;                 // parallel to levels
+    std::vector<b2BodyId> levelOrigins;                 // motor-joint anchor per world
+    std::vector<std::vector<UnitInstance*>> levelUnits; // persistent roster per level
+    std::vector<bool> levelPopulated;                   // roster created (lazily, on first entry)
+    std::vector<double> levelLastActive;                // gameClock when last deactivated (heal timing)
+    double gameClock = 0.0;                              // accumulated gameplay time (for away-heal)
+
     // Tileset (shared across levels)
     TmxTileset tileset;
     Texture2D atlasTexture;
@@ -62,6 +72,7 @@ struct Game {
     std::vector<PhysicsBody> collisionBodies;
 
     // Unit system
+    ModelCache modelCache;   // shared GLTF models across all instances/levels/library
     UnitManager unitManager;
     UnitInstance* playerUnit;
     float playerDesiredRotation;  // For mouse aim

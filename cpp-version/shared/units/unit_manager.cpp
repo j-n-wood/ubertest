@@ -116,21 +116,28 @@ std::vector<std::string> UnitManager::getDefinitionIds() const {
 UnitInstance* UnitManager::createInstance(
     std::string_view definitionId,
     Vector2 position,
-    float rotation
+    float rotation,
+    b2WorldId world,
+    b2BodyId origin
 ) {
     const UnitDefinition* def = getDefinition(definitionId);
     if (!def) {
         return nullptr;
     }
-    return createInstance(def, position, rotation);
+    return createInstance(def, position, rotation, world, origin);
 }
 
 UnitInstance* UnitManager::createInstance(
     const UnitDefinition* definition,
     Vector2 position,
-    float rotation
+    float rotation,
+    b2WorldId world,
+    b2BodyId origin
 ) {
-    if (!definition || B2_IS_NULL(m_worldId)) {
+    // Per-level worlds pass an explicit world/origin; default to the init() world.
+    b2WorldId targetWorld = B2_IS_NULL(world) ? m_worldId : world;
+    b2BodyId targetOrigin = B2_IS_NULL(origin) ? m_originBody : origin;
+    if (!definition || B2_IS_NULL(targetWorld)) {
         return nullptr;
     }
 
@@ -166,7 +173,7 @@ UnitInstance* UnitManager::createInstance(
     bodyDef.enableSleep = false;
     bodyDef.userData = &instance->bodyUserData;
 
-    instance->bodyId = b2CreateBody(m_worldId, &bodyDef);
+    instance->bodyId = b2CreateBody(targetWorld, &bodyDef);
 
     // Create circle shape using unit's collision radius
     b2ShapeDef shapeDef = b2DefaultShapeDef();
@@ -193,7 +200,7 @@ UnitInstance* UnitManager::createInstance(
 
     // Attach the motor joint that drives this unit toward a target position/facing.
     // Identical for AI-driven units and the player — only the target source differs.
-    unit_attach_motor_joint(instance.get(), m_worldId, m_originBody);
+    unit_attach_motor_joint(instance.get(), targetWorld, targetOrigin);
 
     // Create section instances (rendering only, no per-section physics)
     SectionInstance* root = createSectionInstance(
@@ -274,14 +281,27 @@ SectionInstance* UnitManager::createSectionInstance(
             resolvedPath = (fs::path(m_modelsBasePath) / modelPath).string();
         }
 
-        section->model = LoadModel(resolvedPath.c_str());
-        section->hasModel = IsModelValid(section->model);
+        // Prefer a shared model from the cache for static meshes; animated models (and the
+        // no-cache fallback) load per-instance so each can hold its own skinned pose.
+        ModelCache::Entry entry{Model{}, true, false};
+        if (m_modelCache) {
+            entry = m_modelCache->get(resolvedPath);
+        }
 
-        // Load animations if any
-        if (section->hasModel) {
-            section->animations = LoadModelAnimations(resolvedPath.c_str(), &section->animCount);
-            if (section->animCount > 0) {
-                std::cout << "  Loaded " << section->animCount << " animations for " << def.name << std::endl;
+        if (entry.shared) {
+            section->model = entry.model;   // shared handle — do NOT unload in the section
+            section->hasModel = true;
+            section->ownsModel = false;
+        } else {
+            section->model = LoadModel(resolvedPath.c_str());
+            section->hasModel = IsModelValid(section->model);
+            section->ownsModel = true;
+            // Load animations only for per-instance (animated) models.
+            if (section->hasModel) {
+                section->animations = LoadModelAnimations(resolvedPath.c_str(), &section->animCount);
+                if (section->animCount > 0) {
+                    std::cout << "  Loaded " << section->animCount << " animations for " << def.name << std::endl;
+                }
             }
         }
     }

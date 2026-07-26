@@ -1,6 +1,7 @@
 {
   "acceleration": 146.4224853515625,
-  "collisionRadius": 0.20000000298023224,
+  "coastDamping": -1.0,
+  "collisionRadius": 0.24085262417793274,
   "deceleration": 113.37065124511719,
   "id": "droid_class_0",
   "maxSpeed": 122.92996215820313,
@@ -35,5 +36,6 @@
         "type": "circle"
       }
     }
-  }
+  },
+  "turnSpeed": 0.0
 }

@@ -1,7 +1,7 @@
 {
   "name": "Class 14",
   "id": "droid_class_14",
-  "collisionRadius": 0.700000,
+  "collisionRadius": 0.425,
   "proximityRadius": 30.000000,
   "maxSpeed": 120.000000,
   "acceleration": 300.000000,

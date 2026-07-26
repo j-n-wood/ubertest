@@ -1,7 +1,7 @@
 {
   "name": "Class 20",
   "id": "droid_class_20",
-  "collisionRadius": 1.000000,
+  "collisionRadius": 0.425,
   "proximityRadius": 36.000000,
   "maxSpeed": 250.000000,
   "acceleration": 400.000000,

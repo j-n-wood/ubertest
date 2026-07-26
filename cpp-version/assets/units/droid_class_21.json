@@ -1,7 +1,7 @@
 {
   "name": "Class 21",
   "id": "droid_class_21",
-  "collisionRadius": 1.000000,
+  "collisionRadius": 0.425,
   "proximityRadius": 36.000000,
   "maxSpeed": 220.000000,
   "acceleration": 300.000000,

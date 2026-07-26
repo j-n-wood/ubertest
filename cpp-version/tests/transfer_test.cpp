@@ -3,6 +3,7 @@
 #include "transfer_control.h"
 #include "level/spawn_config.h"
 #include "units/unit_types.h"
+#include "units/heal.h"
 
 #include <algorithm>
 
@@ -17,6 +18,19 @@ TEST(TransferProgressTest, ClampsAndInterpolates) {
     EXPECT_FLOAT_EQ(transfer_progress(3.0f, 1.5f), 1.0f);   // clamped past the end
     EXPECT_FLOAT_EQ(transfer_progress(-1.0f, 1.5f), 0.0f);  // clamped before the start
     EXPECT_FLOAT_EQ(transfer_progress(1.0f, 0.0f), 1.0f);   // zero duration -> done
+}
+
+//------------------------------------------------------------------------------
+// away_healed_health — regen for time spent on an inactive level.
+//------------------------------------------------------------------------------
+
+TEST(AwayHealTest, RegeneratesAndClamps) {
+    // max=200, 2%/s => 4 hp/s.
+    EXPECT_FLOAT_EQ(away_healed_health(100.0f, 200.0f, 0.0, 0.02f), 100.0f);   // no time
+    EXPECT_FLOAT_EQ(away_healed_health(100.0f, 200.0f, 10.0, 0.02f), 140.0f);  // +40
+    EXPECT_FLOAT_EQ(away_healed_health(180.0f, 200.0f, 100.0, 0.02f), 200.0f); // clamp to max
+    EXPECT_FLOAT_EQ(away_healed_health(50.0f, 200.0f, -5.0, 0.02f), 50.0f);    // negative time ignored
+    EXPECT_FLOAT_EQ(away_healed_health(50.0f, 0.0f, 10.0, 0.02f), 50.0f);      // zero max: unchanged
 }
 
 //------------------------------------------------------------------------------

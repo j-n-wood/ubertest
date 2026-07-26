@@ -30,6 +30,10 @@ public:
     // Rendering
     Model model = {};
     bool hasModel = false;
+    // True when this section owns `model` and must UnloadModel it (per-instance load, e.g.
+    // animated sections). False when `model` is a shared handle from the ModelCache — the
+    // cache owns the GPU buffers, so the destructor must NOT unload it.
+    bool ownsModel = true;
 
     // Animation
     ModelAnimation* animations = nullptr;
@@ -105,6 +109,10 @@ struct UnitInstance {
     // player's influence device on top of the unit it is piloting (physics is 2D, so
     // "on top" is a render offset). 0 for normal units. See docs/transfer.md.
     float renderHeightOffset = 0.0f;
+
+    // Which level (per-level Box2D world) this unit's body lives in; -1 for the player
+    // device (which migrates worlds). Persistent-per-level design. See docs/levels.md.
+    int levelIndex = -1;
 };
 
 //------------------------------------------------------------------------------
@@ -141,5 +149,14 @@ void unit_apply_movement_tuning(UnitInstance* unit);
 // is no damage-side guard — hittability is purely the filter). Used by the transfer
 // mechanic to make the piloting device invulnerable. No-op if the body is invalid.
 void unit_set_collision_enabled(UnitInstance* unit, bool enabled);
+
+// Move a unit's physics body+motor joint from its current Box2D world into `newWorld`
+// (anchored to `newOrigin`), placed at (pos, facing). The logical object — health, combat
+// state, section/render tree — is untouched; only the world-bound body/joint/shape are
+// recreated. Used to carry the player device (and any captured unit) between per-level
+// worlds. Preserves the unit's collisionGroupId, collision filter, and body user data.
+// See docs/levels.md.
+void unit_rebind_world(UnitInstance* unit, b2WorldId newWorld, b2BodyId newOrigin,
+                       Vector2 pos, float facing);
 
 #endif // UNIT_INSTANCE_H
