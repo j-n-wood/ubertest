@@ -97,6 +97,14 @@ F1/F2 are a debug tool to test piloting without hunting for a droid: they create
 unit of the next/prev class (skipping class 0) at the device position and enter Controlling,
 or change the current captured unit's type. The device itself always stays type 0.
 
+## AI debug (V)
+
+Toggle **V** for the AI overlay. Each AI unit shows its collision ring plus a
+**detection-radius ring** that is **bright red while the unit is HOSTILE** (chasing the
+player) and faint green otherwise, and a `HOSTILE>wp` tag (vs `P`/`F`) — so aggro state and
+range are obvious at a glance. See docs/console.md for tuning `proximityRadius` live in the
+droid library.
+
 ## Debugging collisions
 
 Hold **B** in-game to draw *every* shape in the active world — including bodies not attached

@@ -417,34 +417,67 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
     bool halting = isStandard && distToPlayer <= optimumRange;
 
     if (!halting) {
-        // Continue waypoint navigation toward player
+        // Continue waypoint navigation toward the player, always choosing the linked
+        // waypoint nearest the player (selectChaseTarget). Facing rules: an omnidirectional
+        // unit always faces the player; a unit that is stopped (blocked) faces the player so
+        // it aims at its target even while pinned; otherwise it faces its movement direction.
+        // (Turret units additionally slew their head to the player below.)
+        Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
+        float facePlayer = facing_angle_to(toPlayer.x, toPlayer.y);
+
         if (ai.targetWaypoint < 0) {
             ai.targetWaypoint = selectChaseTarget(ai, playerPos);
-            if (ai.targetWaypoint < 0) { holdPosition(ai); return; }
         }
 
-        Vector2 targetPos = waypointPos2D(ai.targetWaypoint);
-        if (isAtWaypoint(ai, targetPos)) {
-            ai.previousWaypoint = ai.currentWaypoint;
-            ai.currentWaypoint = ai.targetWaypoint;
-            ai.targetWaypoint = selectChaseTarget(ai, playerPos);
-        }
-
-        if (ai.targetWaypoint >= 0) {
-            Vector2 wpPos = waypointPos2D(ai.targetWaypoint);
-
-            // Body faces the player (omnidirectional) or the movement direction.
-            float angle;
-            if (ai.omnidirectional) {
-                Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-                angle = facing_angle_to(toPlayer.x, toPlayer.y);
-            } else {
-                Vector2 dir = Vector2Subtract(wpPos, unitPos);
-                angle = facing_angle_to(dir.x, dir.y);
-            }
-            setMotion(ai, wpPos, angle);
+        if (ai.targetWaypoint < 0) {
+            // No route available — hold position but keep facing the player.
+            unit_set_move_target(ai.unit, unitPos, facePlayer);
         } else {
-            holdPosition(ai);
+            Vector2 targetPos = waypointPos2D(ai.targetWaypoint);
+            if (isAtWaypoint(ai, targetPos)) {
+                ai.previousWaypoint = ai.currentWaypoint;
+                ai.currentWaypoint = ai.targetWaypoint;
+                ai.targetWaypoint = selectChaseTarget(ai, playerPos);
+            }
+
+            // Stuck detection (mirrors Patrol): if pinned below AI_STUCK_SPEED for
+            // AI_STUCK_TIME AND a wall blocks the route, re-acquire via a reachable
+            // waypoint. If the path is wall-clear (blocked by a unit — usually the player
+            // it's chasing), keep pressing rather than abandoning the pursuit.
+            if (ai.targetWaypoint != ai.stuckWaypoint) {
+                ai.stuckWaypoint = ai.targetWaypoint;
+                ai.stuckTimer = 0.0f;
+            }
+            b2Vec2 vel = b2Body_GetLinearVelocity(ai.unit->bodyId);
+            float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
+            bool stopped = speed < AI_STUCK_SPEED;
+            float radius = ai.unit->definition ? ai.unit->definition->collisionRadius : 0.2f;
+            if (stopped) {
+                ai.stuckTimer += dt;
+                if (ai.stuckTimer > AI_STUCK_TIME && ai.targetWaypoint >= 0 &&
+                    !pathClear(unitPos, waypointPos2D(ai.targetWaypoint), radius)) {
+                    ai.currentWaypoint = nearestReachableWaypoint(unitPos, radius);
+                    ai.previousWaypoint = -1;
+                    ai.targetWaypoint = -1;
+                    ai.stuckTimer = 0.0f;
+                }
+            } else {
+                ai.stuckTimer = 0.0f;
+            }
+
+            if (ai.targetWaypoint >= 0) {
+                Vector2 wpPos = waypointPos2D(ai.targetWaypoint);
+                float bodyAngle;
+                if (ai.omnidirectional || stopped) {
+                    bodyAngle = facePlayer;  // aim at the target when it doesn't need to, or can't, move
+                } else {
+                    Vector2 dir = Vector2Subtract(wpPos, unitPos);
+                    bodyAngle = facing_angle_to(dir.x, dir.y);
+                }
+                setMotion(ai, wpPos, bodyAngle);
+            } else {
+                unit_set_move_target(ai.unit, unitPos, facePlayer);  // rerouting — hold + face player
+            }
         }
     } else {
         // Halting — hold station and turn body to face the player. Holding the

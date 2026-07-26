@@ -53,10 +53,12 @@ range, pushes `ConsoleMenuPage`.
 
 When the game's debug flag (`showAIDebug`) is on, the Droid Library renders the tunable
 numeric fields — `maxSpeed`, `acceleration`, `deceleration`, `turnSpeed` (facing turn
-rate, rad/s), `coastDamping` (float, `<0` = off), `armour`, and `collisionRadius` (0.05–0.425,
-the tile-fit cap) — as raygui sliders bound to the in-memory `UnitDefinition`. The
-collision radius is also drawn as a **ground-level ring** in the 3D view (reading the live
-value, so the slider updates it), and persists on **Save to JSON**
+rate, rad/s), `coastDamping` (float, `<0` = off), `armour`, `collisionRadius` (0.05–0.425,
+the tile-fit cap), and `proximityRadius` (detection range → hostility) — as raygui sliders
+bound to the in-memory `UnitDefinition`. The collision radius (green) and detection radius
+(orange) are drawn as **ground-level rings** in the 3D view (reading the live values, so the
+sliders update them, depth-test disabled so they're always visible). All persist on **Save
+to JSON**; editing the detection radius also live-updates active AI of that type
 (`UnitManager::getDefinitionMutable(id)`). Edits take effect for future instances; a
 **Save to JSON** button calls `saveUnitDefinitionToFile(assetPath/units/<id>.json, def)`
 so tuning persists without a restart. `topdown_game` defaults `assetPath` to the absolute

@@ -1252,6 +1252,18 @@ static void game_draw_ai_debug_3d(Game* game) {
         Color ring = ai.unit->visible ? GREEN : MAGENTA;
         // Circle default lies in XY; rotate 90° about X to lie flat on the XZ ground.
         DrawCircle3D((Vector3){p.x, 0.12f, p.y}, radius, (Vector3){1, 0, 0}, 90.0f, ring);
+
+        // Detection radius: prominent RED when the unit is HOSTILE (chasing the player),
+        // faint green otherwise. Shows where the player trips / loses aggro.
+        if (ai.detectionRadius > 0.0f) {
+            if (ai.hostile) {
+                DrawCircle3D((Vector3){p.x, 0.1f, p.y}, ai.detectionRadius, (Vector3){1, 0, 0}, 90.0f, RED);
+                DrawCircle3D((Vector3){p.x, 0.1f, p.y}, ai.detectionRadius * 0.97f, (Vector3){1, 0, 0}, 90.0f, RED);
+            } else {
+                DrawCircle3D((Vector3){p.x, 0.1f, p.y}, ai.detectionRadius, (Vector3){1, 0, 0}, 90.0f,
+                             (Color){70, 130, 70, 150});
+            }
+        }
         if (ai.targetWaypoint >= 0 && ai.targetWaypoint < wpCount) {
             const Vector3& to = data.waypointPositions[ai.targetWaypoint];
             DrawLine3D({p.x, 0.3f, p.y}, {to.x, 0.3f, to.z}, YELLOW);
@@ -1266,14 +1278,17 @@ static void game_draw_ai_debug_2d(Game* game) {
         Vector2 p = ai.unit->rootSection->worldPosition;
         Vector2 screen = GetWorldToScreen((Vector3){p.x, 0.6f, p.y}, game->camera);
 
-        const char* st = ai.state == AIState::Chase ? "C" :
-                         ai.state == AIState::Flee  ? "F" : "P";
-        Color col = ai.state == AIState::Chase ? RED :
-                    ai.state == AIState::Flee  ? ORANGE : GREEN;
-        // "R" marks an active collision-redirect cooldown.
+        // Hostile units get a prominent "HOSTILE" tag; others show their state letter.
         const char* redirect = (ai.collideCooldown > 0.0f) ? " R" : "";
-        DrawText(TextFormat("%s>%d%s", st, ai.targetWaypoint, redirect),
-                 (int)screen.x - 8, (int)screen.y, 12, col);
+        if (ai.hostile) {
+            const char* txt = TextFormat("HOSTILE>%d%s", ai.targetWaypoint, redirect);
+            DrawText(txt, (int)screen.x - MeasureText(txt, 14) / 2, (int)screen.y - 2, 14, RED);
+        } else {
+            const char* st = ai.state == AIState::Flee ? "F" : "P";
+            Color col = ai.state == AIState::Flee ? ORANGE : GREEN;
+            DrawText(TextFormat("%s>%d%s", st, ai.targetWaypoint, redirect),
+                     (int)screen.x - 8, (int)screen.y, 12, col);
+        }
     }
 }
 

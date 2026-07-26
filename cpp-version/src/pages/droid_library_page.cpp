@@ -9,6 +9,7 @@
 #include "util/index_wrap.h"
 #include "raylib.h"
 #include "raygui.h"
+#include "rlgl.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -161,9 +162,20 @@ void DroidLibraryPage::render() {
         const UnitDefinition* d = game_->unitManager.getDefinition(ids_[index_]);
         if (d) {
             Vector3 c = {0.0f, 0.02f, 0.0f};
+            // Draw the ring with depth testing OFF so it's always visible over the model.
+            // raylib batches geometry, so flush the batch around the state toggle for it
+            // to take effect on just these draws.
+            rlDrawRenderBatchActive();
+            rlDisableDepthTest();
+            // Collision radius (green) — the physical footprint.
             DrawCircle3D(c, d->collisionRadius, (Vector3){1, 0, 0}, 90.0f, GREEN);
-            // A couple of nested rings make the thin outline easier to see.
             DrawCircle3D(c, d->collisionRadius * 0.98f, (Vector3){1, 0, 0}, 90.0f, LIME);
+            // Detection radius (orange) — range at which an armed droid turns hostile.
+            if (d->proximityRadius > 0.0f) {
+                DrawCircle3D(c, d->proximityRadius, (Vector3){1, 0, 0}, 90.0f, ORANGE);
+            }
+            rlDrawRenderBatchActive();
+            rlEnableDepthTest();
         }
     }
     EndMode3D();
@@ -222,6 +234,11 @@ void DroidLibraryPage::render() {
             };
             retune(game_->playerUnit);
             for (UnitInstance* e : game_->enemyUnits) retune(e);
+            // Live-apply the (possibly edited) detection radius to active AI components of
+            // this type — their detectionRadius was cached from the definition at spawn.
+            for (auto& c : game_->aiManager.components()) {
+                if (c.unit && c.unit->definition == mdef) c.detectionRadius = mdef->proximityRadius;
+            }
 
             int ex = 30, ey = 300, ew = 300;
             DrawText("DEBUG EDIT", ex, ey - 28, 18, YELLOW);
@@ -237,10 +254,16 @@ void DroidLibraryPage::render() {
             slider("coastDamp", &mdef->coastDamping, -1.0f, 8.0f);  // <0 = off (crisp stop)
             slider("armour", &mdef->properties.armour, 0.0f, 1000.0f);
             // Collision radius: fine format, capped at the tile-fit limit (0.425) so the
-            // saved value isn't re-clamped on reload. Drives the ground ring in the 3D view.
+            // saved value isn't re-clamped on reload. Drives the green ground ring.
             GuiSlider((Rectangle){(float)ex + 90, (float)ey, (float)ew, 20}, "collRadius",
                       TextFormat("%.3f", mdef->collisionRadius),
                       &mdef->collisionRadius, 0.05f, 0.425f);
+            ey += 30;
+            // Detection radius (proximityRadius): range at which an armed droid goes
+            // hostile. Drives the orange ring; live-applied to active AI above.
+            GuiSlider((Rectangle){(float)ex + 90, (float)ey, (float)ew, 20}, "detectRadius",
+                      TextFormat("%.2f", mdef->proximityRadius),
+                      &mdef->proximityRadius, 0.0f, 12.0f);
             ey += 30;
 
             if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 160, 32}, "Save to JSON")) {
