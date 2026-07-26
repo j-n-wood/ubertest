@@ -1,4 +1,5 @@
 #include "game.h"
+#include "transfer_control.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
 #include <cmath>
@@ -30,7 +31,6 @@ static void game_switch_level(Game* game, int newLevel);
 static void game_change_level(Game* game, int newLevel, const Vector2* target);
 static void game_teleport_player(Game* game, Vector2 targetPos);
 static void game_update_player_rotation(Game* game);
-static void game_cycle_player_unit(Game* game, int direction);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -577,77 +577,6 @@ static void game_spawn_player(Game* game) {
 }
 
 //------------------------------------------------------------------------------
-// Debug: swap the player-controlled unit type at runtime
-//------------------------------------------------------------------------------
-//
-// Cycles game->playerUnit to the next/previous droid_class_*.json definition,
-// keeping the current position and facing. Lets us test each unit type — and its
-// per-type speed/acceleration/deceleration — directly in-game. The replacement
-// goes through the same createInstance() path as any unit, so it picks up the new
-// type's motor-joint limits automatically.
-static void game_cycle_player_unit(Game* game, int direction) {
-    if (!game->playerUnit || !b2Body_IsValid(game->playerUnit->bodyId)) return;
-
-    // Enumerate available unit definitions from the units asset directory.
-    std::vector<std::string> ids;
-    std::string unitsDir = game->assetPath + "/units";
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(unitsDir, ec)) {
-        if (entry.path().extension() != ".json") continue;
-        std::string stem = entry.path().stem().string();
-        if (stem.rfind("droid_class_", 0) == 0) ids.push_back(stem);
-    }
-    if (ec || ids.empty()) {
-        TraceLog(LOG_WARNING, "Unit cycle: no unit definitions found in %s", unitsDir.c_str());
-        return;
-    }
-
-    // Order by trailing class number so cycling is predictable (0,1,2,...).
-    auto classNum = [](const std::string& s) {
-        return std::atoi(s.c_str() + std::strlen("droid_class_"));
-    };
-    std::sort(ids.begin(), ids.end(),
-              [&](const std::string& a, const std::string& b) { return classNum(a) < classNum(b); });
-
-    // Find current index, step by direction (wrapping).
-    int count = static_cast<int>(ids.size());
-    int cur = 0;
-    for (int i = 0; i < count; i++) {
-        if (ids[i] == game->playerUnitId) { cur = i; break; }
-    }
-    int next = ((cur + direction) % count + count) % count;
-    if (ids[next] == game->playerUnitId) return;  // only one type available
-    const std::string newId = ids[next];
-
-    // Preserve current transform.
-    b2Vec2 pos = b2Body_GetPosition(game->playerUnit->bodyId);
-    float angle = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
-
-    // Load the new definition (cached after first load).
-    std::string path = unitsDir + "/" + newId + ".json";
-    const UnitDefinition* def = game->unitManager.loadDefinition(path);
-    if (!def) {
-        TraceLog(LOG_WARNING, "Unit cycle: failed to load %s", path.c_str());
-        return;
-    }
-
-    // Swap: destroy the old player instance and spawn the new type in place.
-    game->unitManager.destroyInstance(game->playerUnit);
-    game->playerUnit = game->unitManager.createInstance(newId, {pos.x, pos.y}, angle);
-    game->playerUnitId = newId;
-
-    if (game->playerUnit) {
-        game->unitManager.applyShaderToModels(sceneRendererGetShader(&game->sceneRenderer));
-        game->playerDesiredRotation = angle;
-        TraceLog(LOG_INFO, "Player unit -> '%s' (%s)  speed=%.0f accel=%.0f decel=%.0f",
-                 newId.c_str(), def->name.c_str(),
-                 def->maxSpeed, def->acceleration, def->deceleration);
-    } else {
-        TraceLog(LOG_ERROR, "Unit cycle: failed to create instance for %s", newId.c_str());
-    }
-}
-
-//------------------------------------------------------------------------------
 // Enemy Spawning
 //------------------------------------------------------------------------------
 
@@ -807,6 +736,10 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     if (newLevel < 0 || newLevel >= (int)game->levels.size()) return;
 
     TraceLog(LOG_INFO, "Switching from level %d to level %d", game->currentLevel, newLevel);
+
+    // Drop any transfer control first: the captured unit is about to be despawned, and
+    // the device (which persists across levels) must have its collision re-enabled.
+    transfer_reset(game);
 
     game_despawn_enemies(game);
 
@@ -1010,33 +943,16 @@ void game_update_gameplay(Game* game, float dt) {
         input_update(&game->input);
     }
 
-    // Apply input to player unit. The player drives the SAME motor-joint control
-    // layer as AI units (identical-simulation invariant) — only the target source
-    // differs: player input here vs. AI waypoint logic in AIManager.
-    if (game->playerUnit && game->playerUnit->rootSection) {
-        if (b2Body_IsValid(game->playerUnit->bodyId)) {
-            b2Vec2 bodyPos = b2Body_GetPosition(game->playerUnit->bodyId);
-            Vector2 moveTarget = {bodyPos.x, bodyPos.y};  // default: hold position
-
-            if (!game->testConfig.enabled) {
-                // Update desired facing from the mouse.
-                game_update_player_rotation(game);
-
-                // Carrot target: a bounded step ahead along the input direction
-                // (same lookahead scheme the AI uses).
-                float ix = game->input.movement.x;
-                float iy = game->input.movement.y;
-                float mag = sqrtf(ix * ix + iy * iy);
-                if (mag > 0.001f) {
-                    moveTarget.x = bodyPos.x + (ix / mag) * UNIT_MOVE_LOOKAHEAD;
-                    moveTarget.y = bodyPos.y + (iy / mag) * UNIT_MOVE_LOOKAHEAD;
-                }
-            }
-            // In test mode moveTarget stays at the current position (hold) while
-            // playerDesiredRotation carries the test's target angle.
-
-            unit_set_move_target(game->playerUnit, moveTarget, game->playerDesiredRotation);
+    // Apply input via the transfer controller. It drives the controlled unit (the
+    // captured AI unit when piloting, else the player device) through the SAME
+    // motor-joint layer as the AI, and manages capture/overlay/invulnerability.
+    // Mouse aim first so the controlled unit faces the cursor this frame. Gated by
+    // pause so the capture animation timer doesn't advance while frozen.
+    if (!game->paused) {
+        if (!game->testConfig.enabled) {
+            game_update_player_rotation(game);
         }
+        transfer_update(game, dt);
     }
 
     // Handle quit (skip in test mode)
@@ -1071,10 +987,12 @@ void game_update_gameplay(Game* game, float dt) {
         if (IsKeyPressed(KEY_O)) game->slowMotion = !game->slowMotion;
     }
 
-    // Debug: cycle the player-controlled unit type (F1 = next, F2 = previous)
+    // Debug: create/cycle the CAPTURED unit's type (F1 = next, F2 = previous). The
+    // player device stays type 0; this pilots a droid of the chosen class. See
+    // docs/transfer.md.
     if (!game->testConfig.enabled) {
-        if (IsKeyPressed(KEY_F1)) game_cycle_player_unit(game, +1);
-        if (IsKeyPressed(KEY_F2)) game_cycle_player_unit(game, -1);
+        if (IsKeyPressed(KEY_F1)) transfer_debug_cycle(game, +1);
+        if (IsKeyPressed(KEY_F2)) transfer_debug_cycle(game, -1);
     }
 
     // Debug: Level switching (Page Up / Page Down)

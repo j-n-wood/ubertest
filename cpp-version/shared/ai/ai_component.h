@@ -58,6 +58,11 @@ struct AIComponent {
 
     // Reference back to unit
     UnitInstance* unit = nullptr;
+
+    // Set while the player has taken control of this unit (transfer mechanic). The
+    // AIManager skips controlled components (no AI driving, no collision-redirect) so
+    // player input alone moves the unit. See docs/transfer.md.
+    bool controlled = false;
 };
 
 //------------------------------------------------------------------------------

@@ -12,9 +12,11 @@ typedef struct ScreenToWorldCache {
 } ScreenToWorldCache;
 
 typedef struct Input {
-    Vector2 movement;  // Movement direction
-    Vector2 mouse_pos; // Screen mouse position
+    Vector2 movement;   // Movement direction
+    Vector2 mouse_pos;  // Screen mouse position
     ScreenToWorldCache screen_cache;
+    bool fire;          // LMB held (weapon fire — routing added in the weapon task)
+    bool transferMode;  // RMB or Left-Ctrl held: arm transfer, suppress fire
     bool quit;
 } Input;
 

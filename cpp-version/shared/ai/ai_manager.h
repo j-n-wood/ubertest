@@ -41,6 +41,13 @@ public:
     // Public so it can be driven directly in tests; processCollisions calls it.
     void onCollision(UnitInstance* a, UnitInstance* b);
 
+    // Transfer support: mark a unit's AI component as player-controlled (skipped by
+    // update/collisions) or clear it. `forgetUnit` nulls the component for a unit that
+    // is about to be destroyed so nothing dereferences it. No-ops if the unit has no
+    // component (e.g. the player device). See docs/transfer.md.
+    void setControlled(UnitInstance* unit, bool controlled);
+    void forgetUnit(UnitInstance* unit);
+
     // Access (mainly for testing)
     const std::vector<AIComponent>& components() const { return components_; }
     std::vector<AIComponent>& components() { return components_; }

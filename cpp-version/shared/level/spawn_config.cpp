@@ -47,6 +47,9 @@ void buildTypeClassMap(const DroidProperties* allDroids, int count) {
     s_typeClassMap.resize(SPAWN_TYPE_COUNT);
 
     for (int i = 0; i < count; ++i) {
+        // classId 0 is the player's influence device (type 0) — never spawned as AI.
+        // See docs/transfer.md.
+        if (allDroids[i].classId == 0) continue;
         int type = allDroids[i].typeCode / 100;  // e.g., 302 -> 3
         int typeIndex = type - 1;                 // type 1 at index 0, ... type 9 at index 8
         if (typeIndex >= 0 && typeIndex < SPAWN_TYPE_COUNT) {
@@ -222,6 +225,7 @@ std::vector<SpawnEntry> resolveSpawns(
 
     // Add placed droids
     for (const auto& pd : def.placedDroids) {
+        if (pd.classId == 0) continue;  // classId 0 is the player device — never an AI enemy
         SpawnEntry spawn;
         spawn.classId = pd.classId;
         spawn.angle = pd.angle;

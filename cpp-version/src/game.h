@@ -4,6 +4,7 @@
 #include "raylib.h"
 #include "physics/physics_world.h"
 #include "input/input.h"
+#include "transfer_control.h"
 
 // Shared includes
 #include "level/level_types.h"
@@ -65,6 +66,9 @@ struct Game {
     UnitInstance* playerUnit;
     float playerDesiredRotation;  // For mouse aim
     std::vector<UnitInstance*> enemyUnits;  // Tracked for level-switch cleanup
+
+    // Transfer mechanic: the player device pilots AI units (see docs/transfer.md).
+    TransferState transfer;
 
     // Combat & AI
     ProjectileManager projectileManager;

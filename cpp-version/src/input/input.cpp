@@ -5,6 +5,8 @@ void input_init(Input* input) {
     input->movement = (Vector2){0, 0};
     input->mouse_pos = (Vector2){0, 0};
     input->screen_cache.valid = false;
+    input->fire = false;
+    input->transferMode = false;
     input->quit = false;
 }
 
@@ -32,6 +34,10 @@ void input_update(Input* input) {
     }
 
     input->mouse_pos = GetMousePosition();
+
+    // Transfer mode is armed while RMB or Left-Ctrl is held; firing is suppressed then.
+    input->transferMode = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsKeyDown(KEY_LEFT_CONTROL);
+    input->fire = IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !input->transferMode;
 
     if (IsKeyPressed(KEY_ESCAPE)) input->quit = true;
 }

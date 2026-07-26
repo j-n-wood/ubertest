@@ -11,7 +11,7 @@
 // offer a "use" (SPACE) action. See docs/console.md.
 //------------------------------------------------------------------------------
 
-inline constexpr float CONSOLE_USE_RADIUS = 0.4f;  // player must be near the tile centre
+inline constexpr float CONSOLE_USE_RADIUS = 0.5f;  // player must be near the tile centre
 
 struct ConsoleSpec {
     Vector2 physicsCenter = {0, 0};

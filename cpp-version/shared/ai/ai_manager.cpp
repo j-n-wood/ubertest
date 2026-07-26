@@ -95,6 +95,7 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
     m_worldId = worldId;  // cache for movement helpers (raycasts)
     for (auto& ai : components_) {
         if (!ai.unit || !ai.unit->active) continue;
+        if (ai.controlled) continue;  // player is piloting this unit — no AI drive
 
         // Tick the collision-redirect decision cooldown
         if (ai.collideCooldown > 0.0f) ai.collideCooldown -= dt;
@@ -148,6 +149,17 @@ AIComponent* AIManager::findComponent(UnitInstance* unit) {
     return nullptr;
 }
 
+void AIManager::setControlled(UnitInstance* unit, bool controlled) {
+    if (AIComponent* ai = findComponent(unit)) ai->controlled = controlled;
+}
+
+void AIManager::forgetUnit(UnitInstance* unit) {
+    if (AIComponent* ai = findComponent(unit)) {
+        ai->unit = nullptr;      // update()/collisions skip null-unit components
+        ai->controlled = false;
+    }
+}
+
 void AIManager::processCollisions(b2WorldId worldId) {
     b2ContactEvents events = b2World_GetContactEvents(worldId);
 
@@ -183,10 +195,10 @@ void AIManager::onCollision(UnitInstance* a, UnitInstance* b) {
     // Each unit involved reacts; the "other" is the partner unit or nullptr
     // (wall/debris). The player has no AIComponent, so findComponent skips it.
     if (a) {
-        if (AIComponent* ai = findComponent(a)) handleCollision(*ai, b);
+        if (AIComponent* ai = findComponent(a); ai && !ai->controlled) handleCollision(*ai, b);
     }
     if (b) {
-        if (AIComponent* ai = findComponent(b)) handleCollision(*ai, a);
+        if (AIComponent* ai = findComponent(b); ai && !ai->controlled) handleCollision(*ai, a);
     }
 }
 

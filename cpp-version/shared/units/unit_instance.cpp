@@ -137,3 +137,25 @@ void unit_apply_movement_tuning(UnitInstance* unit) {
                                   def ? def->turnSpeed : 0.0f));
     }
 }
+
+void unit_set_collision_enabled(UnitInstance* unit, bool enabled) {
+    if (!unit || !b2Body_IsValid(unit->bodyId)) {
+        return;
+    }
+    // A unit has exactly one shape; fetch it (UnitInstance doesn't cache the shape id).
+    b2ShapeId shape = b2_nullShapeId;
+    if (b2Body_GetShapes(unit->bodyId, &shape, 1) < 1 || !b2Shape_IsValid(shape)) {
+        return;
+    }
+    b2Filter f;
+    if (enabled) {
+        f.categoryBits = CATEGORY_UNIT;
+        f.maskBits = MASK_UNIT;
+        f.groupIndex = unit->collisionGroupId;  // negative -> never self-collide
+    } else {
+        f.categoryBits = 0;   // no category -> projectiles' mask can't match it
+        f.maskBits = 0;       // collides with nothing
+        f.groupIndex = unit->collisionGroupId;
+    }
+    b2Shape_SetFilter(shape, f);
+}

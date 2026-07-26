@@ -601,7 +601,9 @@ void UnitManager::renderAll(const std::vector<float>* heightOffsets) {
     for (auto& instance : m_instances) {
         if (!instance || !instance->active || !instance->visible) continue;
         if (instance->rootSection) {
-            renderSection(instance->rootSection.get(), heightOffsets, instance->allSections);
+            // renderHeightOffset lifts the whole unit (device-on-top overlay); 0 normally.
+            renderSection(instance->rootSection.get(), heightOffsets, instance->allSections,
+                          instance->renderHeightOffset);
         }
     }
 }

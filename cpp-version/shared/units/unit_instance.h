@@ -100,6 +100,11 @@ struct UnitInstance {
     // Rendering-only: set false when the player has no line of sight to this unit.
     // Does not affect simulation (AI/physics/combat continue) — only viewport draw.
     bool visible = true;
+
+    // Rendering-only vertical (world Y) lift added to every section, used to draw the
+    // player's influence device on top of the unit it is piloting (physics is 2D, so
+    // "on top" is a render offset). 0 for normal units. See docs/transfer.md.
+    float renderHeightOffset = 0.0f;
 };
 
 //------------------------------------------------------------------------------
@@ -129,5 +134,12 @@ void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFac
 // damping at creation — call this after editing a definition's maxSpeed to retune an
 // existing instance without re-creating it. No-op if the body is invalid.
 void unit_apply_movement_tuning(UnitInstance* unit);
+
+// Enable or disable a unit's collisions by swapping its shape filter: enabled restores
+// the normal unit filter {CATEGORY_UNIT, MASK_UNIT, collisionGroupId}; disabled sets
+// {0, 0, groupIndex} so it collides with nothing and cannot be hit by projectiles (there
+// is no damage-side guard — hittability is purely the filter). Used by the transfer
+// mechanic to make the piloting device invulnerable. No-op if the body is invalid.
+void unit_set_collision_enabled(UnitInstance* unit, bool enabled);
 
 #endif // UNIT_INSTANCE_H
