@@ -14,8 +14,10 @@ struct UnitCombatState {
     bool alive = true;
 };
 
-// Health scaling: energy property value * this factor = max health
-inline constexpr float HEALTH_PER_ENERGY = 100.0f;
+// Health scaling: the droid's `energy` stat IS its health (droidclasses.txt lists 20, 40,
+// 100, ...), so the factor is 1. (It was 100 while energy was being mis-parsed as the small
+// 0-9 tier column — see docs/weapons.md.)
+inline constexpr float HEALTH_PER_ENERGY = 1.0f;
 inline constexpr float MIN_HEALTH = 10.0f;
 
 //------------------------------------------------------------------------------

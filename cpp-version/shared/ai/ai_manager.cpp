@@ -679,6 +679,11 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
     // Must be within max range
     if (dist > ai.weaponState.definition.maxRange) return false;
 
+    // Line of sight: a hostile only fires when no wall lies between it and the
+    // player (so it holds fire around corners). Reuses the static-geometry cast.
+    float losRadius = ai.unit->definition ? ai.unit->definition->collisionRadius : 0.2f;
+    if (!pathClear(unitPos, playerPos, losRadius)) return false;
+
     // Disruptor (area weapon) ignores facing
     if (ai.weaponState.definition.type == WeaponType::Area) return true;
 
@@ -711,6 +716,9 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
 void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
                                 b2WorldId worldId, ProjectileManager* projectiles) {
     if (!projectiles) return;
+    // Only projectile weapons fire this phase (beam/area/instant deferred); don't
+    // consume the cooldown for a weapon type we can't yet spawn.
+    if (ai.weaponState.definition.type != WeaponType::Projectile) return;
     if (!canFire(ai, playerPos)) return;
 
     if (!tryFire(ai.weaponState)) return;
@@ -720,26 +728,33 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
     const auto& wdef = ai.weaponState.definition;
     float lifetime = (wdef.speed > 0.0f) ? (wdef.maxRange / wdef.speed) : 1.0f;
 
-    // Apply fire offset (rotated by firing section angle)
+    // Apply fire offset (2D, relative to facing), clamped to the unit's collision radius
+    // so a stray/old-data offset can't spawn the bolt inside a wall or far from the muzzle.
     Vector2 spawnPos = unitPos;
     const auto& props = ai.unit->definition->properties;
-    if (props.fireOffset.x != 0 || props.fireOffset.y != 0 || props.fireOffset.z != 0) {
+    Vector2 off2d = {props.fireOffset.x, props.fireOffset.y};
+    float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
+    float maxOff = ai.unit->definition->collisionRadius;
+    if (offLen > maxOff && offLen > 1e-5f) {
+        off2d.x *= maxOff / offLen;
+        off2d.y *= maxOff / offLen;
+    }
+    if (off2d.x != 0.0f || off2d.y != 0.0f) {
         float angle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
         float cosA = cosf(angle);
         float sinA = sinf(angle);
-        // fireOffset.x/y are 2D offset relative to unit facing
-        spawnPos.x += props.fireOffset.x * cosA - props.fireOffset.y * sinA;
-        spawnPos.y += props.fireOffset.x * sinA + props.fireOffset.y * cosA;
+        spawnPos.x += off2d.x * cosA - off2d.y * sinA;
+        spawnPos.y += off2d.x * sinA + off2d.y * cosA;
     }
 
     projectiles->spawn(worldId, spawnPos, dir,
                        wdef.speed, wdef.damage, lifetime,
-                       ai.unit->collisionGroupId);
+                       ai.unit->collisionGroupId, wdef.id);
 
     // Twin weapons fire a second projectile
     if (wdef.twin) {
         projectiles->spawn(worldId, spawnPos, dir,
                            wdef.speed, wdef.damage, lifetime,
-                           ai.unit->collisionGroupId);
+                           ai.unit->collisionGroupId, wdef.id);
     }
 }

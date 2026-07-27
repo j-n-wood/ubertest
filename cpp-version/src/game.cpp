@@ -37,6 +37,7 @@ static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
 static void game_update_score(Game* game, float dt);
+static void game_update_player_fire(Game* game, float dt);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -196,6 +197,20 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         TraceLog(LOG_INFO, "Loaded ship map from %s", shipMapPath.c_str());
     } else {
         TraceLog(LOG_WARNING, "Failed to load ship map from %s", shipMapPath.c_str());
+    }
+
+    // Load weapon definitions (activates AI + player firing) and the projectile sprite.
+    std::string weaponsPath = game->assetPath + "/data/weapons.json";
+    if (loadWeaponsFromFile(weaponsPath)) {
+        TraceLog(LOG_INFO, "Loaded %d weapons from %s", weaponCount(), weaponsPath.c_str());
+    } else {
+        TraceLog(LOG_WARNING, "Failed to load weapons from %s", weaponsPath.c_str());
+    }
+    game->flareTexture = LoadTexture((game->assetPath + "/textures/effects/flare.png").c_str());
+    game->blasterBlobTexture = LoadTexture((game->assetPath + "/textures/effects/blaster_blob.png").c_str());
+    // Player weapon state (the device's plasma bolt; re-inited if a captured unit is armed).
+    if (game->playerUnit && game->playerUnit->definition) {
+        game->playerWeapon = initWeaponState(game->playerUnit->definition->properties);
     }
 
     // Spawn enemies for the starting level
@@ -912,6 +927,63 @@ static void game_update_score(Game* game, float dt) {
     game->scoreDisplay = score_clock_step(game->scoreDisplay, game->score, dt);
 }
 
+// Player weapon firing (LMB). Fires the controlled unit's weapon, or the device's plasma
+// bolt if the controlled unit is unarmed. Owner = controlled unit's group (no self-hit).
+// See docs/weapons.md.
+static void game_update_player_fire(Game* game, float dt) {
+    if (game->transfer.mode == ControlMode::Transferring) return;  // input locked mid fly-over
+    if (game->input.transferMode) return;  // RMB/Ctrl held: aiming a capture, not firing
+    UnitInstance* cu = game_controlled_unit(game);
+    if (!cu || !cu->definition || !b2Body_IsValid(cu->bodyId)) return;
+
+    // Effective weapon: the controlled unit's own, else the device's plasma bolt.
+    int weaponId = cu->definition->properties.weapon;
+    if (weaponId < 0 && game->playerUnit && game->playerUnit->definition) {
+        weaponId = game->playerUnit->definition->properties.weapon;
+    }
+    if (weaponId != game->playerWeapon.definition.id) {
+        game->playerWeapon.definition = getWeaponDefinition(weaponId);
+        game->playerWeapon.cooldownRemaining = 0.0f;
+    }
+    updateWeaponCooldown(game->playerWeapon, dt);
+
+    if (!game->input.fire) return;
+    const WeaponDefinition& w = game->playerWeapon.definition;
+    if (w.type != WeaponType::Projectile) return;  // beam/area deferred (phase 1)
+    if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
+
+    // Aim along the unit's CURRENT facing, not playerDesiredRotation — the body may still
+    // be slewing toward the cursor, so the bolt must leave in the direction it points now.
+    // Forward = {-sin, cos} (inverse of facing_angle_to's atan2(-dx, dz)).
+    float a = b2Rot_GetAngle(b2Body_GetRotation(cu->bodyId));
+    float c = cosf(a), s = sinf(a);
+    Vector2 dir = {-s, c};
+
+    b2Vec2 bp = b2Body_GetPosition(cu->bodyId);
+    Vector2 spawnPos = {bp.x, bp.y};
+    // Fire offset (relative to facing), clamped to the unit's collision radius so a
+    // stray/old-data offset can't spawn the bolt inside a wall or far from the muzzle.
+    Vector2 off2d = {cu->definition->properties.fireOffset.x,
+                     cu->definition->properties.fireOffset.y};
+    float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
+    float maxOff = cu->definition->collisionRadius;
+    if (offLen > maxOff && offLen > 1e-5f) {
+        off2d.x *= maxOff / offLen;
+        off2d.y *= maxOff / offLen;
+    }
+    if (off2d.x != 0.0f || off2d.y != 0.0f) {
+        spawnPos.x += off2d.x * c - off2d.y * s;
+        spawnPos.y += off2d.x * s + off2d.y * c;
+    }
+    float lifetime = (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
+    game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
+                                  w.speed, w.damage, lifetime, cu->collisionGroupId, w.id);
+    if (w.twin) {
+        game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
+                                      w.speed, w.damage, lifetime, cu->collisionGroupId, w.id);
+    }
+}
+
 // Switch levels: freeze the old level, activate the new level's world + geometry, migrate
 // the player device (and any carried unit type) into the new world, and populate or
 // reactivate the new level's droids. `target` is the arrival tile (a lift stop) or null.
@@ -1213,6 +1285,9 @@ void game_update_gameplay(Game* game, float dt) {
                                    &game->projectileManager);
         }
 
+        // Player weapon firing (LMB) — spawns before the step so bolts move this frame.
+        game_update_player_fire(game, simDt);
+
         // Step physics
         physics_world_step(&game->physics, simDt);
 
@@ -1332,15 +1407,20 @@ static void game_draw_ai_debug_2d(Game* game) {
         Vector2 screen = GetWorldToScreen((Vector3){p.x, 0.6f, p.y}, game->camera);
 
         // Hostile units get a prominent "HOSTILE" tag; others show their state letter.
+        // Both carry the unit's health as "cur / max" so damage is visible in debug.
         const char* redirect = (ai.collideCooldown > 0.0f) ? " R" : "";
+        float hp = ai.unit->combatState.currentHealth;
+        float hpMax = ai.unit->combatState.maxHealth;
         if (ai.hostile) {
-            const char* txt = TextFormat("HOSTILE>%d%s", ai.targetWaypoint, redirect);
+            const char* txt = TextFormat("HOSTILE>%d%s  %.0f / %.0f",
+                                         ai.targetWaypoint, redirect, hp, hpMax);
             DrawText(txt, (int)screen.x - MeasureText(txt, 14) / 2, (int)screen.y - 2, 14, RED);
         } else {
             const char* st = ai.state == AIState::Flee ? "F" : "P";
             Color col = ai.state == AIState::Flee ? ORANGE : GREEN;
-            DrawText(TextFormat("%s>%d%s", st, ai.targetWaypoint, redirect),
-                     (int)screen.x - 8, (int)screen.y, 12, col);
+            const char* txt = TextFormat("%s>%d%s  %.0f / %.0f",
+                                         st, ai.targetWaypoint, redirect, hp, hpMax);
+            DrawText(txt, (int)screen.x - MeasureText(txt, 12) / 2, (int)screen.y, 12, col);
         }
     }
 }
@@ -1458,6 +1538,60 @@ void game_render_gameplay(Game* game) {
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
 
+    // Projectiles: additive glow billboards, drawn above the sim (render-only, like
+    // doors/chargers). The physics radius is PROJECTILE_RADIUS (0.1); the flare is a
+    // larger purely-visual sprite — the glow has a lot of gradient, so it must be
+    // comfortably bigger than the physics circle to read on screen. See docs/weapons.md.
+    {
+        constexpr float PROJECTILE_HEIGHT = 0.5f;       // billboard centre height (lifted
+                                                        // clear of the floor: additive, so
+                                                        // no z-fighting with the ground)
+        constexpr float PLASMA_VISUAL_SIZE = 0.6f;      // plasma glow diameter (weapon 0)
+        constexpr float LASER_VISUAL_LEN = 0.9f;        // laser streak length along travel
+        // Use DrawBillboardPro with the billboard up-vector = camera.up, NOT plain
+        // DrawBillboard: that hardcodes up={0,1,0}, which for this straight-down camera is
+        // parallel to the view direction, so cross(up, toCamera)=0 collapses the quad to a
+        // 1px line. camera.up ({0,0,-1}) is perpendicular to the view, laying the sprite flat
+        // in the ground plane facing the camera. Origin = half-size centres it on the
+        // projectile (the quad otherwise hangs off corner 0).
+        //
+        // Per-weapon look, keyed by damage type: plasma → round flare glow; laser →
+        // blaster_blob, a horizontal streak (image long axis = image +X = billboard right).
+        // Rotate the laser so its streak points along travel: at rotation 0 the streak lies
+        // on world +X; DrawBillboardPro spins the quad about the view axis (+Y for this
+        // camera), and rotating +X about +Y by angle a gives (cos a, 0, -sin a), so
+        // a = atan2(-vz, vx) aligns it with the velocity (vx, vz).
+        BeginBlendMode(BLEND_ADDITIVE);
+        for (const Projectile& p : game->projectileManager.getProjectiles()) {
+            if (!p.active) continue;
+            Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
+
+            bool isLaser = getWeaponDefinition(p.weaponId).damageType == DamageType::Laser;
+            Texture2D tex = isLaser ? game->blasterBlobTexture : game->flareTexture;
+            float len = isLaser ? LASER_VISUAL_LEN : PLASMA_VISUAL_SIZE;
+            float aspect = (tex.width > 0) ? (float)tex.height / (float)tex.width : 1.0f;
+            Vector2 size = {len, len * aspect};  // preserve the sprite's own proportions
+            Vector2 origin = {size.x * 0.5f, size.y * 0.5f};
+            float rotation = isLaser
+                ? atan2f(-p.velocity.y, p.velocity.x) * RAD2DEG  // point streak along travel
+                : 0.0f;
+            Rectangle src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+            DrawBillboardPro(game->camera, tex, src, pos,
+                             game->camera.up, size, origin, rotation, WHITE);
+        }
+        EndBlendMode();
+
+        // V-mode: opaque marker ring at each projectile's render position, so a missing
+        // or washed-out additive sprite can be told apart from a bad position/render path.
+        if (game->showAIDebug) {
+            for (const Projectile& p : game->projectileManager.getProjectiles()) {
+                if (!p.active) continue;
+                Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
+                DrawSphere(pos, PROJECTILE_RADIUS, MAGENTA);  // physics-radius marker
+            }
+        }
+    }
+
     // Debug: collision shapes (press C)
     if (IsKeyDown(KEY_C) && game->currentLevel >= 0 &&
         game->currentLevel < (int)game->levelCollisionData.size()) {
@@ -1512,6 +1646,30 @@ void game_render_gameplay(Game* game) {
     {
         const char* txt = TextFormat("SCORE %06ld", (long)game->scoreDisplay);
         DrawText(txt, GetScreenWidth() - MeasureText(txt, 24) - 16, 10, 24, RAYWHITE);
+    }
+
+    // Player health, under the score. Tracks the controlled unit (the device in Free mode,
+    // else the piloted droid). Numeric "cur / max" plus a colour-graded bar.
+    {
+        UnitInstance* cu = game_controlled_unit(game);
+        if (cu) {
+            float cur = cu->combatState.currentHealth;
+            float mx = cu->combatState.maxHealth;
+            float frac = (mx > 0.0f) ? (cur / mx) : 0.0f;
+            frac = (frac < 0.0f) ? 0.0f : (frac > 1.0f ? 1.0f : frac);
+
+            const int fs = 20;
+            const char* txt = TextFormat("HEALTH %.0f / %.0f", cur, mx);
+            DrawText(txt, GetScreenWidth() - MeasureText(txt, fs) - 16, 40, fs, RAYWHITE);
+
+            const int barW = 180, barH = 10;
+            int bx = GetScreenWidth() - barW - 16;
+            int by = 40 + fs + 4;
+            Color hc = (frac > 0.5f) ? GREEN : (frac > 0.25f ? YELLOW : RED);
+            DrawRectangle(bx, by, barW, barH, Fade(DARKGRAY, 0.6f));
+            DrawRectangle(bx, by, (int)(barW * frac), barH, hc);
+            DrawRectangleLines(bx, by, barW, barH, BLACK);
+        }
     }
 
     // Player info (angle/rotation telemetry) — debug only (toggle V), not shown in normal play.
@@ -1613,6 +1771,14 @@ void game_destroy(Game* game) {
     if (game->bumpAtlasTexture.id > 0) {
         UnloadTexture(game->bumpAtlasTexture);
         game->bumpAtlasTexture = {0};
+    }
+    if (game->flareTexture.id > 0) {
+        UnloadTexture(game->flareTexture);
+        game->flareTexture = {0};
+    }
+    if (game->blasterBlobTexture.id > 0) {
+        UnloadTexture(game->blasterBlobTexture);
+        game->blasterBlobTexture = {0};
     }
 
     // Destroy scene renderer

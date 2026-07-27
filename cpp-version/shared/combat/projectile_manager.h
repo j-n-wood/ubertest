@@ -18,6 +18,7 @@ struct Projectile {
     float damage = 0.0f;
     float remainingLifetime = 0.0f;
     int32_t ownerId = 0;        // Collision group ID of the unit that fired
+    int weaponId = -1;          // Firing weapon (for per-weapon rendering; -1 = unknown)
     bool active = true;
     b2BodyId bodyId = b2_nullBodyId;
     BodyUserData userData;
@@ -36,9 +37,11 @@ inline constexpr float PROJECTILE_RADIUS = 0.1f;
 class ProjectileManager {
 public:
     // Spawn a projectile as a Box2D body.
-    // Direction is normalised internally. Lifetime in seconds.
+    // Direction is normalised internally. Lifetime in seconds. weaponId is carried on the
+    // projectile for per-weapon rendering (it does not affect simulation).
     void spawn(b2WorldId worldId, Vector2 position, Vector2 direction,
-               float speed, float damage, float lifetime, int32_t ownerId);
+               float speed, float damage, float lifetime, int32_t ownerId,
+               int weaponId = -1);
 
     // Decrement lifetime for active projectiles. Deactivate expired ones.
     void update(float dt);

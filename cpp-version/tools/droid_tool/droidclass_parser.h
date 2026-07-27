@@ -19,15 +19,15 @@ struct DroidSection {
 struct DroidClass {
     int classId = 0;
 
-    // Line 1: render_index type_code energy armour weapon
+    // Line 1: render_index number(=typeCode) type energy armour
     int renderIndex = 0;
-    int typeCode = 0;
-    int energyCost = 0;
+    int typeCode = 0;         // droid "number" (display model id, e.g. 101, 629)
+    int energyCost = 0;       // energy == health
     float armour = 0.0f;
-    float weapon = 0.0f;
 
-    // Line 2: weapon_type pulses
-    int weaponType = -1;
+    // Line 2: weapon pulses
+    float weapon = 0.0f;      // weapon id (-1 = unarmed)
+    int weaponType = -1;      // unused (legacy)
     int pulses = 0;
 
     // Line 3: 4 speed values

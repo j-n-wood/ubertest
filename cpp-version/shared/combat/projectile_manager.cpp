@@ -8,7 +8,7 @@
 
 void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direction,
                               float speed, float damage, float lifetime,
-                              int32_t ownerId) {
+                              int32_t ownerId, int weaponId) {
     float len = Vector2Length(direction);
     if (len < 1e-6f) return;
 
@@ -21,14 +21,27 @@ void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direc
     p.damage = damage;
     p.remainingLifetime = lifetime;
     p.ownerId = ownerId;
+    p.weaponId = weaponId;
     p.active = true;
     p.userData.tag = BodyTag::Projectile;
 
-    // Push first so we can take address of userData in the vector
-    size_t index = m_projectiles.size();
-    p.userData.owner = reinterpret_cast<void*>(index);
+    // Each Box2D body stores &Projectile::userData. push_back can reallocate the vector,
+    // which would leave every prior body pointing at freed memory (then contact events can
+    // no longer identify the projectile and it never deactivates — it bounces / lodges in
+    // corners). Detect the move and re-bind all existing bodies to their new addresses.
+    const Projectile* dataBefore = m_projectiles.data();
     m_projectiles.push_back(p);
-    Projectile& stored = m_projectiles.back();
+    if (m_projectiles.data() != dataBefore) {
+        for (size_t i = 0; i + 1 < m_projectiles.size(); ++i) {
+            if (b2Body_IsValid(m_projectiles[i].bodyId)) {
+                b2Body_SetUserData(m_projectiles[i].bodyId, &m_projectiles[i].userData);
+            }
+        }
+    }
+
+    size_t index = m_projectiles.size() - 1;
+    Projectile& stored = m_projectiles[index];
+    stored.userData.owner = reinterpret_cast<void*>(index);
 
     // Create Box2D body
     b2BodyDef bodyDef = b2DefaultBodyDef();
@@ -157,9 +170,13 @@ void ProjectileManager::cleanup() {
                         [](const Projectile& p) { return !p.active; }),
         m_projectiles.end());
 
-    // Re-index user data after compaction
+    // Compaction moved the surviving projectiles, so both the owner index AND each body's
+    // stored userData pointer are now stale — re-index and re-bind every survivor.
     for (size_t i = 0; i < m_projectiles.size(); ++i) {
         m_projectiles[i].userData.owner = reinterpret_cast<void*>(i);
+        if (b2Body_IsValid(m_projectiles[i].bodyId)) {
+            b2Body_SetUserData(m_projectiles[i].bodyId, &m_projectiles[i].userData);
+        }
     }
 }
 

@@ -110,6 +110,22 @@ TEST_F(WeaponTestFixture, AllWeaponsLoaded) {
     EXPECT_EQ(weaponCount(), 9);
 }
 
+// The shipped asset file (loaded at game_init via loadWeaponsFromFile) must define
+// weapon 0 = Plasma Bolt with the phase-1 stats the game/AI/tests rely on.
+TEST(WeaponFileTest, ShippedPlasmaBolt) {
+    std::string path = std::string(TEST_PROJECT_ROOT) + "/cpp-version/assets/data/weapons.json";
+    ASSERT_TRUE(loadWeaponsFromFile(path)) << "failed to load " << path;
+
+    WeaponDefinition w = getWeaponDefinition(0);
+    EXPECT_EQ(w.id, 0);
+    EXPECT_EQ(w.name, "Plasma Bolt");
+    EXPECT_FLOAT_EQ(w.damage, 11.0f);
+    EXPECT_FLOAT_EQ(w.speed, 5.0f);
+    EXPECT_FLOAT_EQ(w.fireRate, 0.8f);
+    EXPECT_EQ(w.type, WeaponType::Projectile);
+    EXPECT_EQ(w.damageType, DamageType::Plasma);
+}
+
 //------------------------------------------------------------------------------
 // Projectile tests — Box2D physics simulation
 //------------------------------------------------------------------------------
@@ -221,6 +237,41 @@ TEST_F(ProjectileTestFixture, MissesDistantTarget) {
 
     EXPECT_FLOAT_EQ(target.combatState.currentHealth, 100.0f); // No damage
     EXPECT_EQ(mgr.activeCount(), 1); // Projectile still active
+}
+
+TEST_F(ProjectileTestFixture, CarriesWeaponId) {
+    // weaponId rides on the projectile for per-weapon rendering (plasma vs laser sprite).
+    mgr.spawn(worldId, {0, 0}, {1, 0}, 10.0f, 5.0f, 5.0f, /*owner*/ -1, /*weaponId*/ 4);
+    const auto& ps = mgr.getProjectiles();
+    ASSERT_EQ(ps.size(), 1u);
+    EXPECT_EQ(ps[0].weaponId, 4);
+}
+
+TEST_F(ProjectileTestFixture, ManyProjectilesStillDeactivateOnHit) {
+    // Regression: each body stores &Projectile::userData. Growing/compacting the internal
+    // vector used to leave those pointers dangling, so projectiles spawned after the first
+    // reallocation were never identified on contact and never deactivated (they bounced /
+    // lodged in corners). Spawn enough to force several reallocations, fire them all into a
+    // target, and require every one to deal its damage once and then go inactive.
+    UnitInstance target;
+    target.combatState = {1000.0f, 1000.0f, 0.0f, true};
+    createUnitBody(target, {5.0f, 0.0f}, 0.5f, -2);
+
+    constexpr int N = 64;  // std::vector growth reallocates several times before this
+    for (int i = 0; i < N; ++i) {
+        mgr.spawn(worldId, {0, 0}, {1, 0}, 10.0f, 5.0f, 5.0f, -1);
+    }
+    ASSERT_EQ(mgr.activeCount(), N);
+
+    for (int i = 0; i < 300; ++i) {
+        step(0.01f);
+        mgr.processContactEvents(worldId);
+        mgr.cleanup();  // compacts survivors — exercises the re-bind path too
+        if (mgr.activeCount() == 0) break;
+    }
+
+    EXPECT_EQ(mgr.activeCount(), 0) << "some projectiles never deactivated (stale userData)";
+    EXPECT_FLOAT_EQ(target.combatState.currentHealth, 1000.0f - N * 5.0f);
 }
 
 TEST_F(ProjectileTestFixture, IgnoresOwner) {

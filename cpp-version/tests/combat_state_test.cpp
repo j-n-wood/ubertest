@@ -21,19 +21,32 @@ TEST(DamageModel, BasicDamage) {
 }
 
 TEST(DamageModel, ArmourReduction) {
-    // Unit with 50% armour — takes half damage
+    // Armour is a flat reduction: 60 raw - 5 armour = 55 effective, 100 - 55 = 45 HP.
     UnitCombatState state;
     state.maxHealth = 100.0f;
     state.currentHealth = 100.0f;
-    state.armour = 50.0f;
+    state.armour = 5.0f;
     state.alive = true;
 
     bool alive = applyDamage(state, 60.0f);
 
     EXPECT_TRUE(alive);
     EXPECT_TRUE(isAlive(state));
-    // 60 raw * (1 - 0.5) = 30 effective damage, 100 - 30 = 70 HP
-    EXPECT_FLOAT_EQ(state.currentHealth, 70.0f);
+    EXPECT_FLOAT_EQ(state.currentHealth, 45.0f);
+}
+
+TEST(DamageModel, ArmourFullyAbsorbsWeakHits) {
+    // A hit that doesn't beat the armour deals nothing (damage -= armour < 0).
+    UnitCombatState state;
+    state.maxHealth = 50.0f;
+    state.currentHealth = 50.0f;
+    state.armour = 8.0f;
+    state.alive = true;
+
+    bool alive = applyDamage(state, 6.0f);
+
+    EXPECT_TRUE(alive);
+    EXPECT_FLOAT_EQ(state.currentHealth, 50.0f);
 }
 
 TEST(DamageModel, ZeroDamage) {
@@ -70,15 +83,15 @@ TEST(DamageModel, OverkillClamps) {
 
 TEST(CombatState, InitFromProperties) {
     DroidProperties props;
-    props.energy = 3;
-    props.armour = 40.0f;
+    props.energy = 40;
+    props.armour = 6.0f;
 
     UnitCombatState state = initCombatState(props);
 
-    // energy 3 * HEALTH_PER_ENERGY(100) = 300 HP
-    EXPECT_FLOAT_EQ(state.maxHealth, 300.0f);
-    EXPECT_FLOAT_EQ(state.currentHealth, 300.0f);
-    EXPECT_FLOAT_EQ(state.armour, 40.0f);
+    // energy IS health (HEALTH_PER_ENERGY == 1)
+    EXPECT_FLOAT_EQ(state.maxHealth, 40.0f);
+    EXPECT_FLOAT_EQ(state.currentHealth, 40.0f);
+    EXPECT_FLOAT_EQ(state.armour, 6.0f);
     EXPECT_TRUE(state.alive);
 }
 
@@ -134,17 +147,20 @@ TEST(CombatState, DamageOnDeadUnitIsNoop) {
     EXPECT_FLOAT_EQ(state.currentHealth, 0.0f);
 }
 
-TEST(CombatState, ArmourClampedTo100) {
-    // Armour above 100 is clamped — unit takes no damage
+TEST(CombatState, ArmourFromPropertiesIsFlat) {
+    // Armour comes straight from properties (non-negative) and is a flat reduction.
     DroidProperties props;
-    props.energy = 1;
-    props.armour = 150.0f;  // Over 100
+    props.energy = 50;
+    props.armour = 7.0f;
 
     UnitCombatState state = initCombatState(props);
 
-    EXPECT_FLOAT_EQ(state.armour, 100.0f);
+    EXPECT_FLOAT_EQ(state.armour, 7.0f);
+    EXPECT_FLOAT_EQ(state.maxHealth, 50.0f);
 
-    bool alive = applyDamage(state, 500.0f);
-    EXPECT_TRUE(alive);
-    EXPECT_FLOAT_EQ(state.currentHealth, 100.0f);
+    applyDamage(state, 11.0f);                     // 11 - 7 = 4 through
+    EXPECT_FLOAT_EQ(state.currentHealth, 46.0f);
+
+    applyDamage(state, 5.0f);                       // under armour → absorbed
+    EXPECT_FLOAT_EQ(state.currentHealth, 46.0f);
 }

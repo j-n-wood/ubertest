@@ -29,6 +29,8 @@ set(TOOL_SOURCES
 add_executable(${PROJECT_NAME}
     ${TOOL_SOURCES}
     ${SHARED_SOURCES}
+    ${LEVEL_SHARED_SOURCES}   # level_renderer.cpp etc. — door/charger renderers in
+                              # SHARED_SOURCES call freeLevelRenderData (defined there)
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -40,6 +42,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     raylib
     box2d
     nlohmann_json::nlohmann_json
+    tinyxml2   # tmx_loader.cpp (LEVEL_SHARED_SOURCES) includes <tinyxml2.h>
 )
 
 add_platform_libraries(${PROJECT_NAME})

@@ -504,8 +504,12 @@ TEST_F(AITestFixture, OmnidirectionalFiresWhileMoving) {
 // Disruptor (area weapon) test
 //------------------------------------------------------------------------------
 
-TEST_F(AITestFixture, DisruptorIgnoresFacing) {
-    // Disruptor droid at waypoint 1, facing away from player
+TEST_F(AITestFixture, AreaWeaponDeferredThisPhase) {
+    // Phase 1 fires projectile weapons only (see docs/weapons.md). A disruptor is an
+    // Area weapon (speed 0) — tryFireAtPlayer gates it off so it doesn't spawn a
+    // stationary "bad projectile" now that the weapon table loads. When area weapons
+    // land in a later phase, this should assert the disruptor fires regardless of
+    // facing (the canFire Area branch already ignores facing).
     UnitInstance unit;
     initSingleEnemy(unit, disruptorDef, 1, -10);
 
@@ -513,21 +517,14 @@ TEST_F(AITestFixture, DisruptorIgnoresFacing) {
     ai.state = AIState::Chase;
     ai.hostile = true;
 
-    // Face the droid away from the player (body angle = PI, facing -X)
+    // Face the droid away from the player and place the player in range (dist 3 < 25).
     b2Body_SetTransform(unit.bodyId, {5.0f, 0.0f}, b2MakeRot(PI));
-
-    // Player at (8, 0) — within max range 25, distance 3
     Vector2 playerPos = {8.0f, 0.0f};
 
-    // Disruptor should be able to fire regardless of facing
-    // The canFire check in AIManager should return true for Area weapons
-    // Update once to trigger firing attempt
     aiManager.update(0.016f, playerPos, worldId, &projectiles);
 
-    // The disruptor fired — check projectile count
-    // Note: Disruptor is area type with speed=0, but our spawn still creates a projectile
-    EXPECT_GE(projectiles.activeCount(), 1)
-        << "Disruptor should fire without facing requirement";
+    EXPECT_EQ(projectiles.activeCount(), 0)
+        << "Area weapons do not fire in phase 1 (projectile weapons only)";
 }
 
 //------------------------------------------------------------------------------

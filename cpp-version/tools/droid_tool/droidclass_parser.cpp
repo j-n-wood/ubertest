@@ -60,23 +60,36 @@ DroidClassParseResult parseDroidClasses(std::string_view filepath) {
             currentClass = &result.classes.back();
             currentClass->classId = classId;
 
-            // Read the next 5 numeric lines
-            // Line 1: render_index type_code energy armour weapon
+            // Read the next numeric lines. Column layout per the original loader
+            // (uber/source/uberdroid/droid_class.cpp droid_class::load):
+            //   Line 1: render_index number(=typeCode) type energy armour
+            //   Line 2: weapon pulses
+            // NB an earlier version read line 1 as ".. energy armour weapon", shifting
+            // energy/armour by one and pulling weapon from the armour column (weapon is
+            // actually on line 2). That mis-parse is why the shipped unit JSONs had tiny
+            // energy (the 0-9 tier) and huge armour (the real energy). See docs/weapons.md.
             if (!fgets(lineBuf, sizeof(lineBuf), file)) break;
             lineNum++;
-            sscanf(lineBuf, "%d %d %d %f %f",
-                   &currentClass->renderIndex,
-                   &currentClass->typeCode,
-                   &currentClass->energyCost,
-                   &currentClass->armour,
-                   &currentClass->weapon);
+            {
+                int classTier = 0;
+                float energyF = 0.0f;
+                sscanf(lineBuf, "%d %d %d %f %f",
+                       &currentClass->renderIndex,
+                       &currentClass->typeCode,
+                       &classTier,               // display tier (0-9), unused downstream
+                       &energyF,                 // energy = health
+                       &currentClass->armour);   // armour
+                currentClass->energyCost = static_cast<int>(energyF);
+            }
 
-            // Line 2: weapon_type pulses
+            // Line 2: weapon pulses
             if (!fgets(lineBuf, sizeof(lineBuf), file)) break;
             lineNum++;
-            sscanf(lineBuf, "%d %d",
-                   &currentClass->weaponType,
-                   &currentClass->pulses);
+            {
+                int weaponId = -1;
+                sscanf(lineBuf, "%d %d", &weaponId, &currentClass->pulses);
+                currentClass->weapon = static_cast<float>(weaponId);
+            }
 
             // Line 3: 4 speeds
             if (!fgets(lineBuf, sizeof(lineBuf), file)) break;

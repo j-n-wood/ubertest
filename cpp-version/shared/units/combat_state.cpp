@@ -11,7 +11,7 @@ UnitCombatState initCombatState(const DroidProperties& properties) {
     state.maxHealth = std::max(MIN_HEALTH, static_cast<float>(properties.energy) * HEALTH_PER_ENERGY);
     state.currentHealth = state.maxHealth;
 
-    state.armour = std::clamp(properties.armour, 0.0f, 100.0f);
+    state.armour = std::max(0.0f, properties.armour);  // flat reduction; never negative
     state.alive = true;
 
     return state;
@@ -24,8 +24,10 @@ UnitCombatState initCombatState(const DroidProperties& properties) {
 bool applyDamage(UnitCombatState& state, float rawDamage) {
     if (!state.alive || rawDamage <= 0.0f) return state.alive;
 
-    float reduction = state.armour / 100.0f;
-    float effectiveDamage = rawDamage * (1.0f - reduction);
+    // Armour is a flat damage reduction (uber/source/uberdroid/destructible.cpp:
+    // `damage -= armour`). A hit that doesn't beat the armour is fully absorbed.
+    float effectiveDamage = rawDamage - state.armour;
+    if (effectiveDamage <= 0.0f) return state.alive;
 
     state.currentHealth = std::max(0.0f, state.currentHealth - effectiveDamage);
     if (state.currentHealth <= 0.0f) {

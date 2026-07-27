@@ -15,10 +15,12 @@
 #include "level/console_manager.h"
 #include "level/lift_manager.h"
 #include "level/ship_map.h"
+#include "score/scoring.h"
 #include "rendering/scene_renderer.h"
 #include "rendering/door_renderer.h"
 #include "rendering/charger_renderer.h"
 #include "units/unit_manager.h"
+#include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "ai/ai_manager.h"
 #include "level/door_manager.h"
@@ -66,6 +68,8 @@ struct Game {
     TmxTileset tileset;
     Texture2D atlasTexture;
     Texture2D bumpAtlasTexture;
+    Texture2D flareTexture;       // additive glow sprite for plasma projectiles (see docs/weapons.md)
+    Texture2D blasterBlobTexture; // horizontal streak sprite for laser projectiles (rotated to travel dir)
     TilePropertiesConfig tileProperties;
 
     // Collision bodies from tile data
@@ -77,6 +81,10 @@ struct Game {
     UnitInstance* playerUnit;
     float playerDesiredRotation;  // For mouse aim
     std::vector<UnitInstance*> enemyUnits;  // Tracked for level-switch cleanup
+
+    // Player weapon cooldown state (the controlled unit's weapon, or the device's plasma
+    // bolt fallback). Re-inited when the effective weapon changes. See docs/weapons.md.
+    WeaponState playerWeapon;
 
     // Transfer mechanic: the player device pilots AI units (see docs/transfer.md).
     TransferState transfer;
@@ -105,6 +113,13 @@ struct Game {
     Camera3D camera;
     float cameraHeight;        // Height above ground (Y position)
     float effectiveEyeHeight;  // For specular lighting calculations
+
+    // Score + ship alert (see docs/scoring.md). score/alertLevel update immediately on
+    // award; scoreDisplay lags and clocks toward score at SCORE_CLOCK_RATE. alertLevel
+    // resets to 0 (green) on ship activation; score persists across ships.
+    double score = 0.0;
+    double scoreDisplay = 0.0;
+    double alertLevel = 0.0;
 
     // State
     bool running;
@@ -137,5 +152,9 @@ void game_destroy(Game* game);
 // Move the player to a lift stop, switching level if the stop is on another deck.
 // Called by the ship-view page when the player confirms a destination.
 void game_switch_to_stop(Game* game, const LiftStop& stop);
+
+// Award score + raise the alert level for destroying or capturing `unit` (50 x its
+// class). Called on a kill (game_reap_dead) and on a completed capture (transfer).
+void game_award_points(Game* game, const UnitInstance* unit);
 
 #endif
