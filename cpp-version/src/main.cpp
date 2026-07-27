@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "game.h"
+#include "rendering/texture_manager.h"
 #include "pages/page_manager.h"
 #include "pages/game_page.h"
 #include <cstdio>
@@ -112,7 +113,12 @@ int main(int argc, char* argv[]) {
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
 
-    Game game = {0};
+    // Own the texture manager here (after the GL context exists) so its unloadAll()
+    // runs at textures.reset() below — BEFORE CloseWindow. A static-duration singleton
+    // would instead be torn down at process exit, after the context is gone.
+    auto textures = std::make_unique<TextureManager>();
+
+    Game game{};
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
 
     // View-states are pages on a stack; gameplay is the base GamePage. Other pages
@@ -127,6 +133,7 @@ int main(int argc, char* argv[]) {
     }
 
     game_destroy(&game);
+    textures.reset();   // unloadAll() while the GL context is still alive
     CloseWindow();
 
     return 0;

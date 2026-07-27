@@ -1,5 +1,6 @@
 #include "game.h"
 #include "transfer_control.h"
+#include "rendering/texture_manager.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
 #include "units/heal.h"
@@ -198,6 +199,17 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     } else {
         TraceLog(LOG_WARNING, "Failed to load ship map from %s", shipMapPath.c_str());
     }
+    // Ship-view images: few and small, so load once and retain (freed by the manager on
+    // exit). ShipViewPage just reads TEX_SHIP_MAP*.
+    {
+        const std::string shipBase = game->assetPath + "/ships/ship1/";
+        if (game->shipMap.loaded() && !game->shipMap.imageName().empty()) {
+            gTextures().loadFile(TEX_SHIP_MAP, shipBase + game->shipMap.imageName());
+        }
+        if (game->shipMap.loaded() && !game->shipMap.imageLitName().empty()) {
+            gTextures().loadFile(TEX_SHIP_MAP_LIT, shipBase + game->shipMap.imageLitName());
+        }
+    }
 
     // Load weapon definitions (activates AI + player firing) and the projectile sprite.
     std::string weaponsPath = game->assetPath + "/data/weapons.json";
@@ -206,8 +218,8 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     } else {
         TraceLog(LOG_WARNING, "Failed to load weapons from %s", weaponsPath.c_str());
     }
-    game->flareTexture = LoadTexture((game->assetPath + "/textures/effects/flare.png").c_str());
-    game->blasterBlobTexture = LoadTexture((game->assetPath + "/textures/effects/blaster_blob.png").c_str());
+    gTextures().loadFile(TEX_FLARE, game->assetPath + "/textures/effects/flare.png");
+    gTextures().loadFile(TEX_BLASTER_BLOB, game->assetPath + "/textures/effects/blaster_blob.png");
     // Player weapon state (the device's plasma bolt; re-inited if a captured unit is armed).
     if (game->playerUnit && game->playerUnit->definition) {
         game->playerWeapon = initWeaponState(game->playerUnit->definition->properties);
@@ -260,8 +272,8 @@ static bool game_load_levels(Game* game) {
                      game->tileset.columns, game->tileset.tileCount / game->tileset.columns);
 
             // Load atlas texture
-            game->atlasTexture = loadTilesetTexture(game->tileset, game->levelsPath);
-            if (game->atlasTexture.id == 0) {
+            gTextures().set(TEX_TILE_ATLAS, loadTilesetTexture(game->tileset, game->levelsPath));
+            if (!gTextures().loaded(TEX_TILE_ATLAS)) {
                 TraceLog(LOG_ERROR, "Failed to load atlas texture");
                 return false;
             }
@@ -283,17 +295,15 @@ static bool game_load_levels(Game* game) {
         // bumpAtlas.texture is relative to assets folder (e.g., "textures/bump_atlas.png")
         std::string bumpPath = game->assetPath + "/" +
                                game->tileProperties.bumpAtlas.texture;
-        game->bumpAtlasTexture = LoadTexture(bumpPath.c_str());
-
-        if (game->bumpAtlasTexture.id == 0) {
+        if (!gTextures().loadFile(TEX_TILE_BUMP, bumpPath)) {
             TraceLog(LOG_WARNING, "Failed to load bump atlas: %s", bumpPath.c_str());
         } else {
             TraceLog(LOG_INFO, "Loaded bump atlas: %dx%d",
-                     game->bumpAtlasTexture.width, game->bumpAtlasTexture.height);
+                     gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height);
         }
     } else {
         TraceLog(LOG_WARNING, "No tile properties found, using Tilemap mode");
-        game->bumpAtlasTexture = {0};
+        // TEX_TILE_BUMP left empty (id 0).
     }
 
     // Initialize storage vectors for render/collision data
@@ -343,11 +353,11 @@ static bool game_build_level_render_data(Game* game) {
     data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
 
     // Generate mesh based on available resources
-    if (game->tileProperties.valid && game->bumpAtlasTexture.id > 0) {
+    if (game->tileProperties.valid && gTextures().loaded(TEX_TILE_BUMP)) {
         // CustomTiles mode with bump mapping
         data.tileMesh = createLevelTileMeshCustom(
             meshLevel, game->tileset, game->tileProperties,
-            game->bumpAtlasTexture.width, game->bumpAtlasTexture.height, 1.0f);
+            gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, 1.0f);
         TraceLog(LOG_INFO, "Created CustomTiles mesh");
     } else {
         // Fallback to standard Tilemap mode
@@ -357,11 +367,11 @@ static bool game_build_level_render_data(Game* game) {
 
     if (data.tileMesh.vertexCount > 0) {
         // Create model with textures
-        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ?
-                            game->bumpAtlasTexture : Texture2D{0};
+        Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ?
+                            gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
 
         data.tileModel = createLevelTileModel(
-            data.tileMesh, game->atlasTexture, bumpTex, &game->sceneRenderer);
+            data.tileMesh, gTextures().get(TEX_TILE_ATLAS), bumpTex, &game->sceneRenderer);
         data.meshValid = true;
 
         TraceLog(LOG_INFO, "Level %d render data: %d vertices, bounds (%.1f,%.1f) to (%.1f,%.1f)",
@@ -456,9 +466,9 @@ static void game_create_doors(Game* game) {
 
     // Build the interim 2D door renderer from the current door set.
     if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
-        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ? game->bumpAtlasTexture : Texture2D{0};
+        Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ? gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
         game->doorRenderer.build(game->levels[game->currentLevel], game->tileset,
-                                 game->tileProperties, game->atlasTexture, bumpTex,
+                                 game->tileProperties, gTextures().get(TEX_TILE_ATLAS), bumpTex,
                                  &game->sceneRenderer, game->doorManager.views());
     }
     TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
@@ -501,9 +511,9 @@ static void game_create_chargers(Game* game) {
     game->chargerManager.init(game->physics.world_id, specs);
 
     if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
-        Texture2D bumpTex = game->bumpAtlasTexture.id > 0 ? game->bumpAtlasTexture : Texture2D{0};
+        Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ? gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
         game->chargerRenderer.build(game->levels[game->currentLevel], game->tileset,
-                                    game->tileProperties, game->atlasTexture, bumpTex,
+                                    game->tileProperties, gTextures().get(TEX_TILE_ATLAS), bumpTex,
                                     &game->sceneRenderer, game->chargerManager.views());
     }
     TraceLog(LOG_INFO, "Created %zu chargers from level data", specs.size());
@@ -1567,7 +1577,7 @@ void game_render_gameplay(Game* game) {
             Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
 
             bool isLaser = getWeaponDefinition(p.weaponId).damageType == DamageType::Laser;
-            Texture2D tex = isLaser ? game->blasterBlobTexture : game->flareTexture;
+            Texture2D tex = isLaser ? gTextures().get(TEX_BLASTER_BLOB) : gTextures().get(TEX_FLARE);
             float len = isLaser ? LASER_VISUAL_LEN : PLASMA_VISUAL_SIZE;
             float aspect = (tex.width > 0) ? (float)tex.height / (float)tex.width : 1.0f;
             Vector2 size = {len, len * aspect};  // preserve the sprite's own proportions
@@ -1763,23 +1773,8 @@ void game_destroy(Game* game) {
     // Clear collision bodies vector (bodies destroyed with physics world)
     game->collisionBodies.clear();
 
-    // Unload textures
-    if (game->atlasTexture.id > 0) {
-        UnloadTexture(game->atlasTexture);
-        game->atlasTexture = {0};
-    }
-    if (game->bumpAtlasTexture.id > 0) {
-        UnloadTexture(game->bumpAtlasTexture);
-        game->bumpAtlasTexture = {0};
-    }
-    if (game->flareTexture.id > 0) {
-        UnloadTexture(game->flareTexture);
-        game->flareTexture = {0};
-    }
-    if (game->blasterBlobTexture.id > 0) {
-        UnloadTexture(game->blasterBlobTexture);
-        game->blasterBlobTexture = {0};
-    }
+    // GPU textures are owned by the TextureManager and freed once (unloadAll) from main,
+    // before CloseWindow — not here. See gTextures() / docs/textures.md.
 
     // Destroy scene renderer
     sceneRendererDestroy(&game->sceneRenderer);

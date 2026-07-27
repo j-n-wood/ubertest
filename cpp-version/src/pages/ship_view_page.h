@@ -18,15 +18,12 @@ public:
     using Page::Page;
 
     void activate() override;
-    void deactivate() override;
     void handleInput() override;
     void render() override;
 
 private:
-    Texture2D shipTex_{};                 // dim base (ship_off)
-    Texture2D litTex_{};                  // lit overlay (ship_on), blitted per deck/shaft
-    bool texLoaded_ = false;
-    bool litLoaded_ = false;
+    // Ship images (TEX_SHIP_MAP / TEX_SHIP_MAP_LIT) are owned by the TextureManager and
+    // loaded once at startup — this page just reads them via gTextures().
     const LiftStop* origin_ = nullptr;    // the lift the player used (elevator + start deck)
     const LiftStop* selected_ = nullptr;  // currently highlighted destination stop
 };

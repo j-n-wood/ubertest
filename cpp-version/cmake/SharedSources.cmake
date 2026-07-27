@@ -5,6 +5,7 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/lighting/light.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/scene_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/texture_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/door_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/charger_renderer.cpp

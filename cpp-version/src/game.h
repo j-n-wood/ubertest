@@ -66,10 +66,8 @@ struct Game {
 
     // Tileset (shared across levels)
     TmxTileset tileset;
-    Texture2D atlasTexture;
-    Texture2D bumpAtlasTexture;
-    Texture2D flareTexture;       // additive glow sprite for plasma projectiles (see docs/weapons.md)
-    Texture2D blasterBlobTexture; // horizontal streak sprite for laser projectiles (rotated to travel dir)
+    // GPU textures (atlas, bump, projectile sprites, ship-view images) are owned by the
+    // TextureManager (shared/rendering/texture_manager.h), not Game — see gTextures().
     TilePropertiesConfig tileProperties;
 
     // Collision bodies from tile data

@@ -1,6 +1,7 @@
 #include "pages/ship_view_page.h"
 #include "pages/page_manager.h"
 #include "game.h"
+#include "rendering/texture_manager.h"
 #include "raylib.h"
 
 namespace {
@@ -21,21 +22,7 @@ const char* levelName(const Game* g, int level) {
 void ShipViewPage::activate() {
     origin_ = game_->liftManager.currentStop();
     selected_ = origin_;
-
-    const std::string base = game_->assetPath + "/ships/ship1/";
-    if (game_->shipMap.loaded() && !game_->shipMap.imageName().empty()) {
-        shipTex_ = LoadTexture((base + game_->shipMap.imageName()).c_str());
-        texLoaded_ = (shipTex_.id != 0);
-    }
-    if (game_->shipMap.loaded() && !game_->shipMap.imageLitName().empty()) {
-        litTex_ = LoadTexture((base + game_->shipMap.imageLitName()).c_str());
-        litLoaded_ = (litTex_.id != 0);
-    }
-}
-
-void ShipViewPage::deactivate() {
-    if (texLoaded_) { UnloadTexture(shipTex_); texLoaded_ = false; }
-    if (litLoaded_) { UnloadTexture(litTex_); litLoaded_ = false; }
+    // Ship images are preloaded into the TextureManager at startup (see game_init).
 }
 
 void ShipViewPage::handleInput() {
@@ -59,6 +46,12 @@ void ShipViewPage::handleInput() {
 }
 
 void ShipViewPage::render() {
+    // Ship images owned by the TextureManager (loaded once at startup).
+    const Texture2D& shipTex = gTextures().get(TEX_SHIP_MAP);
+    const Texture2D& litTex = gTextures().get(TEX_SHIP_MAP_LIT);
+    const bool texLoaded = gTextures().loaded(TEX_SHIP_MAP);
+    const bool litLoaded = gTextures().loaded(TEX_SHIP_MAP_LIT);
+
     BeginDrawing();
     ClearBackground((Color){10, 15, 25, 255});
 
@@ -68,32 +61,32 @@ void ShipViewPage::render() {
 
     // Fit the ship image into a centred area, preserving its aspect ratio.
     Rectangle dst{};
-    if (texLoaded_) {
+    if (texLoaded) {
         float areaW = sw * 0.9f;
         float areaH = sh * 0.6f;
         float ax = sw * 0.05f;
         float ay = 80.0f;
-        float scale = fminf(areaW / shipTex_.width, areaH / shipTex_.height);
-        float dw = shipTex_.width * scale;
-        float dh = shipTex_.height * scale;
+        float scale = fminf(areaW / shipTex.width, areaH / shipTex.height);
+        float dw = shipTex.width * scale;
+        float dh = shipTex.height * scale;
         dst = {ax + (areaW - dw) * 0.5f, ay + (areaH - dh) * 0.5f, dw, dh};
-        DrawTexturePro(shipTex_,
-                       (Rectangle){0, 0, (float)shipTex_.width, (float)shipTex_.height},
+        DrawTexturePro(shipTex,
+                       (Rectangle){0, 0, (float)shipTex.width, (float)shipTex.height},
                        dst, (Vector2){0, 0}, 0.0f, WHITE);
     } else {
         DrawText("(ship image unavailable)", sw / 2 - 120, sh / 2, 20, GRAY);
     }
 
-    if (origin_ && texLoaded_) {
+    if (origin_ && texLoaded) {
         // "Light up" a fractional region by blitting the corresponding sub-rect of the
         // lit image (ship_on) over the dim base; falls back to a translucent fill if the
         // lit image is unavailable. Then an optional tint/outline marks its role.
         auto light = [&](const Rectangle& f, Color tint, Color outline) {
             Rectangle d = fracToScreen(f, dst);
-            if (litLoaded_) {
-                Rectangle src = {f.x * litTex_.width, f.y * litTex_.height,
-                                 f.width * litTex_.width, f.height * litTex_.height};
-                DrawTexturePro(litTex_, src, d, (Vector2){0, 0}, 0.0f, WHITE);
+            if (litLoaded) {
+                Rectangle src = {f.x * litTex.width, f.y * litTex.height,
+                                 f.width * litTex.width, f.height * litTex.height};
+                DrawTexturePro(litTex, src, d, (Vector2){0, 0}, 0.0f, WHITE);
             }
             if (tint.a) DrawRectangleRec(d, tint);
             if (outline.a) DrawRectangleLinesEx(d, 1.0f, outline);
