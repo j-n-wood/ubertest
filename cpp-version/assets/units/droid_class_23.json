@@ -9,8 +9,8 @@
   "properties": {
     "classId": 23,
     "typeCode": 999,
-    "energy": 9,
-    "armour": 80.0,
+    "energy": 80,
+    "armour": 3.0,
     "weapon": 3,
     "droidType": 3,
     "driveType": 0,
