@@ -21,6 +21,7 @@ struct ConsoleSpec {
 
 class ConsoleManager {
 public:
+    ~ConsoleManager();   // RAII safety net; destroy() is idempotent (see game_destroy for order)
     void init(const std::vector<ConsoleSpec>& specs);
     void update(Vector2 playerPos);
     void destroy();

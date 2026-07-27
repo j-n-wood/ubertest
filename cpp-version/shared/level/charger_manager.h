@@ -38,6 +38,7 @@ struct ChargerView {
 
 class ChargerManager {
 public:
+    ~ChargerManager();   // RAII safety net; destroy() is idempotent (see game_destroy for order)
     void init(b2WorldId world, const std::vector<ChargerSpec>& specs);
     void update(float dt);   // poll proximity -> state
     void destroy();

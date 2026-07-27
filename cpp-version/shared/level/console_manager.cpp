@@ -6,6 +6,10 @@ void ConsoleManager::init(const std::vector<ConsoleSpec>& specs) {
     playerInRange_ = false;
 }
 
+ConsoleManager::~ConsoleManager() {
+    destroy();
+}
+
 void ConsoleManager::destroy() {
     consoles_.clear();
     playerInRange_ = false;

@@ -25,6 +25,10 @@ void ChargerManager::init(b2WorldId world, const std::vector<ChargerSpec>& specs
     }
 }
 
+ChargerManager::~ChargerManager() {
+    destroy();
+}
+
 void ChargerManager::destroy() {
     // No physics bodies to free — chargers are non-colliding.
     chargers_.clear();
