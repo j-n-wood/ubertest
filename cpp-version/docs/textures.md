@@ -52,3 +52,46 @@ tests a slot; `unloadAll()` frees everything (also called by the destructor).
 `SceneRenderer::defaultNormalMap` and per-model textures (owned by `ModelCache` /
 `SectionInstance`, freed via `UnloadModel`) remain under their own teardown. They could move
 here later if a single policy is wanted.
+
+## Dynamic textures / GLTF & future direction
+
+The manager is intentionally **enum-indexed and preload-only** today: every slot is known at
+compile time and loaded once at startup. That covers all of the game's own textures. Two things
+are deliberately left out, with a clear evolution path.
+
+### Model (GLTF) textures stay with the model
+
+Droid/unit GLTFs are loaded by raylib `LoadModel(path)`, which resolves each model's external
+image URIs (e.g. `assets/models/textures/chrome1.jpg`) and loads them straight into
+`model.materials[m].maps[k].texture`. Those textures are owned and freed by `UnloadModel`, and
+that teardown is already RAII: `ModelCache::destroy` (shared static models) and
+`SectionInstance::~SectionInstance` gated by `ownsModel` (per-instance/animated), plus
+`UnitManager::clearDebris` for debris. **So model textures are not — and for now should not be —
+routed through the `TextureManager`.** `ModelCache` dedups whole models by path, but not
+textures across models, so a shared image (`chrome1.jpg` is referenced by ~17 GLTFs) can be
+resident several times. These are small JPEGs, so the VRAM cost is negligible.
+
+Interning them would need a **custom GLTF loader**: raylib gives no image-load hook and discards
+the source path, so dedup can't happen after `LoadModel`. You'd resolve each image URI through
+the manager and assign a shared handle into the material — and then, because `UnloadModel` frees
+material textures, neutralize every model's material textures (`= {0}`) before unloading to
+avoid a double-free. High cost, real hazard, tiny payoff — deferred unless profiling says
+otherwise.
+
+### The handle-by-path evolution (when a real caller appears)
+
+If/when textures must be referenced whose identity isn't known at compile time (runtime or
+moddable assets, a decals / floor-marks system), grow the manager into a single handle store
+rather than adding a second manager:
+
+- `using TexHandle = int;` — a handle is just an index into one contiguous store.
+- The current `TextureId` enum values become the fixed handles `[0, TEX_COUNT)` (named
+  preloads); dynamic textures append at `>= TEX_COUNT`.
+- Add `TexHandle acquire(const std::string& path)` — normalize the path, dedup via an
+  `unordered_map<string, TexHandle>`, load on miss, return the handle. `get(TexHandle)` then
+  serves both enum ids and dynamic handles uniformly.
+- Frame-based animation is a small struct over a contiguous run of handles.
+
+This keeps one owner and one teardown point while adding "ask by path, get a handle, deduped".
+It is **not built yet** — there is no caller, and speculative infrastructure isn't worth the
+complexity until there is one.
