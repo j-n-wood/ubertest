@@ -27,6 +27,7 @@ add_executable(run_tests
     console_test.cpp
     lift_test.cpp
     transfer_test.cpp
+    score_test.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp

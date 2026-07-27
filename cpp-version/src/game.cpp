@@ -36,6 +36,7 @@ static void game_update_player_rotation(Game* game);
 static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
+static void game_update_score(Game* game, float dt);
 
 // Normalize angle to [-PI, PI]
 static float normalize_angle(float angle) {
@@ -855,11 +856,60 @@ static void game_reap_dead(Game* game) {
         v.erase(std::remove(v.begin(), v.end(), u), v.end());
     };
     for (UnitInstance* u : dead) {
+        game_award_points(game, u);  // score + alert for a direct kill (captured unit skipped above)
         game->aiManager.forgetUnit(u);
         drop(game->levelUnits[L], u);
         drop(game->enemyUnits, u);
         game->unitManager.destroyInstance(u);  // permanent — won't return on re-entry
     }
+}
+
+//------------------------------------------------------------------------------
+// Score + alert
+//------------------------------------------------------------------------------
+
+void game_award_points(Game* game, const UnitInstance* unit) {
+    if (!unit || !unit->definition) return;
+    int pts = score_points_for_typecode(unit->definition->properties.typeCode);
+    game->score += pts;
+    game->alertLevel += pts;  // alert rises by the same amount as points scored
+}
+
+// The unit the player is currently driving: the captured unit when piloting, else the device.
+static UnitInstance* game_controlled_unit(Game* game) {
+    return game->transfer.captured ? game->transfer.captured : game->playerUnit;
+}
+
+// Per-frame score/alert step (called while not paused). See docs/scoring.md.
+static void game_update_score(Game* game, float dt) {
+    // Alert decays steadily toward green.
+    game->alertLevel -= ALERT_DECAY_RATE * dt;
+    if (game->alertLevel < 0.0) game->alertLevel = 0.0;
+
+    // Alert band trickles score.
+    game->score += alert_score_rate(alert_band(game->alertLevel)) * dt;
+
+    // Recharge: while the controlled unit sits on a charger below max health, heal it and
+    // drain score; both stop at full health.
+    UnitInstance* cu = game_controlled_unit(game);
+    if (cu && b2Body_IsValid(cu->bodyId) &&
+        cu->combatState.currentHealth < cu->combatState.maxHealth) {
+        b2Vec2 p = b2Body_GetPosition(cu->bodyId);
+        bool onCharger = false;
+        for (const ChargerView& c : game->chargerManager.views()) {
+            if (fabsf(p.x - c.worldPos.x) <= c.size.x * 0.5f &&
+                fabsf(p.y - c.worldPos.y) <= c.size.y * 0.5f) { onCharger = true; break; }
+        }
+        if (onCharger) {
+            float maxH = cu->combatState.maxHealth;
+            float h = cu->combatState.currentHealth + CHARGER_HEAL_FRACTION_PER_SEC * maxH * dt;
+            cu->combatState.currentHealth = (h > maxH) ? maxH : h;
+            game->score -= RECHARGE_DRAIN_RATE * dt;
+        }
+    }
+
+    if (game->score < 0.0) game->score = 0.0;
+    game->scoreDisplay = score_clock_step(game->scoreDisplay, game->score, dt);
 }
 
 // Switch levels: freeze the old level, activate the new level's world + geometry, migrate
@@ -1194,6 +1244,9 @@ void game_update_gameplay(Game* game, float dt) {
 
         // Advance the play clock (drives away-level heal timing).
         game->gameClock += simDt;
+
+        // Score + ship alert (decay, band trickle, charger heal/drain, display clock).
+        game_update_score(game, simDt);
     }
 
     // Console + lift proximity (drive the "Press SPACE" prompts + entry actions). Runs
@@ -1453,6 +1506,12 @@ void game_render_gameplay(Game* game) {
                  game->currentLevel,
                  game->levels[game->currentLevel].name.c_str()),
                  10, 50, 16, WHITE);
+    }
+
+    // Score (clocked display value, top-right).
+    {
+        const char* txt = TextFormat("SCORE %06ld", (long)game->scoreDisplay);
+        DrawText(txt, GetScreenWidth() - MeasureText(txt, 24) - 16, 10, 24, RAYWHITE);
     }
 
     // Player info (angle/rotation telemetry) — debug only (toggle V), not shown in normal play.
