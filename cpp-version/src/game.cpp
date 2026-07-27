@@ -1455,8 +1455,8 @@ void game_render_gameplay(Game* game) {
                  10, 50, 16, WHITE);
     }
 
-    // Player info
-    if (game->playerUnit && game->playerUnit->rootSection) {
+    // Player info (angle/rotation telemetry) — debug only (toggle V), not shown in normal play.
+    if (game->showAIDebug && game->playerUnit && game->playerUnit->rootSection) {
         SectionInstance* root = game->playerUnit->rootSection.get();
         if (root) {
             float rotDeg = root->worldRotation * RAD2DEG;
