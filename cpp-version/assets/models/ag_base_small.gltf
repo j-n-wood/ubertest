@@ -3,6 +3,14 @@
     "version": "2.0",
     "generator": "model_tool (Raylib ASC Converter)"
   },
+  "extras": {
+    "physics": {
+      "shape": {
+        "type": "circle",
+        "radius": 0.152400002
+      }
+    }
+  },
   "scene": 0,
   "scenes": [
     {

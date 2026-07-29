@@ -3,6 +3,15 @@
     "version": "2.0",
     "generator": "model_tool (Raylib ASC Converter)"
   },
+  "extras": {
+    "physics": {
+      "shape": {
+        "type": "box",
+        "width": 0.657335758,
+        "height": 0.425987184
+      }
+    }
+  },
   "scene": 0,
   "scenes": [
     {
