@@ -24,6 +24,7 @@
 #include "rendering/sprite_animation.h"
 #include "combat/projectile_manager.h"
 #include "effects/effect_manager.h"
+#include "particles/particle_manager.h"
 #include "ai/ai_manager.h"
 #include "level/door_manager.h"
 
@@ -105,6 +106,10 @@ struct Game {
     // time, rendered as animated billboards. See docs/effects.md.
     EffectManager effectManager;
 
+    // Particle systems (additive billboards, SoA). Render-only; spawned as bursts (e.g.
+    // explosion sparks). See docs/effects.md.
+    ParticleManager particleManager;
+
     // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;
     DoorRenderer doorRenderer;
@@ -168,5 +173,9 @@ void game_switch_to_stop(Game* game, const LiftStop& stop);
 // Award score + raise the alert level for destroying or capturing `unit` (50 x its
 // class). Called on a kill (game_reap_dead) and on a completed capture (transfer).
 void game_award_points(Game* game, const UnitInstance* unit);
+
+// Spawn the death visuals at `pos`: an EffectManager explosion (area damage, owner `group`)
+// plus a ParticleManager spark burst. Called from every unit-death site.
+void game_spawn_explosion(Game* game, Vector2 pos, int32_t group);
 
 #endif

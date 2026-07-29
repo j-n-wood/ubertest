@@ -16,6 +16,7 @@
     "driveType": 1,
     "brainType": 2,
     "hasTurret": false,
+    "fireOffset": [0.3, 0.0, 0.0],
     "description": "High security patrol droid. Fitted with powerful sensors to rapidly locate intruders."
   },
   "rootSection": {

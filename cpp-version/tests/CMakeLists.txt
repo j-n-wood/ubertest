@@ -30,6 +30,7 @@ add_executable(run_tests
     transfer_test.cpp
     score_test.cpp
     effect_test.cpp
+    particle_test.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp
@@ -40,6 +41,7 @@ add_executable(run_tests
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/effects/effect_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/particles/particle_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/spawn_config.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/door_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/charger_manager.cpp

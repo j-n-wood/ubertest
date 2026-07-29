@@ -65,11 +65,43 @@ track **realtime damage** separately from single-hit damage
   frame) and a future on-damage sound would fire at ≤10 Hz.
 - **Single-hit** damage (projectiles) is unchanged — still an immediate `applyDamage`.
 
+## Particle systems
+
+`ParticleManager` ([`shared/particles/particle_manager.h`](../shared/particles/particle_manager.h))
+— CPU-simulated particles drawn as **additive billboards**. It is render-only (no physics/world);
+`burst(cfg, pos)` spawns a one-shot radial spray, `update(dt)` integrates + expires, `clear()`
+resets, and the game draws from `renderData()`.
+
+**Efficiency.** raylib has no particle API, but rlgl **auto-batches** consecutive same-texture
+quads: N `DrawBillboardPro` calls sharing one texture collapse into ~1 `glDrawElements` (8192-quad
+buffer; a texture/mode change only starts a new sub-draw). So "draw many billboards" is cheap as
+long as a system uses **one texture** — no custom mesh or shader. (There is no native
+point-sprite/`GL_POINTS`-with-size path in raylib.)
+
+**Data layout is struct-of-arrays.** One contiguous `std::vector` per field (`posX_, posY_,
+velX_, velY_, age_, lifetime_, rot_, angVel_` hot; sizes/colours/texture cold). The per-frame
+update is unit-stride, vectorizable loops touching only the arrays each op needs; expiry is O(1)
+**swap-and-pop** (particles are unordered, so order-preservation isn't required). This is the one
+pool that can reach thousands of instances — the AoS `Projectile`/`Effect` pools stay AoS. At
+current counts the sim is negligible (render dominates); SoA is for the clean update + headroom.
+
+**Rendering** (`game_render_gameplay`, an additive block): per particle, `t = age/lifetime`
+drives `size = lerp(startSize,endSize,t)` and `color = lerp(startColor,endColor,t)` (alpha fades
+out), then one `DrawBillboardPro(..., camera.up, {size,size}, centre, rot, color)`.
+
+**First use:** explosion sparks. `game_spawn_explosion(game, pos, group)` (the single death-visual
+helper used by `game_reap_dead` and transfer `destroyUnit`) fires both the `EffectManager`
+explosion and a `ParticleManager` spark burst (`EXPLOSION_SPARKS`: ~16 `TEX_FLARE` sparks,
+1.5–3 m/s, 0.3–0.6 s, bright→transparent). A moving host (projectile/unit) would attach particles
+the same way — call `burst(cfg, hostPos)` each frame; no host-lifetime coupling.
+
 ## Tests
 
 `tests/effect_test.cpp`: damage within range, 1/r falloff (closer takes more), same-group
 exclusion, out-of-range untouched, expiry after lifetime. `tests/combat_state_test.cpp`:
 `updateRealtimeDamage` accumulation + 0.1 s flush, armour once per flush, zero-dt no-op.
+`tests/particle_test.cpp`: burst count, move-by-velocity, expiry after lifetime, swap-pop array
+consistency, clear.
 
 ## Deferred / notes
 
@@ -77,3 +109,8 @@ exclusion, out-of-range untouched, expiry after lifetime. `tests/combat_state_te
   **device** dying isn't reaped today, so it spawns no explosion.
 - Rendering is inline per `EffectType` (explosions are billboards, not tile meshes) — extensible
   by adding a branch; no separate renderer class yet.
+- Particles: continuous emitters + directional cones, gradient **lines**
+  (`rlBegin(RL_LINES)` + per-vertex `rlColor4ub`), and data-driven configs (weapon trail in
+  `weapons.json`, unit emitters) are deferred — v1 configs are code constants. If a frame ever
+  needs >8192 particle-quads or per-particle `DrawBillboardPro` CPU cost shows up, escalate to a
+  dynamic mesh (`UploadMesh(dynamic)` + `UpdateMeshBuffer`) or `DrawMeshInstanced`.

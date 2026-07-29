@@ -43,6 +43,7 @@
     "fireRate": 1.1,
     "maxRange": 20.0,
     "optimumRange": 10.0,
+    "radius": 0.2,
     "type": "projectile",
     "damageType": "plasma",
     "twin": false

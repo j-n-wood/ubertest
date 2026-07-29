@@ -109,11 +109,12 @@ void createWeld(Game* g) {
 // destroy it.
 void destroyUnit(Game* g, UnitInstance* u) {
     if (!u) return;
-    // A destroyed captured/created unit leaves an explosion at its position (owner = its own
-    // group, so it doesn't self-damage; the overlay device is non-colliding hence unaffected).
-    // See docs/effects.md. Only gameplay death routes here — teardown uses other paths.
+    // A destroyed captured/created unit leaves an explosion + sparks at its position (owner =
+    // its own group, so it doesn't self-damage; the overlay device is non-colliding hence
+    // unaffected). See docs/effects.md. Only gameplay death routes here — teardown uses other
+    // paths.
     if (b2Body_IsValid(u->bodyId)) {
-        g->effectManager.spawnExplosion(bodyPos(u), u->collisionGroupId);
+        game_spawn_explosion(g, bodyPos(u), u->collisionGroupId);
     }
     if (u == g->transfer.captured) destroyWeld(g);
     g->aiManager.forgetUnit(u);

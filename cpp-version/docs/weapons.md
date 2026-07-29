@@ -57,6 +57,9 @@ un-paused sim block, before the physics step, so bolts move the frame they spawn
   to the unit's `collisionRadius` so a stray offset can't spawn the bolt inside a wall).
 - Owner = the controlled unit's `collisionGroupId` (Box2D `groupIndex`), so a bolt never
   hits the unit that fired it (nor the piloted unit while transferring).
+- **Twin** weapons fire a second bolt from the fire offset **mirrored across the facing axis**
+  (its lateral `x` negated), so the two barrels straddle the centreline instead of stacking.
+  Same in `AIManager::tryFireAtPlayer`.
 - Skipped while `transfer.mode == Transferring` (fly-over) **and** while `input.transferMode`
   is armed (RMB / Left-Ctrl held) — you're aiming a capture then, not firing.
 

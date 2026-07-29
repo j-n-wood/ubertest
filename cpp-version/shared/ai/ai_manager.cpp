@@ -728,9 +728,8 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
     const auto& wdef = ai.weaponState.definition;
     float lifetime = (wdef.speed > 0.0f) ? (wdef.maxRange / wdef.speed) : 1.0f;
 
-    // Apply fire offset (2D, relative to facing), clamped to the unit's collision radius
-    // so a stray/old-data offset can't spawn the bolt inside a wall or far from the muzzle.
-    Vector2 spawnPos = unitPos;
+    // Apply fire offset (facing-relative: x = lateral, y = forward), clamped to the unit's
+    // collision radius so a stray/old-data offset can't spawn the bolt inside a wall.
     const auto& props = ai.unit->definition->properties;
     Vector2 off2d = {props.fireOffset.x, props.fireOffset.y};
     float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
@@ -739,21 +738,22 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
         off2d.x *= maxOff / offLen;
         off2d.y *= maxOff / offLen;
     }
-    if (off2d.x != 0.0f || off2d.y != 0.0f) {
-        float angle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
-        float cosA = cosf(angle);
-        float sinA = sinf(angle);
-        spawnPos.x += off2d.x * cosA - off2d.y * sinA;
-        spawnPos.y += off2d.x * sinA + off2d.y * cosA;
-    }
+    float angle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
+    float cosA = cosf(angle);
+    float sinA = sinf(angle);
+    auto spawnFrom = [&](Vector2 o) {
+        return Vector2{unitPos.x + o.x * cosA - o.y * sinA,
+                       unitPos.y + o.x * sinA + o.y * cosA};
+    };
 
-    projectiles->spawn(worldId, spawnPos, dir,
+    projectiles->spawn(worldId, spawnFrom(off2d), dir,
                        wdef.speed, wdef.damage, lifetime,
                        ai.unit->collisionGroupId, wdef.id, wdef.radius);
 
-    // Twin weapons fire a second projectile
+    // Twin: second barrel is the offset mirrored across the facing axis (negate lateral x),
+    // so the two shots straddle the centreline instead of stacking.
     if (wdef.twin) {
-        projectiles->spawn(worldId, spawnPos, dir,
+        projectiles->spawn(worldId, spawnFrom({-off2d.x, off2d.y}), dir,
                            wdef.speed, wdef.damage, lifetime,
                            ai.unit->collisionGroupId, wdef.id, wdef.radius);
     }

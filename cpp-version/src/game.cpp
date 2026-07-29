@@ -141,6 +141,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game_create_chargers(game);
     game_create_consoles(game);
     game->effectManager.init(game->physics.world_id);  // bind active world (no tiles; dynamic)
+    game->particleManager.clear();                      // render-only; no world binding
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f;  // May change based on unit type
@@ -889,11 +890,11 @@ static void game_reap_dead(Game* game) {
     };
     for (UnitInstance* u : dead) {
         game_award_points(game, u);  // score + alert for a direct kill (captured unit skipped above)
-        // Explosion at the unit's position before it's freed (owner = its own group so it
-        // doesn't self-damage). See docs/effects.md.
+        // Explosion + sparks at the unit's position before it's freed (owner = its own group
+        // so it doesn't self-damage). See docs/effects.md.
         if (b2Body_IsValid(u->bodyId)) {
             b2Vec2 p = b2Body_GetPosition(u->bodyId);
-            game->effectManager.spawnExplosion({p.x, p.y}, u->collisionGroupId);
+            game_spawn_explosion(game, {p.x, p.y}, u->collisionGroupId);
         }
         game->aiManager.forgetUnit(u);
         drop(game->levelUnits[L], u);
@@ -911,6 +912,18 @@ void game_award_points(Game* game, const UnitInstance* unit) {
     int pts = score_points_for_typecode(unit->definition->properties.typeCode);
     game->score += pts;
     game->alertLevel += pts;  // alert rises by the same amount as points scored
+}
+
+// Spark burst thrown by a destroyed unit (additive TEX_FLARE billboards). Tunable.
+static const ParticleBurst EXPLOSION_SPARKS = {
+    /*count*/ 16, /*speedMin*/ 1.5f, /*speedMax*/ 3.0f, /*lifeMin*/ 0.3f, /*lifeMax*/ 0.6f,
+    /*startSize*/ 0.15f, /*endSize*/ 0.0f,
+    /*startColor*/ {255, 200, 120, 255}, /*endColor*/ {255, 80, 0, 0},
+    /*angularVelMax*/ 180.0f, /*texture*/ TEX_FLARE};
+
+void game_spawn_explosion(Game* game, Vector2 pos, int32_t group) {
+    game->effectManager.spawnExplosion(pos, group);      // animated blast + area damage
+    game->particleManager.burst(EXPLOSION_SPARKS, pos);  // render-only spark spray
 }
 
 // The unit the player is currently driving: the captured unit when piloting, else the device.
@@ -983,9 +996,8 @@ static void game_update_player_fire(Game* game, float dt) {
     Vector2 dir = {-s, c};
 
     b2Vec2 bp = b2Body_GetPosition(cu->bodyId);
-    Vector2 spawnPos = {bp.x, bp.y};
-    // Fire offset (relative to facing), clamped to the unit's collision radius so a
-    // stray/old-data offset can't spawn the bolt inside a wall or far from the muzzle.
+    // Fire offset (facing-relative: x = lateral, y = forward), clamped to the unit's collision
+    // radius so a stray/old-data offset can't spawn the bolt inside a wall.
     Vector2 off2d = {cu->definition->properties.fireOffset.x,
                      cu->definition->properties.fireOffset.y};
     float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
@@ -994,15 +1006,16 @@ static void game_update_player_fire(Game* game, float dt) {
         off2d.x *= maxOff / offLen;
         off2d.y *= maxOff / offLen;
     }
-    if (off2d.x != 0.0f || off2d.y != 0.0f) {
-        spawnPos.x += off2d.x * c - off2d.y * s;
-        spawnPos.y += off2d.x * s + off2d.y * c;
-    }
+    auto spawnFrom = [&](Vector2 o) {
+        return Vector2{bp.x + o.x * c - o.y * s, bp.y + o.x * s + o.y * c};
+    };
     float lifetime = (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
-    game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
+    game->projectileManager.spawn(game->physics.world_id, spawnFrom(off2d), dir,
                                   w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
+    // Twin: second barrel is the offset mirrored across the facing axis (negate lateral x),
+    // so the two shots straddle the centreline instead of stacking.
     if (w.twin) {
-        game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
+        game->projectileManager.spawn(game->physics.world_id, spawnFrom({-off2d.x, off2d.y}), dir,
                                       w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
     }
 }
@@ -1036,6 +1049,7 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     game_create_chargers(game);
     game_create_consoles(game);
     game->effectManager.init(game->physics.world_id);  // rebind to new world; clears old effects
+    game->particleManager.clear();                      // drop the old level's particles
 
     // Arrival placement (lift stop or the level's first lift stop).
     Vector2 tp{0, 0};
@@ -1338,6 +1352,9 @@ void game_update_gameplay(Game* game, float dt) {
         // Effects (explosions): advance + accumulate area damage onto units in range. Runs
         // before reap so this frame's damage lands; unitManager.update flushes it on the tick.
         game->effectManager.update(simDt);
+
+        // Particles (render-only): advance + expire. Pause/slow-mo aware via simDt.
+        game->particleManager.update(simDt);
 
         // Remove droids destroyed this step (permanent for the level). This may spawn more
         // explosions (chain reactions) — added to effectManager for next frame.
@@ -1661,6 +1678,35 @@ void game_render_gameplay(Game* game) {
         }
     }
 
+    // Particles: additive billboards, one texture per system → rlgl batches them into ~1 draw
+    // call. Size and colour interpolate start→end over each particle's life (alpha fades out).
+    {
+        ParticleSpan ps = game->particleManager.renderData();
+        if (ps.n > 0) {
+            BeginBlendMode(BLEND_ADDITIVE);
+            for (std::size_t i = 0; i < ps.n; ++i) {
+                float t = (ps.lifetime[i] > 0.0f) ? (ps.age[i] / ps.lifetime[i]) : 1.0f;
+                if (t > 1.0f) t = 1.0f;
+                float sz = ps.startSize[i] + (ps.endSize[i] - ps.startSize[i]) * t;
+                auto lerpU8 = [&](unsigned char a, unsigned char b) {
+                    return (unsigned char)(a + (int)((b - a) * t));
+                };
+                Color col = {lerpU8(ps.startColor[i].r, ps.endColor[i].r),
+                             lerpU8(ps.startColor[i].g, ps.endColor[i].g),
+                             lerpU8(ps.startColor[i].b, ps.endColor[i].b),
+                             lerpU8(ps.startColor[i].a, ps.endColor[i].a)};
+                Texture2D tex = gTextures().get((TextureId)ps.texture[i]);
+                Vector3 pos = {ps.posX[i], PARTICLE_HEIGHT, ps.posY[i]};
+                Rectangle src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+                Vector2 size = {sz, sz};
+                Vector2 origin = {sz * 0.5f, sz * 0.5f};
+                DrawBillboardPro(game->camera, tex, src, pos,
+                                 game->camera.up, size, origin, ps.rot[i], col);
+            }
+            EndBlendMode();
+        }
+    }
+
     // Debug: collision shapes (press C)
     if (IsKeyDown(KEY_C) && game->currentLevel >= 0 &&
         game->currentLevel < (int)game->levelCollisionData.size()) {
@@ -1845,6 +1891,7 @@ void game_destroy(Game* game) {
     game->chargerRenderer.destroy();
     game->consoleManager.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
+    game->particleManager.clear();  // render-only; just drop the buffers
 
     // Destroy every per-level world (frees origins, collision, and any remaining bodies).
     // Unit bodies were already freed by unitManager.destroy() above. game->physics.world_id
