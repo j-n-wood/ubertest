@@ -124,6 +124,10 @@ TEST(WeaponFileTest, ShippedPlasmaBolt) {
     EXPECT_FLOAT_EQ(w.fireRate, 0.8f);
     EXPECT_EQ(w.type, WeaponType::Projectile);
     EXPECT_EQ(w.damageType, DamageType::Plasma);
+    EXPECT_FLOAT_EQ(w.radius, 0.1f);  // default physics radius
+
+    // Weapon 3 (Plasma Cannon) has a configured, larger physics radius.
+    EXPECT_FLOAT_EQ(getWeaponDefinition(3).radius, 0.2f);
 }
 
 //------------------------------------------------------------------------------
@@ -245,6 +249,19 @@ TEST_F(ProjectileTestFixture, CarriesWeaponId) {
     const auto& ps = mgr.getProjectiles();
     ASSERT_EQ(ps.size(), 1u);
     EXPECT_EQ(ps[0].weaponId, 4);
+}
+
+TEST_F(ProjectileTestFixture, CarriesRadiusAndAge) {
+    // Per-weapon physics radius rides on the projectile; age advances with update() and
+    // drives per-instance sprite animation.
+    mgr.spawn(worldId, {0, 0}, {1, 0}, 10.0f, 5.0f, 5.0f, /*owner*/ -1, /*weaponId*/ 3, /*radius*/ 0.2f);
+    const auto& ps = mgr.getProjectiles();
+    ASSERT_EQ(ps.size(), 1u);
+    EXPECT_FLOAT_EQ(ps[0].radius, 0.2f);
+    EXPECT_FLOAT_EQ(ps[0].age, 0.0f);
+
+    mgr.update(0.1f);
+    EXPECT_NEAR(mgr.getProjectiles()[0].age, 0.1f, 1e-5f);
 }
 
 TEST_F(ProjectileTestFixture, ManyProjectilesStillDeactivateOnHit) {

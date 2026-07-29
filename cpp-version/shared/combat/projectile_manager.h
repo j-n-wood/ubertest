@@ -17,6 +17,8 @@ struct Projectile {
     Vector2 velocity = {0, 0};
     float damage = 0.0f;
     float remainingLifetime = 0.0f;
+    float age = 0.0f;           // Time alive (drives per-instance sprite animation)
+    float radius = 0.1f;        // Physics (collision) radius (default == PROJECTILE_RADIUS)
     int32_t ownerId = 0;        // Collision group ID of the unit that fired
     int weaponId = -1;          // Firing weapon (for per-weapon rendering; -1 = unknown)
     bool active = true;
@@ -41,7 +43,7 @@ public:
     // projectile for per-weapon rendering (it does not affect simulation).
     void spawn(b2WorldId worldId, Vector2 position, Vector2 direction,
                float speed, float damage, float lifetime, int32_t ownerId,
-               int weaponId = -1);
+               int weaponId = -1, float radius = PROJECTILE_RADIUS);
 
     // Decrement lifetime for active projectiles. Deactivate expired ones.
     void update(float dt);

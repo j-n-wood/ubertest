@@ -42,6 +42,7 @@ static WeaponDefinition parseWeaponFromJson(const json& j) {
     w.fireRate     = j.value("fireRate", 0.0f);
     w.maxRange     = j.value("maxRange", 0.0f);
     w.optimumRange = j.value("optimumRange", 0.0f);
+    w.radius       = j.value("radius", 0.1f);
     w.type         = parseWeaponType(j.value("type", "projectile"));
     w.damageType   = parseDamageType(j.value("damageType", "plasma"));
     w.twin         = j.value("twin", false);

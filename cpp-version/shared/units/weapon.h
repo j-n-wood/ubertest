@@ -42,6 +42,7 @@ struct WeaponDefinition {
     float fireRate = 0.0f;         // Cooldown between shots (seconds)
     float maxRange = 0.0f;         // Max travel distance (world units)
     float optimumRange = 0.0f;     // AI preferred engagement range (world units)
+    float radius = 0.1f;           // Projectile physics (collision) radius (world units)
     WeaponType type = WeaponType::Projectile;
     DamageType damageType = DamageType::Plasma;
     bool twin = false;             // Fires two projectiles

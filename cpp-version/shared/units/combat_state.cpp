@@ -38,6 +38,27 @@ bool applyDamage(UnitCombatState& state, float rawDamage) {
 }
 
 //------------------------------------------------------------------------------
+// Realtime (continuous) damage accumulation
+//------------------------------------------------------------------------------
+
+void accumulateRealtimeDamage(UnitCombatState& state, float rawDamage) {
+    if (rawDamage > 0.0f) state.pendingDamage += rawDamage;
+}
+
+void updateRealtimeDamage(UnitCombatState& state, float dt) {
+    if (dt <= 0.0f) return;
+    state.damageAccumTimer += dt;
+    // Flush once per interval; a while-loop handles a dt that spans several intervals.
+    while (state.damageAccumTimer >= REALTIME_DAMAGE_INTERVAL) {
+        state.damageAccumTimer -= REALTIME_DAMAGE_INTERVAL;
+        if (state.pendingDamage > 0.0f) {
+            applyDamage(state, state.pendingDamage);  // armour applied once per flush
+            state.pendingDamage = 0.0f;
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
 

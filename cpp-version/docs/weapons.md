@@ -31,6 +31,7 @@ Each weapon (`shared/units/weapon.h : WeaponDefinition`):
 | `type`         | `projectile` \| `beam` \| `area` \| `instant`       |
 | `damageType`   | armour-interaction tag (plasma/flame/cutter/…)      |
 | `twin`         | fire two projectiles per shot                        |
+| `radius`       | projectile physics (collision) radius, world units (default 0.1) |
 
 Weapon 0 = Plasma Bolt: damage 11, speed 3.0 (world units/s), fireRate 0.8s, maxRange 12,
 projectile → lifetime 4s. Speed/range are hand-tuned gameplay values (slow enough to read
@@ -69,8 +70,9 @@ area weapons ignore facing). Same projectile-type gate and owner `groupIndex` as
 ## Projectiles (`shared/combat/projectile_manager.h`)
 
 A projectile is a dynamic Box2D bullet body: zero damping/gravity, constant linear velocity
-(no drag). Physics radius `PROJECTILE_RADIUS = 0.1`. Category `PROJECTILE`, mask
-`UNIT|STATIC|DOOR`, `groupIndex = ownerId`.
+(no drag). Physics radius is per-weapon (`WeaponDefinition::radius`, default
+`PROJECTILE_RADIUS = 0.1`; weapon 3 = 0.2) — passed to `spawn` and stored on the projectile.
+Category `PROJECTILE`, mask `UNIT|STATIC|DOOR`, `groupIndex = ownerId`.
 
 Per-frame in the sim block (after the physics step): `update` (lifetime) → `syncFromPhysics`
 → `processContactEvents` → `cleanup`. On any contact the projectile deactivates and vanishes;
@@ -109,13 +111,19 @@ never deactivates (it bounces off units / lodges in wall corners).
 
 Render-only, in `game_render_gameplay` inside `BeginMode3D` after `unitManager.renderAll()`,
 as additive billboards at height 0.5 (lifted clear of the floor so the additive quad doesn't
-z-fight with the ground). Each projectile carries its firing `weaponId`; the renderer keys
-the look off that weapon's **damage type**:
+z-fight with the ground). Each projectile carries its firing `weaponId`; the renderer selects
+the look from it (per weapon id, since several plasma weapons must look different):
 
-- **Plasma** (weapon 0) → `flare.png`, a round glow, drawn ~0.6 world units across.
+- **Weapon 3** (Plasma Cannon) → **animated ASMD blast**: a single **sprite sheet**
+  (`asmd4x1.png`, 512×128 = a 4×1 row of frames, `TEX_ASMD`) cycled at 10 fps, drawn ~0.8
+  across. The frame is chosen by moving the **source rect** across the sheet — one texture
+  bind, no per-frame rebinds — from the projectile's own `age` via `SpriteAnimation`
+  (see [textures.md](textures.md)), so bolts animate **independently, not in sync**.
 - **Laser** (weapons 2, 4) → `blaster_blob.png` (128×32, a horizontal streak), drawn ~0.9
   long with its own aspect ratio, and **rotated to the travel direction** so the streak
   points the way the bolt is moving.
+- **Everything else** (plasma weapons 0, 5, 7, …) → `flare.png`, a round glow, ~0.6 across.
+  Weapons 5 and 7 are plasma but deliberately use the plain flare, not the ASMD blast.
 
 Sprites use `DrawBillboardPro` with the billboard up-vector set to `camera.up`, **not** plain
 `DrawBillboard`: the latter hardcodes up `{0,1,0}`, which for this straight-down camera is
@@ -143,5 +151,5 @@ stats. `ProjectileTestFixture` drives real Box2D: travel along heading, lifetime
 ## Deferred (later phases)
 
 Beam / area / instant weapon behaviour; floor **marks** (`mark_radius`/splash); particle
-systems and beam rendering; per-weapon colour/light. The projectile physics radius stays
-0.1 regardless of the flare's visual size.
+systems and beam rendering; per-weapon colour/light. Visual sprite size is independent of the
+per-weapon physics radius.

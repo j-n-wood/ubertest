@@ -27,6 +27,8 @@ enum TextureId {
     TEX_BLASTER_BLOB,   // laser projectile streak
     TEX_SHIP_MAP,       // ship-view side-on image (dim base)
     TEX_SHIP_MAP_LIT,   // ship-view lit overlay
+    TEX_ASMD,           // weapon-3 blast: a 4x1 sprite sheet (see SpriteAnimation)
+    TEX_RLBOOM,         // explosion effect: an 8x1 sprite sheet (see EffectManager)
     TEX_COUNT
 };
 

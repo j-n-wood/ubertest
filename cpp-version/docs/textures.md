@@ -37,9 +37,10 @@ the dtor). It is valid only while that instance exists.
 
 `TEX_TILE_ATLAS`, `TEX_TILE_BUMP` (tileset diffuse + optional bump, from `game_load_levels`),
 `TEX_FLARE`, `TEX_BLASTER_BLOB` (projectile sprites, see [weapons.md](weapons.md)),
-`TEX_SHIP_MAP`, `TEX_SHIP_MAP_LIT` (ship-view images). All are loaded once at startup in
-`game_init` and are app-lifetime; the ship images in particular are small, so they are loaded
-once and retained rather than reloaded on each ship-view open.
+`TEX_SHIP_MAP`, `TEX_SHIP_MAP_LIT` (ship-view images), and `TEX_ASMD` (the weapon-3 blast
+**sprite sheet**, `asmd4x1.png`). All are loaded once at startup in `game_init` and are
+app-lifetime; the ship images in particular are small, so they are loaded once and retained
+rather than reloaded on each ship-view open.
 
 ## API
 
@@ -77,6 +78,24 @@ the manager and assign a shared handle into the material — and then, because `
 material textures, neutralize every model's material textures (`= {0}`) before unloading to
 avoid a double-free. High cost, real hazard, tiny payoff — deferred unless profiling says
 otherwise.
+
+### Animated sprites (built) — sprite sheets
+
+Frame animation uses a **single sprite-sheet texture**, advancing the *source rectangle* per
+frame rather than rebinding a different texture each frame (fewer GPU state changes).
+`shared/rendering/sprite_animation.h` defines
+`SpriteAnimation { TextureId sheet; int columns; int rows; float fps; }` with pure
+`frameIndexAt(age)` and `sourceRect(age, texW, texH)`. It holds **no mutable cursor**, so one
+config drives many independent instances: the caller passes each instance's own `age`.
+
+First use: the weapon-3 ASMD blast (`TEX_ASMD` = `asmd4x1.png`, a 4×1 sheet, 10 fps). Each
+projectile picks its frame's source rect from its own `Projectile::age` (advanced in
+`ProjectileManager::update`), so bolts are not synchronised. See [weapons.md](weapons.md).
+
+The frame count is currently hard-set (`columns=4, rows=1`); a filename convention like
+`asmd4x1` could encode it at load time later. We use sheets, **not** per-frame texture-id
+advancement — if both are ever needed, the index approach can be added alongside; it isn't
+assumed. Covered by `tests/sprite_animation_test.cpp` (frame-index wrap, source-rect math).
 
 ### The handle-by-path evolution (when a real caller appears)
 

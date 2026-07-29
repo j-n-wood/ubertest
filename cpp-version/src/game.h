@@ -21,7 +21,9 @@
 #include "rendering/charger_renderer.h"
 #include "units/unit_manager.h"
 #include "units/weapon.h"
+#include "rendering/sprite_animation.h"
 #include "combat/projectile_manager.h"
+#include "effects/effect_manager.h"
 #include "ai/ai_manager.h"
 #include "level/door_manager.h"
 
@@ -84,12 +86,24 @@ struct Game {
     // bolt fallback). Re-inited when the effective weapon changes. See docs/weapons.md.
     WeaponState playerWeapon;
 
+    // ASMD blast animation (weapon 3 projectiles): a 4x1 sprite sheet (TEX_ASMD). Config only —
+    // the per-instance cursor is each projectile's `age`. See docs/textures.md.
+    SpriteAnimation asmdAnim{TEX_ASMD, /*columns*/ 4, /*rows*/ 1, /*fps*/ 10.0f};
+
+    // Explosion animation (effects): an 8x1 sprite sheet (TEX_RLBOOM). Cursor is each effect's
+    // `age`. See docs/effects.md.
+    SpriteAnimation explosionAnim{TEX_RLBOOM, /*columns*/ 8, /*rows*/ 1, /*fps*/ EXPLOSION_FPS};
+
     // Transfer mechanic: the player device pilots AI units (see docs/transfer.md).
     TransferState transfer;
 
     // Combat & AI
     ProjectileManager projectileManager;
     AIManager aiManager;
+
+    // Transient world effects (explosions, ...): spawned on unit death, do area damage over
+    // time, rendered as animated billboards. See docs/effects.md.
+    EffectManager effectManager;
 
     // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;

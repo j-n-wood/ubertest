@@ -8,7 +8,7 @@
 
 void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direction,
                               float speed, float damage, float lifetime,
-                              int32_t ownerId, int weaponId) {
+                              int32_t ownerId, int weaponId, float radius) {
     float len = Vector2Length(direction);
     if (len < 1e-6f) return;
 
@@ -20,6 +20,8 @@ void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direc
     p.velocity = vel;
     p.damage = damage;
     p.remainingLifetime = lifetime;
+    p.age = 0.0f;
+    p.radius = (radius > 0.0f) ? radius : PROJECTILE_RADIUS;
     p.ownerId = ownerId;
     p.weaponId = weaponId;
     p.active = true;
@@ -67,7 +69,7 @@ void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direc
 
     b2Circle circle;
     circle.center = {0, 0};
-    circle.radius = PROJECTILE_RADIUS;
+    circle.radius = stored.radius;
     b2CreateCircleShape(stored.bodyId, &shapeDef, &circle);
 
     // Set velocity
@@ -82,6 +84,7 @@ void ProjectileManager::update(float dt) {
     for (auto& p : m_projectiles) {
         if (!p.active) continue;
 
+        p.age += dt;   // drives per-instance sprite animation
         p.remainingLifetime -= dt;
         if (p.remainingLifetime <= 0.0f) {
             p.active = false;

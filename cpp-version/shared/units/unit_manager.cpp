@@ -521,6 +521,9 @@ void UnitManager::update(float dt) {
     for (auto& instance : m_instances) {
         if (!instance || !instance->active) continue;
 
+        // Flush accumulated realtime damage (e.g. from explosions) on the 0.1s tick.
+        updateRealtimeDamage(instance->combatState, dt);
+
         // Update transforms from unit's single physics body
         if (instance->rootSection && b2Body_IsValid(instance->bodyId)) {
             b2Vec2 pos = b2Body_GetPosition(instance->bodyId);

@@ -147,6 +147,43 @@ TEST(CombatState, DamageOnDeadUnitIsNoop) {
     EXPECT_FLOAT_EQ(state.currentHealth, 0.0f);
 }
 
+//------------------------------------------------------------------------------
+// Realtime (continuous) damage: accumulate, flush once per REALTIME_DAMAGE_INTERVAL.
+//------------------------------------------------------------------------------
+TEST(RealtimeDamage, AccumulatesAndFlushesOnTick) {
+    UnitCombatState s;
+    s.maxHealth = 100.0f; s.currentHealth = 100.0f; s.armour = 0.0f; s.alive = true;
+
+    accumulateRealtimeDamage(s, 3.0f);
+    updateRealtimeDamage(s, 0.05f);               // < interval → not flushed
+    EXPECT_FLOAT_EQ(s.currentHealth, 100.0f);
+    EXPECT_FLOAT_EQ(s.pendingDamage, 3.0f);
+
+    accumulateRealtimeDamage(s, 4.0f);            // pending now 7
+    updateRealtimeDamage(s, 0.05f);               // crosses 0.1s → flush 7
+    EXPECT_FLOAT_EQ(s.currentHealth, 93.0f);
+    EXPECT_FLOAT_EQ(s.pendingDamage, 0.0f);
+}
+
+TEST(RealtimeDamage, ArmourAppliedOncePerFlushNotPerFrame) {
+    UnitCombatState s;
+    s.maxHealth = 100.0f; s.currentHealth = 100.0f; s.armour = 2.0f; s.alive = true;
+
+    // 10 raw accumulated across the interval, flushed once → armour subtracted once (10-2=8).
+    accumulateRealtimeDamage(s, 10.0f);
+    updateRealtimeDamage(s, 0.1f);
+    EXPECT_FLOAT_EQ(s.currentHealth, 92.0f);
+}
+
+TEST(RealtimeDamage, ZeroDtIsNoop) {
+    UnitCombatState s;
+    s.maxHealth = 100.0f; s.currentHealth = 100.0f; s.alive = true;
+    accumulateRealtimeDamage(s, 5.0f);
+    updateRealtimeDamage(s, 0.0f);
+    EXPECT_FLOAT_EQ(s.currentHealth, 100.0f);     // timer didn't advance
+    EXPECT_FLOAT_EQ(s.pendingDamage, 5.0f);
+}
+
 TEST(CombatState, ArmourFromPropertiesIsFlat) {
     // Armour comes straight from properties (non-negative) and is a flat reduction.
     DroidProperties props;

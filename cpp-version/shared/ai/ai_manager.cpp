@@ -749,12 +749,12 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
 
     projectiles->spawn(worldId, spawnPos, dir,
                        wdef.speed, wdef.damage, lifetime,
-                       ai.unit->collisionGroupId, wdef.id);
+                       ai.unit->collisionGroupId, wdef.id, wdef.radius);
 
     // Twin weapons fire a second projectile
     if (wdef.twin) {
         projectiles->spawn(worldId, spawnPos, dir,
                            wdef.speed, wdef.damage, lifetime,
-                           ai.unit->collisionGroupId, wdef.id);
+                           ai.unit->collisionGroupId, wdef.id, wdef.radius);
     }
 }

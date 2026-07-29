@@ -140,6 +140,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
+    game->effectManager.init(game->physics.world_id);  // bind active world (no tiles; dynamic)
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f;  // May change based on unit type
@@ -220,6 +221,12 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     }
     gTextures().loadFile(TEX_FLARE, game->assetPath + "/textures/effects/flare.png");
     gTextures().loadFile(TEX_BLASTER_BLOB, game->assetPath + "/textures/effects/blaster_blob.png");
+    // ASMD blast animation (weapon 3): a single 4x1 sprite sheet (frames selected by source
+    // rect, not by rebinding textures). Frame count is fixed here; a filename like "asmd4x1"
+    // could encode it later.
+    gTextures().loadFile(TEX_ASMD, game->assetPath + "/textures/effects/asmd4x1.png");
+    // Explosion effect animation (8x1 sheet). See docs/effects.md.
+    gTextures().loadFile(TEX_RLBOOM, game->assetPath + "/textures/effects/rlboom.png");
     // Player weapon state (the device's plasma bolt; re-inited if a captured unit is armed).
     if (game->playerUnit && game->playerUnit->definition) {
         game->playerWeapon = initWeaponState(game->playerUnit->definition->properties);
@@ -882,6 +889,12 @@ static void game_reap_dead(Game* game) {
     };
     for (UnitInstance* u : dead) {
         game_award_points(game, u);  // score + alert for a direct kill (captured unit skipped above)
+        // Explosion at the unit's position before it's freed (owner = its own group so it
+        // doesn't self-damage). See docs/effects.md.
+        if (b2Body_IsValid(u->bodyId)) {
+            b2Vec2 p = b2Body_GetPosition(u->bodyId);
+            game->effectManager.spawnExplosion({p.x, p.y}, u->collisionGroupId);
+        }
         game->aiManager.forgetUnit(u);
         drop(game->levelUnits[L], u);
         drop(game->enemyUnits, u);
@@ -987,10 +1000,10 @@ static void game_update_player_fire(Game* game, float dt) {
     }
     float lifetime = (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
     game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
-                                  w.speed, w.damage, lifetime, cu->collisionGroupId, w.id);
+                                  w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
     if (w.twin) {
         game->projectileManager.spawn(game->physics.world_id, spawnPos, dir,
-                                      w.speed, w.damage, lifetime, cu->collisionGroupId, w.id);
+                                      w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
     }
 }
 
@@ -1022,6 +1035,7 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
+    game->effectManager.init(game->physics.world_id);  // rebind to new world; clears old effects
 
     // Arrival placement (lift stop or the level's first lift stop).
     Vector2 tp{0, 0};
@@ -1321,7 +1335,12 @@ void game_update_gameplay(Game* game, float dt) {
         game->projectileManager.processContactEvents(game->physics.world_id);
         game->projectileManager.cleanup();
 
-        // Remove droids destroyed this step (permanent for the level).
+        // Effects (explosions): advance + accumulate area damage onto units in range. Runs
+        // before reap so this frame's damage lands; unitManager.update flushes it on the tick.
+        game->effectManager.update(simDt);
+
+        // Remove droids destroyed this step (permanent for the level). This may spawn more
+        // explosions (chain reactions) — added to effectManager for next frame.
         game_reap_dead(game);
 
         // Update unit manager (syncs physics transforms)
@@ -1558,6 +1577,8 @@ void game_render_gameplay(Game* game) {
                                                         // no z-fighting with the ground)
         constexpr float PLASMA_VISUAL_SIZE = 0.6f;      // plasma glow diameter (weapon 0)
         constexpr float LASER_VISUAL_LEN = 0.9f;        // laser streak length along travel
+        constexpr float ASMD_VISUAL_SIZE = 0.8f;        // weapon-3 blast diameter (radius 0.4)
+        constexpr int WEAPON_PLASMA_CANNON = 3;         // uses the animated ASMD blast sprite
         // Use DrawBillboardPro with the billboard up-vector = camera.up, NOT plain
         // DrawBillboard: that hardcodes up={0,1,0}, which for this straight-down camera is
         // parallel to the view direction, so cross(up, toCamera)=0 collapses the quad to a
@@ -1576,16 +1597,32 @@ void game_render_gameplay(Game* game) {
             if (!p.active) continue;
             Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
 
-            bool isLaser = getWeaponDefinition(p.weaponId).damageType == DamageType::Laser;
-            Texture2D tex = isLaser ? gTextures().get(TEX_BLASTER_BLOB) : gTextures().get(TEX_FLARE);
-            float len = isLaser ? LASER_VISUAL_LEN : PLASMA_VISUAL_SIZE;
-            float aspect = (tex.width > 0) ? (float)tex.height / (float)tex.width : 1.0f;
-            Vector2 size = {len, len * aspect};  // preserve the sprite's own proportions
+            // Per-weapon look. Weapon 3 (Plasma Cannon) → animated ASMD blast, a sprite sheet
+            // whose source rect is chosen from the projectile's own age (bolts animate
+            // independently, one texture bind). Laser (2,4) → rotated blaster_blob streak.
+            // Everything else (0,5,7,…) → round flare glow. `src` is the drawn region and drives
+            // the aspect (frame region for the sheet, full texture otherwise).
+            Texture2D tex;
+            Rectangle src;
+            float len;
+            float rotation = 0.0f;
+            if (p.weaponId == WEAPON_PLASMA_CANNON) {
+                tex = gTextures().get(game->asmdAnim.sheet);
+                src = game->asmdAnim.sourceRect(p.age, tex.width, tex.height);
+                len = ASMD_VISUAL_SIZE;
+            } else if (getWeaponDefinition(p.weaponId).damageType == DamageType::Laser) {
+                tex = gTextures().get(TEX_BLASTER_BLOB);
+                src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+                len = LASER_VISUAL_LEN;
+                rotation = atan2f(-p.velocity.y, p.velocity.x) * RAD2DEG;  // streak along travel
+            } else {
+                tex = gTextures().get(TEX_FLARE);
+                src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+                len = PLASMA_VISUAL_SIZE;
+            }
+            float aspect = (src.width > 0.0f) ? src.height / src.width : 1.0f;
+            Vector2 size = {len, len * aspect};  // preserve the drawn region's proportions
             Vector2 origin = {size.x * 0.5f, size.y * 0.5f};
-            float rotation = isLaser
-                ? atan2f(-p.velocity.y, p.velocity.x) * RAD2DEG  // point streak along travel
-                : 0.0f;
-            Rectangle src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
             DrawBillboardPro(game->camera, tex, src, pos,
                              game->camera.up, size, origin, rotation, WHITE);
         }
@@ -1597,8 +1634,30 @@ void game_render_gameplay(Game* game) {
             for (const Projectile& p : game->projectileManager.getProjectiles()) {
                 if (!p.active) continue;
                 Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
-                DrawSphere(pos, PROJECTILE_RADIUS, MAGENTA);  // physics-radius marker
+                DrawSphere(pos, p.radius, MAGENTA);  // physics-radius marker (per-projectile)
             }
+        }
+    }
+
+    // Effects: explosions as animated additive billboards with a per-effect random screen-space
+    // rotation (rotation spins the quad about the view axis). Frame from each effect's own age.
+    {
+        constexpr float EFFECT_HEIGHT = 0.5f;
+        const auto& effects = game->effectManager.getEffects();
+        if (!effects.empty()) {
+            Texture2D boom = gTextures().get(TEX_RLBOOM);
+            float diameter = EXPLOSION_RADIUS * 2.0f;   // visual diameter = 2x damage radius
+            Vector2 size = {diameter, diameter};
+            Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
+            BeginBlendMode(BLEND_ADDITIVE);
+            for (const Effect& e : effects) {
+                if (!e.active) continue;
+                Vector3 pos = {e.pos.x, EFFECT_HEIGHT, e.pos.y};
+                Rectangle src = game->explosionAnim.sourceRect(e.age, boom.width, boom.height);
+                DrawBillboardPro(game->camera, boom, src, pos,
+                                 game->camera.up, size, origin, e.rotationDeg, WHITE);
+            }
+            EndBlendMode();
         }
     }
 
@@ -1785,6 +1844,7 @@ void game_destroy(Game* game) {
     game->chargerManager.destroy();
     game->chargerRenderer.destroy();
     game->consoleManager.destroy();
+    game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
 
     // Destroy every per-level world (frees origins, collision, and any remaining bodies).
     // Unit bodies were already freed by unitManager.destroy() above. game->physics.world_id
