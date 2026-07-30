@@ -20,7 +20,7 @@ struct SpriteAnimation {
     TextureId sheet   = TEX_COUNT;  // the sprite-sheet texture
     int       columns = 1;          // frames per row
     int       rows    = 1;          // rows of frames
-    float     fps     = 10.0f;      // frames per second
+    float     fps     = 12.0f;      // frames per second
 
     int frameCount() const { return (columns > 0 && rows > 0) ? columns * rows : 1; }
 

@@ -11,12 +11,11 @@
 inline constexpr int SCORE_POINTS_PER_CLASS = 50;
 
 // Alert level: rises by the points scored on each kill/capture, decays steadily, and
-// its band drives a passive score trickle. Thresholds (points): green < 500 <= yellow <
-// 1000 <= amber < 1500 <= red.
+// its band drives a passive score trickle. Thresholds (points): green < 1000 <= yellow < 2000 <= amber < 3000 <= red.
 inline constexpr double ALERT_DECAY_RATE = 2.0;      // points/second
-inline constexpr double ALERT_YELLOW = 500.0;
-inline constexpr double ALERT_AMBER  = 1000.0;
-inline constexpr double ALERT_RED    = 1500.0;
+inline constexpr double ALERT_YELLOW = 1000.0;
+inline constexpr double ALERT_AMBER  = 2000.0;
+inline constexpr double ALERT_RED    = 3000.0;
 
 // Charger recharge: while the controlled unit sits on a charger below max health it heals
 // and the score drains; both stop at full health.
