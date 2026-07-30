@@ -2,6 +2,7 @@
 #include "pages/page_manager.h"
 #include "pages/console_menu_page.h"
 #include "pages/droid_library_page.h"
+#include "pages/weapon_editor_page.h"
 #include "pages/ship_view_page.h"
 #include "game.h"
 #include "raylib.h"
@@ -27,6 +28,12 @@ void GamePage::update(float dt) {
     // test. Debug mode (showAIDebug, toggled by V) also gates the library's editors.
     if (game_->showAIDebug && IsKeyPressed(KEY_F3)) {
         pages_->push(std::make_unique<DroidLibraryPage>(game_, pages_));
+    }
+
+    // F4 (debug mode only, like the F3 droid library): open the weapon editor. It pauses
+    // gameplay while it's on top; ESC/F4 drops back to the game to test the tuning.
+    if (game_->showAIDebug && IsKeyPressed(KEY_F4)) {
+        pages_->push(std::make_unique<WeaponEditorPage>(game_, pages_));
     }
 }
 

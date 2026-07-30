@@ -71,6 +71,16 @@ bool loadWeaponsFromJson(const std::string& jsonString);
 // Number of loaded weapons.
 int weaponCount();
 
+// Access a mutable weapon definition by table index [0, weaponCount()). Returns nullptr
+// if out of range. Used by the runtime weapon editor to tune fields in place; edits are
+// live for future lookups (getWeaponDefinition) but callers that cached a definition copy
+// must re-fetch to see them.
+WeaponDefinition* getWeaponByIndex(int index);
+
+// Serialise the current in-memory weapon table back to a JSON file (pretty-printed,
+// matching the shipped weapons.json field order). Returns true on success.
+bool saveWeaponsToFile(const std::string& path);
+
 //------------------------------------------------------------------------------
 // Free functions
 //------------------------------------------------------------------------------

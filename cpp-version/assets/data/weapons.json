@@ -3,7 +3,7 @@
     "id": 0,
     "name": "Plasma Bolt",
     "damage": 11.0,
-    "speed": 7.0,
+    "speed": 8.5,
     "fireRate": 0.8,
     "maxRange": 12.0,
     "optimumRange": 8.0,

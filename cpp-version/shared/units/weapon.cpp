@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -31,6 +32,30 @@ static DamageType parseDamageType(const std::string& s) {
     if (s == "disruptor")  return DamageType::Disruptor;
     if (s == "impact")     return DamageType::Impact;
     return DamageType::Plasma;
+}
+
+// Reverse of parseWeaponType/parseDamageType — used when serialising back to JSON.
+static const char* weaponTypeToString(WeaponType t) {
+    switch (t) {
+        case WeaponType::Beam:    return "beam";
+        case WeaponType::Instant: return "instant";
+        case WeaponType::Area:    return "area";
+        case WeaponType::Projectile:
+        default:                  return "projectile";
+    }
+}
+
+static const char* damageTypeToString(DamageType t) {
+    switch (t) {
+        case DamageType::Flame:      return "flame";
+        case DamageType::Cutter:     return "cutter";
+        case DamageType::Laser:      return "laser";
+        case DamageType::Projectile: return "projectile";
+        case DamageType::Disruptor:  return "disruptor";
+        case DamageType::Impact:     return "impact";
+        case DamageType::Plasma:
+        default:                     return "plasma";
+    }
 }
 
 static WeaponDefinition parseWeaponFromJson(const json& j) {
@@ -89,6 +114,40 @@ bool loadWeaponsFromJson(const std::string& jsonString) {
 
 int weaponCount() {
     return static_cast<int>(s_weapons.size());
+}
+
+WeaponDefinition* getWeaponByIndex(int index) {
+    if (index < 0 || index >= static_cast<int>(s_weapons.size())) return nullptr;
+    return &s_weapons[index];
+}
+
+bool saveWeaponsToFile(const std::string& path) {
+    // Round to 3 decimals and store as double so nlohmann emits the clean shortest form
+    // (e.g. 0.8, 33.0) rather than the float→double artefact (0.800000011920929).
+    auto r3 = [](float v) { return std::round(static_cast<double>(v) * 1000.0) / 1000.0; };
+
+    nlohmann::ordered_json arr = nlohmann::ordered_json::array();
+    for (const auto& w : s_weapons) {
+        nlohmann::ordered_json o;
+        o["id"]           = w.id;
+        o["name"]         = w.name;
+        o["damage"]       = r3(w.damage);
+        o["speed"]        = r3(w.speed);
+        o["fireRate"]     = r3(w.fireRate);
+        o["maxRange"]     = r3(w.maxRange);
+        o["optimumRange"] = r3(w.optimumRange);
+        // radius defaults to 0.1 and is omitted unless overridden (matches the shipped file).
+        if (std::fabs(w.radius - 0.1f) > 1e-6f) o["radius"] = r3(w.radius);
+        o["type"]         = weaponTypeToString(w.type);
+        o["damageType"]   = damageTypeToString(w.damageType);
+        o["twin"]         = w.twin;
+        arr.push_back(std::move(o));
+    }
+
+    std::ofstream file(path);
+    if (!file.is_open()) return false;
+    file << arr.dump(2) << "\n";
+    return file.good();
 }
 
 //------------------------------------------------------------------------------

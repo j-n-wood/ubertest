@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "units/unit_instance.h"
@@ -108,6 +111,39 @@ TEST_F(WeaponTestFixture, WeaponTypesParsed) {
 
 TEST_F(WeaponTestFixture, AllWeaponsLoaded) {
     EXPECT_EQ(weaponCount(), 9);
+}
+
+// The runtime weapon editor tunes the table in place (getWeaponByIndex) and writes it
+// back with saveWeaponsToFile. Edits must round-trip, and the emitted numbers must be
+// clean (no float->double artefacts like 12.5 -> "12.500000476837158").
+TEST_F(WeaponTestFixture, SaveRoundTripAndCleanFormatting) {
+    WeaponDefinition* w = getWeaponByIndex(0);   // Plasma Bolt
+    ASSERT_NE(w, nullptr);
+    w->damage = 12.5f;
+    w->fireRate = 0.45f;
+
+    std::string path = ::testing::TempDir() + "weapons_roundtrip.json";
+    ASSERT_TRUE(saveWeaponsToFile(path));
+
+    // File contents: values are written in the clean shortest form, radius omitted at default.
+    std::ifstream in(path);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("12.5"), std::string::npos);
+    EXPECT_NE(text.find("0.45"), std::string::npos);
+    EXPECT_EQ(text.find("12.500000"), std::string::npos);  // no float artefact
+    EXPECT_EQ(text.find("0.450000"), std::string::npos);
+
+    // Reloading yields the edited values and preserves the non-numeric fields.
+    ASSERT_TRUE(loadWeaponsFromFile(path));
+    EXPECT_EQ(weaponCount(), 9);
+    WeaponDefinition r = getWeaponDefinition(0);
+    EXPECT_FLOAT_EQ(r.damage, 12.5f);
+    EXPECT_FLOAT_EQ(r.fireRate, 0.45f);
+    EXPECT_EQ(r.name, "Plasma Bolt");
+    EXPECT_EQ(r.type, WeaponType::Projectile);
+    EXPECT_FALSE(r.twin);
+    // Radius stayed at the default (omitted on save, re-defaulted on load).
+    EXPECT_FLOAT_EQ(r.radius, 0.1f);
 }
 
 // The shipped asset file (loaded at game_init via loadWeaponsFromFile) must define
