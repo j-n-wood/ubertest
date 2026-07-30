@@ -19,8 +19,11 @@ cpp-version/
 │   │   ├── light.h             # Light struct, MAX_LIGHTS, LIGHT_* constants
 │   │   └── light.cpp           # create_light() implementation
 │   ├── rendering/
-│   │   ├── scene_renderer.h    # Scene rendering utilities
-│   │   └── scene_renderer.cpp
+│   │   ├── scene_renderer.h/cpp    # Lighting shader setup + apply to models
+│   │   ├── texture_manager.h/cpp   # Central GPU texture owner (enum slots, gTextures())
+│   │   ├── sprite_animation.h      # Sprite-sheet animation config (sourceRect per frame)
+│   │   ├── geometry_mesh.cpp       # Hand-built mesh construction/upload
+│   │   └── texture_loader.h/cpp    # Legacy index-keyed texture cache (tools only)
 │   ├── units/
 │   │   ├── unit_instance.h/cpp # Unit instance management, BodyUserData fields
 │   │   ├── unit_manager.h/cpp  # Unit manager, body user data setup, collision categories
@@ -29,6 +32,10 @@ cpp-version/
 │   │   └── weapon.h/cpp        # Weapon definitions, fire/cooldown
 │   ├── combat/
 │   │   └── projectile_manager.h/cpp  # Projectile Box2D bodies, contact events
+│   ├── effects/
+│   │   └── effect_manager.h/cpp  # Explosions: animated billboard + area damage over time
+│   ├── particles/
+│   │   └── particle_manager.h/cpp  # SoA additive-billboard particles (render-only)
 │   ├── physics/
 │   │   └── body_user_data.h    # BodyTag enum, BodyUserData struct, collision categories
 │   ├── model_convert/
@@ -351,17 +358,52 @@ target_link_libraries(run_tests PRIVATE
 
 ## Main Game Architecture
 
-### Game Loop (`src/game.cpp` — `game_update`)
+### Game Loop (`src/game.cpp` — `game_update_gameplay` / `game_render_gameplay`)
 
-The update loop runs in this order each frame:
+`main.cpp` owns the window + a scoped `TextureManager` (`unique_ptr`, `reset()` before
+`CloseWindow`), and drives the active page (`GamePage`) each frame: `update(dt)` then
+`render()`.
 
-1. **Test mode check** — if `testConfig.enabled`, report rotation and count frames
-2. **Input** — `input_update()` reads WASD/arrows (`IsKeyDown`) and mouse position
-3. **Player physics** — apply movement force and rotation torque to the player's Box2D body
-4. **Debug keys** — `IsKeyPressed(KEY_ZERO + i)` for debug render modes 0–6
-5. **Physics step** — `b2World_Step`
-6. **Unit manager update** — syncs physics transforms back to section instances
-7. **Camera follow** — camera target/position track the player root section
+**Update** — input (`input_update`, mouse aim via `transfer_update`), then debug-key toggles,
+then the **simulation block** guarded by `if (!paused)` with `simDt = slowMotion ? dt*0.1 : dt`,
+in this order: AI update → player fire → `b2World_Step` → AI collision response →
+doors → chargers → unit visibility → projectiles (update/sync/contacts/cleanup) → **effects**
+(area damage) → **particles** → reap dead → `UnitManager::update` (syncs transforms + flushes
+realtime damage) → game clock → score/alert. Outside the block: console/lift proximity, camera
+follow.
+
+**Render** (`game_render_gameplay`) is a separate, read-only pass: `BeginMode3D` → tiles →
+doors → chargers → units → additive billboard blocks (projectiles, explosions, particles) →
+`EndMode3D` → 2D HUD/debug. It issues **no** simulation side effects.
+
+### Simulation vs rendering layers
+
+State-owning **managers** step in the sim block; **rendering reads their state read-only** in the
+render pass. `shared/` managers never call raylib draw APIs — they expose data (`getEffects()`,
+`getProjectiles()`, `renderData()` spans) and the game draws it. Don't mutate game state in the
+render pass. Transient visuals (projectiles, explosions, particles) all render as additive
+`DrawBillboardPro` billboards; rlgl auto-batches same-texture quads into ~1 draw call, so "many
+billboards" is cheap as long as a system shares one texture (`docs/effects.md`, `docs/textures.md`).
+
+### Per-level physics worlds
+
+Each level owns a retained `b2WorldId` in `game->levelWorlds[]`; only the active level's world is
+stepped and `game->physics.world_id` aliases it. Level switch repoints `physics.world_id` and
+re-`init`s the world-bound managers (doors/chargers/effects). **Teardown order is load-bearing:**
+body-owning managers are destroyed **before** `b2DestroyWorld`, and all GPU textures freed before
+`CloseWindow` (the `TextureManager` reset in `main`). See `docs/levels.md`.
+
+### Textures, sprites, effects, particles
+
+- **`TextureManager`** (`shared/rendering/texture_manager.h`) is the single GPU-texture owner —
+  enum-indexed slots via `gTextures()`, loaded once, freed on teardown. `docs/textures.md`.
+- **`SpriteAnimation`** animates a sprite **sheet** (`sourceRect(age,…)`, one texture bind,
+  per-instance `age` cursor). Used by weapon-3 blasts and explosions.
+- **`EffectManager`** (`shared/effects/`) — world effects (explosions: animated billboard + 1/r
+  area damage over time). **`ParticleManager`** (`shared/particles/`) — render-only, SoA,
+  additive billboards; `game_spawn_explosion()` fires both on death. `docs/effects.md`.
+- **Damage:** projectiles apply immediately; continuous sources accumulate and flush on a 0.1 s
+  tick (`combat_state` realtime-damage, driven from `UnitManager::update`).
 
 ### Input Gating by Test Mode
 
@@ -410,5 +452,10 @@ When player input doesn't work:
 - **Entity System**: See [docs/entity_system.md](docs/entity_system.md) for entity/physics design
 - **Unit System**: See [docs/unit_system.md](docs/unit_system.md) for unit definitions, combat state, body user data, collision filtering, projectile lifecycle
 - **Projectile System**: See [docs/projectile_system.md](docs/projectile_system.md) for Box2D projectile refactor design, contact events, API reference
+- **Weapons**: See [docs/weapons.md](docs/weapons.md) for the weapon table, firing (player/AI), projectile rendering, and per-weapon physics radius
+- **Effects & particles**: See [docs/effects.md](docs/effects.md) for explosions, the realtime-damage model, and the particle system
+- **Textures & sprites**: See [docs/textures.md](docs/textures.md) for the central TextureManager and sprite-sheet animation
+- **Levels**: See [docs/levels.md](docs/levels.md) for per-level Box2D worlds and level switching
+- **Pages (presentation layer)**: See [docs/pages.md](docs/pages.md) for the `PageManager` stack and `Page` interface (deferred push/pop, activate/deactivate, current screens)
 - **Gameplay Plan**: See [docs/gameplay_implementation_plan.md](docs/gameplay_implementation_plan.md) for staged implementation — **read [Design Patterns](docs/gameplay_implementation_plan.md#design-patterns) section first**
 - **Data Conversion**: See [docs/agents.md](docs/agents.md) for conversion tool guidance, coordinate systems, winding order

@@ -1,7 +1,44 @@
 # Project notes for agents (cpp-version)
 
 Top-down game (raylib + Box2D v3, C++23). See `README.md` for build/run and architecture, the
-`docs/` folder for subsystem docs, and `AGENTS.md` for testing guidelines.
+`docs/` folder for subsystem docs, and `AGENTS.md` for the workspace layout + testing.
+
+## Architecture (current)
+
+**Simulation and rendering are separate layers.** Managers own state and step it in the
+un-paused sim block of `game_update_gameplay` with `simDt` (pause/slow-mo aware); rendering reads
+that state read-only in `game_render_gameplay` and issues no simulation side effects. Examples:
+`DoorManager`/`DoorRenderer`, `ChargerManager`/`ChargerRenderer`, `ProjectileManager` (sim) →
+billboard draw loop (render), `EffectManager` (sim) → additive billboard loop (render). Keep this
+split: don't mutate game state in the render pass, and don't call raylib draw APIs from `shared/`
+managers (they expose data via `getX()`/spans; the game draws).
+
+**Per-level Box2D worlds.** Each level owns a retained `b2WorldId` in `game->levelWorlds[]`; only
+the active level's world is stepped, and `game->physics.world_id` aliases it. Level switch
+repoints `physics.world_id` and re-`init`s the world-bound managers. Teardown order matters:
+body-owning managers are destroyed **before** `b2DestroyWorld`, and GPU resources before
+`CloseWindow`. See `docs/levels.md`.
+
+**Textures** are owned centrally by `TextureManager` (enum-indexed slots, `gTextures()`), a scoped
+`unique_ptr` in `main` freed before `CloseWindow`. **Sprite animation** uses sprite **sheets**:
+`SpriteAnimation {sheet, columns, rows, fps}` is stateless config with a pure
+`sourceRect(age, …)` — one texture bind, source-rect per frame, cursor is each instance's own
+`age` (so instances animate independently). See `docs/textures.md`.
+
+**Effects & particles** are the transient-visual layer. `EffectManager` (`shared/effects/`) holds
+world effects like explosions (animated billboard + area damage over time). `ParticleManager`
+(`shared/particles/`) is render-only, **struct-of-arrays** for a cache-friendly/vectorizable
+update, drawn as additive billboards that rlgl auto-batches (one texture per system → ~1 draw
+call). `game_spawn_explosion()` fires both on unit death. See `docs/effects.md`.
+
+**Damage model.** Single-hit damage (projectiles) applies immediately; continuous sources
+(explosions) accumulate per-unit and flush on a 0.1 s tick (`accumulate/updateRealtimeDamage` in
+`combat_state`, driven from `UnitManager::update`). See `docs/effects.md` and `docs/weapons.md`.
+
+**Presentation layer.** Screens are a stack of `Page`s driven by `PageManager` (`src/pages/`):
+only the top page gets input/update/render; push/pop are deferred (applied at the next frame) so
+a page can pop itself safely. `GamePage` is the base; console/status/library/ship-view pages sit
+on top and freeze gameplay while open. See `docs/pages.md`.
 
 ## Data & assets
 

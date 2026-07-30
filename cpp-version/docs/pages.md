@@ -26,7 +26,8 @@ A page owns whatever transient resources its screen needs and frees them in
 ## `PageManager` (`src/pages/page_manager.{h,cpp}`)
 
 Owns `std::vector<std::unique_ptr<Page>>` as a stack and drives the top page:
-`update(dt)` calls `handleInput()` then `update(dt)`; `render()` calls `render()`.
+`update(dt)` calls `handleInput()` then `update(dt)`; `render()` calls `render()`. `top()`
+returns the active page (or `nullptr` if empty); `empty()` tests the stack.
 
 **Push/pop are deferred.** `push()` / `pop()` only queue the request; the change is
 applied by `applyPending()` at the *start* of the next `update()`/`render()`. This lets a
@@ -50,6 +51,19 @@ pages.render();
 pushes a `ConsoleMenuPage`. Because the console pages sit *on top*, `GamePage` stops
 updating while they're open — the simulation freezes exactly like `paused`, and resumes
 where it left off when they pop. See [console.md](console.md).
+
+## Current pages (`src/pages/`)
+
+| Page              | Purpose                                              | Pushed from |
+|-------------------|------------------------------------------------------|-------------|
+| `GamePage`        | The gameplay view — the base of the stack; wraps `game_update_gameplay`/`game_render_gameplay`. | `main` at startup |
+| `ConsoleMenuPage` | Console menu shown when using a console tile.        | `GamePage` (SPACE on a console tile) |
+| `StatusPage`      | Ship/droid status readout.                           | `ConsoleMenuPage` |
+| `DroidLibraryPage`| Spinning-droid library/debug viewer; owns a private Box2D world + `UnitManager` for its display droid. | `ConsoleMenuPage`, and `GamePage` F3 in debug mode |
+| `ShipViewPage`    | Side-on ship diagram + lift destination chooser. Reads the ship images from the shared `TextureManager` (doesn't own them). | `GamePage` (SPACE on a lift tile) |
+
+While any of these sit on top of `GamePage`, gameplay is frozen (its `update` isn't called),
+resuming when they pop. `raygui_impl.cpp` provides the immediate-mode GUI backend some pages use.
 
 ## Adding a page
 
