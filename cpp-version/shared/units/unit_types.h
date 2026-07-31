@@ -80,8 +80,10 @@ struct DroidProperties {
     int droidType = 0;
     int driveType = 0;
     int brainType = 0;
-    bool hasTurret = false;
-    bool omnidirectional = false;  // Can face any direction while moving
+    bool hasTurret = false;        // Has a turret-role section (may be authored or derived)
+    bool omnidirectional = false;  // Never orient: body facing is held at angle 0
+    bool fireWhileMoving = false;  // Body aims at target, unit doesn't halt to fire, no LOS facing gate
+    float turretTurnSpeed = 0.0f;  // Per-unit turret/head slew rate (rad/s); 0 = global default
     float visualRadius = 0.0f;    // Visual detection / disengage range
     Vector3 fireOffset = {0, 0, 0}; // Projectile spawn offset from unit centre
     std::string description;
@@ -95,6 +97,18 @@ enum class SectionRotationMode {
     FollowUnit,         // Section rotates with unit physics rotation (default)
     FollowFacing,       // Section rotates to face a target angle (e.g., turret)
     Fixed               // Section maintains fixed world rotation
+};
+
+//------------------------------------------------------------------------------
+// Section Role — what an independently-aiming section is FOR. A non-None role
+// implies FollowFacing rotation (the section slews toward an aim angle). See
+// docs/unit_animation.md.
+//------------------------------------------------------------------------------
+
+enum class SectionRole {
+    None,               // Ordinary section: rotates per rotationMode (default)
+    Turret,             // Aiming section that DETERMINES the unit's firing angle
+    Head                // Aiming section used ONLY for the visibility/facing cone
 };
 
 //------------------------------------------------------------------------------
@@ -113,6 +127,15 @@ struct SectionDefinition {
 
     // Rotation behavior
     SectionRotationMode rotationMode = SectionRotationMode::FollowUnit;
+
+    // Role: turret (drives firing angle) or head (drives visibility cone). A non-None
+    // role forces FollowFacing at load. Default None = ordinary section.
+    SectionRole role = SectionRole::None;
+
+    // GLTF animation: when true this section plays skeletal clip 1 while the unit is
+    // moving and clip 0 while idle (the legacy "anim_moving" marker). See
+    // docs/unit_animation.md.
+    bool animMoving = false;
 
     // Physics (optional - used for debris when unit is dismantled)
     std::optional<PhysicsProperties> physics;

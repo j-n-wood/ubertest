@@ -511,6 +511,8 @@ void UnitManager::clearDebris() {
 void UnitManager::update(float dt) {
     // Animation frame timing (30 fps target)
     constexpr float ANIM_FRAME_TIME = 1.0f / 30.0f;
+    // Body speed (world units/s) above which an "anim_moving" section plays its walk clip.
+    constexpr float ANIM_MOVING_SPEED = 0.25f;
     static float animTimer = 0.0f;
     animTimer += dt;
     bool advanceFrame = animTimer >= ANIM_FRAME_TIME;
@@ -538,9 +540,30 @@ void UnitManager::update(float dt) {
             }
         }
 
+        // Is the unit moving? Drives idle/move animation selection below.
+        bool moving = false;
+        if (b2Body_IsValid(instance->bodyId)) {
+            b2Vec2 v = b2Body_GetLinearVelocity(instance->bodyId);
+            moving = (v.x * v.x + v.y * v.y) > (ANIM_MOVING_SPEED * ANIM_MOVING_SPEED);
+        }
+
         // Update animations for all sections
         for (auto* section : instance->allSections) {
-            if (section->animPlaying && section->animCount > 0 && advanceFrame) {
+            if (section->animCount <= 0) continue;
+
+            // "anim_moving" sections: clip 0 is the walk cycle, clip 1 the idle pose (the
+            // legs.glb ordering — moving selects 0, idle selects 1). Falls back to clip 0 if
+            // the model has only one clip. Switching clips restarts at frame 0; both loop.
+            if (section->definition && section->definition->animMoving) {
+                int desired = (moving || section->animCount < 2) ? 0 : 1;
+                if (desired != section->currentAnim) {
+                    section->currentAnim = desired;
+                    section->currentFrame = 0;
+                }
+                section->animPlaying = true;
+            }
+
+            if (section->animPlaying && advanceFrame) {
                 int animIdx = section->currentAnim % section->animCount;
                 ModelAnimation& anim = section->animations[animIdx];
 

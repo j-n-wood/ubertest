@@ -5,6 +5,7 @@
 #include "units/weapon.h"
 
 struct UnitInstance;
+class SectionInstance;
 
 //------------------------------------------------------------------------------
 // AI State
@@ -38,11 +39,24 @@ struct AIComponent {
 
     // Capabilities (cached from DroidProperties)
     bool armed = false;           // weapon >= 0
-    bool hasTurret = false;
-    bool omnidirectional = false;
+    bool hasTurret = false;       // has a turret-role section (derived at spawn)
+    bool hasHead = false;         // has a head-role section (derived at spawn)
+    bool omnidirectional = false; // never orient: hold body angle 0
+    bool fireWhileMoving = false; // aim body at target, don't halt to fire, no LOS facing gate
+    float turretTurnSpeed = 0.0f; // per-unit turret/head slew rate (rad/s); 0 = global default
+
+    // Cached aiming sections (nullptr if the unit has none). Slewed toward an aim angle
+    // each frame; the turret's facing sets the firing angle, the head's the visibility cone.
+    SectionInstance* turretSection = nullptr;
+    SectionInstance* headSection = nullptr;
 
     // Weapon state for cooldown tracking
     WeaponState weaponState;
+
+    // Time (s) the unit has gone without sight of the player while chasing. Reset to 0
+    // whenever it can see the player; once it reaches AI_LOSE_SIGHT_TIME the unit gives up
+    // and reverts to Patrol. See updateChase.
+    float loseSightTimer = 0.0f;
 
     // Collision response: short decision cooldown after redirecting away from a
     // collision. This does NOT stop the unit — it keeps moving toward its new
@@ -83,6 +97,17 @@ inline constexpr float AI_DWELL_MAX = 2.0f;
 inline constexpr float AI_BACK_AVOIDANCE_WEIGHT = 0.2f;  // Reduced probability for previous waypoint
 inline constexpr float AI_COLINEAR_THRESHOLD = 0.7f;     // Dot product threshold to skip dwell
 inline constexpr float AI_FACING_THRESHOLD = 0.25f;      // Radians (~14 degrees) for fire alignment
+
+// Head vision cone: a unit with a head-role section can only see (detect / keep line of
+// sight on) a target within this forward cone of the head's current facing. Dot product
+// of the head-forward unit vector and the unit-to-target direction; >= this passes.
+// 0.3 ≈ a 145°-wide cone (72.5° either side of where the head points).
+inline constexpr float AI_HEAD_VISION_DOT = 0.3f;
+
+// A hostile (chasing) unit gives up and reverts to Patrol after this long without a clear
+// line of sight to the player (broke LOS around a corner / behind a closed door, left the
+// visual range, or — for head units — left the vision cone).
+inline constexpr float AI_LOSE_SIGHT_TIME = 2.0f;  // seconds
 
 // Collision response: a non-hostile unit that bumps an obstacle REDIRECTS — it
 // heads back toward its prior waypoint (and re-selects from there, with the

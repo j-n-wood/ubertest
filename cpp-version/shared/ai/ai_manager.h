@@ -74,7 +74,10 @@ private:
     // do not count as blockers. nearestWaypoint: closest node by distance.
     // nearestReachableWaypoint: closest node whose path from `pos` is wall-clear
     // (falls back to the plain nearest if none qualify).
-    bool pathClear(Vector2 from, Vector2 to, float radius) const;
+    // includeDoors: when true the cast also blocks on CLOSED doors (CATEGORY_DOOR) — used
+    // for firing line-of-sight. Pathfinding leaves it false so units don't reroute around
+    // doors (which open on proximity). Open doors clear their filter and never block either way.
+    bool pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors = false) const;
     int  nearestWaypoint(Vector2 pos) const;
     int  nearestReachableWaypoint(Vector2 pos, float radius) const;
 
@@ -84,9 +87,25 @@ private:
     // unit at its current transform (used when dwelling / halting / no target).
     void setMotion(AIComponent& ai, Vector2 moveTarget, float facing) const;
     void holdPosition(AIComponent& ai) const;
+
+    // Slew the unit's turret/head sections toward `aimAngle` (radians) at the unit's
+    // turret rate. Render-only: sets each aiming section's facingAngle. No-op if the
+    // unit has neither. Called with the target angle when engaging, else the body angle
+    // so an idle turret settles facing forward instead of freezing at its last angle.
+    void updateAimingSections(AIComponent& ai, float aimAngle, float dt) const;
     bool isAtWaypoint(const AIComponent& ai, Vector2 waypointPos) const;
     Vector2 getUnitPosition(const AIComponent& ai) const;
     Vector2 waypointPos2D(int index) const;
+
+    // Head vision: true if the unit has no head, or `targetPos` lies within the head's
+    // forward cone (AI_HEAD_VISION_DOT). Gates detection and firing for head units so they
+    // "can only see what is in front of them".
+    bool headSeesTarget(const AIComponent& ai, Vector2 targetPos) const;
+
+    // True if the unit currently has sight of the player: within visual range, a clear
+    // line of sight (walls + closed doors block it), and — for head units — inside the head
+    // vision cone. Drives the lose-sight timeout in updateChase.
+    bool hasSightOfPlayer(const AIComponent& ai, Vector2 playerPos) const;
 
     // Firing
     bool canFire(const AIComponent& ai, Vector2 playerPos) const;

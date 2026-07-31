@@ -20,6 +20,7 @@ add_executable(run_tests
     # paradroid_parser_test.cpp  # Disabled — parser crashes on valid data, revisit if data needs regeneration
     combat_state_test.cpp
     weapon_test.cpp
+    unit_json_test.cpp
     sprite_animation_test.cpp
     spawn_test.cpp
     ai_test.cpp
@@ -37,6 +38,7 @@ add_executable(run_tests
     ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
     ${CMAKE_SOURCE_DIR}/src/pages/page_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/unit_json.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp

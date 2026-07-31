@@ -21,6 +21,7 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/legs.glb",
+    "animMoving": true,
     "offset": [-0.000000, 0.000000, 0.000000],
     "localRotation": 0.000000,
     "scale": [1, 1, 1],

@@ -75,8 +75,15 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
         ai.detectionRadius = def.proximityRadius;
         ai.visualRange = props.visualRadius;
         ai.armed = props.weapon >= 0;
-        ai.hasTurret = props.hasTurret;
+        // Aiming sections drive turret/head behaviour; capability flags are derived from
+        // their presence (a hasTurret prop with no turret section has nothing to aim).
+        ai.turretSection = unit_find_section_by_role(unit, SectionRole::Turret);
+        ai.headSection   = unit_find_section_by_role(unit, SectionRole::Head);
+        ai.hasTurret = ai.turretSection != nullptr;
+        ai.hasHead   = ai.headSection != nullptr;
         ai.omnidirectional = props.omnidirectional;
+        ai.fireWhileMoving = props.fireWhileMoving;
+        ai.turretTurnSpeed = props.turretTurnSpeed;
 
         if (ai.armed) {
             ai.weaponState = initWeaponState(props);
@@ -116,6 +123,13 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
                 updateFlee(ai, dt, playerPos);
                 break;
         }
+
+        // When not engaging (Chase aims its own turret/head at the player), settle the
+        // aiming sections toward the body facing so an idle turret points forward instead
+        // of freezing at its last aim. No-op for units without a turret/head.
+        if (ai.state != AIState::Chase && b2Body_IsValid(ai.unit->bodyId)) {
+            updateAimingSections(ai, b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId)), dt);
+        }
     }
 }
 
@@ -129,6 +143,7 @@ void AIManager::onDamageTaken(UnitInstance* unit) {
             if (ai.armed) {
                 ai.state = AIState::Chase;
                 ai.hostile = true;
+                ai.loseSightTimer = 0.0f;  // full grace window before giving up
             } else {
                 ai.state = AIState::Flee;
                 ai.hostile = true;
@@ -212,13 +227,20 @@ void AIManager::handleCollision(AIComponent& ai, UnitInstance* other) {
     if (ai.collideCooldown > 0.0f) return;
     ai.collideCooldown = AI_COLLIDE_COOLDOWN;
 
-    // Redirect away from the collision point. Normally head back toward the prior
-    // waypoint; if we're already doing that (or have none), drop the target so the
-    // next tick re-selects — back-avoidance then biases us off the blocked route.
-    if (ai.previousWaypoint >= 0 && ai.targetWaypoint != ai.previousWaypoint) {
-        ai.targetWaypoint = ai.previousWaypoint;
+    // Reverse course: head back to the waypoint we came from (currentWaypoint), retracing
+    // the edge we were travelling. That edge is a graph link we were already following, so
+    // the straight line back is valid — unlike jumping to previousWaypoint or reselecting a
+    // different waypoint, whose straight line can cut across a wall. Bias the next hop away
+    // from the node we were blocked reaching. If there's no current waypoint to fall back to
+    // (knocked off the graph), drop the target so the next tick reselects instead.
+    if (ai.targetWaypoint >= 0 && ai.currentWaypoint >= 0 &&
+        ai.currentWaypoint != ai.targetWaypoint) {
+        int blocked = ai.targetWaypoint;
+        ai.targetWaypoint = ai.currentWaypoint;  // turn around, retrace the edge we're on
+        ai.currentWaypoint = blocked;            // we're now travelling from the blocked node
+        ai.previousWaypoint = blocked;           // and avoid re-picking it on arrival
     } else {
-        ai.targetWaypoint = -1;
+        ai.targetWaypoint = -1;                  // no clean reverse available — reselect
     }
 }
 
@@ -241,7 +263,7 @@ void AIManager::handleCollision(AIComponent& ai, UnitInstance* other) {
 // mitigation: a unit whose path grazes an obstacle slides around it rather than
 // pinning, which covers most pillar/table/stub-wall cases in practice.
 
-bool AIManager::pathClear(Vector2 from, Vector2 to, float radius) const {
+bool AIManager::pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors) const {
     if (B2_IS_NULL(m_worldId)) return true;
     Vector2 d = Vector2Subtract(to, from);
     float len = Vector2Length(d);
@@ -254,10 +276,13 @@ bool AIManager::pathClear(Vector2 from, Vector2 to, float radius) const {
     xf.p = {from.x, from.y};
     xf.q = b2MakeRot(0.0f);
     b2Vec2 translation = {d.x, d.y};
-    // Cast as a unit against walls only — other units are not treated as blockers.
+    // Cast as a unit against walls (and, for firing LOS, closed doors) — other units are
+    // not treated as blockers. A closed door has categoryBits CATEGORY_DOOR and maskBits
+    // including CATEGORY_UNIT, so this unit-category cast hits it; an open door clears its
+    // maskBits to 0 and is skipped.
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_UNIT;
-    filter.maskBits = CATEGORY_STATIC;
+    filter.maskBits = CATEGORY_STATIC | (includeDoors ? CATEGORY_DOOR : 0);
 
     WallCastCtx ctx;
     b2World_CastCircle(m_worldId, &circle, xf, translation, filter, wallCastCallback, &ctx);
@@ -297,9 +322,15 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
     if (ai.armed && ai.detectionRadius > 0.0f) {
         Vector2 pos = getUnitPosition(ai);
         float dist = Vector2Distance(pos, playerPos);
-        if (dist <= ai.detectionRadius) {
+        // Detect only a player it can actually see: within range, a clear line of sight
+        // (walls + closed doors block it), and — for head units — inside the vision cone.
+        // The LOS check also stops a just-disengaged unit re-detecting the player through
+        // the wall it lost them behind.
+        if (dist <= ai.detectionRadius && headSeesTarget(ai, playerPos) &&
+            pathClear(pos, playerPos, 0.0f, /*includeDoors=*/true)) {
             ai.state = AIState::Chase;
             ai.hostile = true;
+            ai.loseSightTimer = 0.0f;
             return;
         }
     }
@@ -403,25 +434,37 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
     Vector2 unitPos = getUnitPosition(ai);
     float distToPlayer = Vector2Distance(unitPos, playerPos);
 
-    // Disengage if player out of visual range
-    if (ai.visualRange > 0.0f && distToPlayer > ai.visualRange) {
-        ai.state = AIState::Patrol;
-        ai.hostile = false;
-        return;
+    // Give up the chase after AI_LOSE_SIGHT_TIME without sight of the player (out of visual
+    // range, LOS broken around a corner / behind a closed door, or — for head units — out of
+    // the vision cone). Seeing the player resets the timer, so brief occlusion doesn't drop
+    // the pursuit; the unit keeps heading to the last-seen direction meanwhile.
+    if (hasSightOfPlayer(ai, playerPos)) {
+        ai.loseSightTimer = 0.0f;
+    } else {
+        ai.loseSightTimer += dt;
+        if (ai.loseSightTimer >= AI_LOSE_SIGHT_TIME) {
+            ai.state = AIState::Patrol;
+            ai.hostile = false;
+            ai.loseSightTimer = 0.0f;
+            return;
+        }
     }
 
-    bool isStandard = !ai.hasTurret && !ai.omnidirectional;
+    // Halting to fire is the GENERAL case: a droid stops inside optimum range to shoot.
+    // Turret units halt too — the turret tracks the player throughout (including the
+    // approach), but the body still stops to fire. Only fireWhileMoving units (type 20)
+    // and omnidirectional units (facing is meaningless) keep maneuvering while firing.
+    bool halts = !ai.fireWhileMoving && !ai.omnidirectional;
     float optimumRange = ai.weaponState.definition.optimumRange;
-
-    // Standard droids halt within optimum range to turn and fire
-    bool halting = isStandard && distToPlayer <= optimumRange;
+    bool halting = halts && distToPlayer <= optimumRange;
 
     if (!halting) {
         // Continue waypoint navigation toward the player, always choosing the linked
-        // waypoint nearest the player (selectChaseTarget). Facing rules: an omnidirectional
-        // unit always faces the player; a unit that is stopped (blocked) faces the player so
-        // it aims at its target even while pinned; otherwise it faces its movement direction.
-        // (Turret units additionally slew their head to the player below.)
+        // waypoint nearest the player (selectChaseTarget). Facing rules: a fireWhileMoving
+        // unit's body tracks the player; a unit that is stopped (blocked) faces the player so
+        // it aims even while pinned; otherwise it faces its movement direction. (Turret units
+        // let the body follow movement and slew the turret to the player below; omnidirectional
+        // units have their facing pinned to 0 in unit_set_move_target regardless.)
         Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
         float facePlayer = facing_angle_to(toPlayer.x, toPlayer.y);
 
@@ -468,8 +511,8 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
             if (ai.targetWaypoint >= 0) {
                 Vector2 wpPos = waypointPos2D(ai.targetWaypoint);
                 float bodyAngle;
-                if (ai.omnidirectional || stopped) {
-                    bodyAngle = facePlayer;  // aim at the target when it doesn't need to, or can't, move
+                if (ai.fireWhileMoving || stopped) {
+                    bodyAngle = facePlayer;  // track the target while moving, or aim while pinned
                 } else {
                     Vector2 dir = Vector2Subtract(wpPos, unitPos);
                     bodyAngle = facing_angle_to(dir.x, dir.y);
@@ -480,27 +523,23 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
             }
         }
     } else {
-        // Halting — hold station and turn body to face the player. Holding the
-        // position via the motor joint also resists being shoved off the firing spot.
-        Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-        float angle = facing_angle_to(toPlayer.x, toPlayer.y);
+        // Halting — hold station to fire. Holding position via the motor joint also
+        // resists being shoved off the firing spot. A turret unit keeps its current body
+        // facing (the turret does the aiming); everyone else turns the body to the player.
+        float angle;
+        if (ai.turretSection) {
+            angle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));  // hold current facing
+        } else {
+            Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
+            angle = facing_angle_to(toPlayer.x, toPlayer.y);
+        }
         unit_set_move_target(ai.unit, unitPos, angle);
     }
 
-    // Head tracking — all hostile droids slew the head toward the player. Facing
-    // is a render-only scalar; slew the shortest way at the shared turret rate.
-    if (ai.hasTurret && ai.unit->rootSection) {
+    // Aiming sections (turret/head) slew toward the player while chasing. Render-only.
+    {
         Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
-        float headAngle = facing_angle_to(toPlayer.x, toPlayer.y);
-        // Find head section (first child with FollowFacing mode)
-        for (auto* section : ai.unit->allSections) {
-            if (section->definition &&
-                section->definition->rotationMode == SectionRotationMode::FollowFacing) {
-                section->facingAngle =
-                    slewToward(section->facingAngle, headAngle, TURRET_SLEW_RATE * dt);
-                break;
-            }
-        }
+        updateAimingSections(ai, facing_angle_to(toPlayer.x, toPlayer.y), dt);
     }
 
     // Try to fire
@@ -652,6 +691,39 @@ bool AIManager::isAtWaypoint(const AIComponent& ai, Vector2 waypointPos) const {
     return Vector2Distance(pos, waypointPos) < AI_WAYPOINT_ARRIVAL_DIST;
 }
 
+bool AIManager::hasSightOfPlayer(const AIComponent& ai, Vector2 playerPos) const {
+    Vector2 unitPos = getUnitPosition(ai);
+    if (ai.visualRange > 0.0f && Vector2Distance(unitPos, playerPos) > ai.visualRange)
+        return false;
+    // Thin sightline (radius floored to 0.1 in pathClear); closed doors block it.
+    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true))
+        return false;
+    if (!headSeesTarget(ai, playerPos))
+        return false;
+    return true;
+}
+
+bool AIManager::headSeesTarget(const AIComponent& ai, Vector2 targetPos) const {
+    if (!ai.headSection) return true;  // no head → unrestricted vision
+    Vector2 unitPos = getUnitPosition(ai);
+    Vector2 to = Vector2Subtract(targetPos, unitPos);
+    float len = sqrtf(to.x * to.x + to.y * to.y);
+    if (len < 1e-4f) return true;     // on top of the target
+    to = {to.x / len, to.y / len};
+    float a = ai.headSection->facingAngle;
+    Vector2 fwd = {-sinf(a), cosf(a)};  // forward vector for a facing angle
+    return Vector2DotProduct(fwd, to) >= AI_HEAD_VISION_DOT;
+}
+
+void AIManager::updateAimingSections(AIComponent& ai, float aimAngle, float dt) const {
+    if (!ai.turretSection && !ai.headSection) return;
+    float rate = (ai.turretTurnSpeed > 0.0f ? ai.turretTurnSpeed : TURRET_SLEW_RATE) * dt;
+    if (ai.turretSection)
+        ai.turretSection->facingAngle = slewToward(ai.turretSection->facingAngle, aimAngle, rate);
+    if (ai.headSection)
+        ai.headSection->facingAngle = slewToward(ai.headSection->facingAngle, aimAngle, rate);
+}
+
 Vector2 AIManager::getUnitPosition(const AIComponent& ai) const {
     b2Vec2 p = b2Body_GetPosition(ai.unit->bodyId);
     return {p.x, p.y};
@@ -679,35 +751,31 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
     // Must be within max range
     if (dist > ai.weaponState.definition.maxRange) return false;
 
-    // Line of sight: a hostile only fires when no wall lies between it and the
-    // player (so it holds fire around corners). Reuses the static-geometry cast.
-    float losRadius = ai.unit->definition ? ai.unit->definition->collisionRadius : 0.2f;
-    if (!pathClear(unitPos, playerPos, losRadius)) return false;
+    // Line of sight: a hostile only fires when no wall lies between it and the player (so
+    // it holds fire around corners). The sightline is as thin as the PROJECTILE that will
+    // fly, NOT the droid's body — a bolt can pass through a gap the droid can't fit through.
+    // (pathClear floors the radius at 0.1, matching the default projectile.) includeDoors:
+    // a CLOSED door blocks the shot; an open one doesn't.
+    if (!pathClear(unitPos, playerPos, ai.weaponState.definition.radius, /*includeDoors=*/true))
+        return false;
+
+    // Head units can only fire at a target their head can see (in its forward cone).
+    if (!headSeesTarget(ai, playerPos)) return false;
 
     // Disruptor (area weapon) ignores facing
     if (ai.weaponState.definition.type == WeaponType::Area) return true;
 
-    // Check facing alignment
+    // No facing restriction for units that don't aim their body: fireWhileMoving units
+    // (type 20, body still slewing onto the target) and omnidirectional units (facing is
+    // meaningless — they fire in any direction).
+    if (ai.fireWhileMoving || ai.omnidirectional) return true;
+
+    // Check facing alignment. Turret units fire along the TURRET's facing (heads are for
+    // visibility only, never firing); everyone else fires along the body.
     float bodyAngle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
     Vector2 toPlayer = Vector2Subtract(playerPos, unitPos);
     float angleToPlayer = facing_angle_to(toPlayer.x, toPlayer.y);
-
-    float facingAngle;
-    if (ai.hasTurret) {
-        // Turret droids fire from head — check head facing
-        // Use the head's facingAngle if available
-        facingAngle = bodyAngle; // fallback
-        for (auto* section : ai.unit->allSections) {
-            if (section->definition &&
-                section->definition->rotationMode == SectionRotationMode::FollowFacing) {
-                facingAngle = section->facingAngle;
-                break;
-            }
-        }
-    } else {
-        // Standard and omnidirectional fire from body
-        facingAngle = bodyAngle;
-    }
+    float facingAngle = ai.turretSection ? ai.turretSection->facingAngle : bodyAngle;
 
     float angleDiff = fabsf(normalizeAngle(angleToPlayer - facingAngle));
     return angleDiff <= AI_FACING_THRESHOLD;

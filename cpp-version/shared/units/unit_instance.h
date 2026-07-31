@@ -119,6 +119,10 @@ struct UnitInstance {
 // Motor-joint movement control (shared by AI and player — see movement_tuning.h)
 //------------------------------------------------------------------------------
 
+// Find the first section in a unit's flattened section list with the given role
+// (e.g. Turret or Head), or nullptr if none. Roles are unique per unit in practice.
+SectionInstance* unit_find_section_by_role(UnitInstance* unit, SectionRole role);
+
 // Create the static, shapeless anchor body at the world origin (identity
 // transform). It is the bodyA for every unit's motor joint, so a joint's
 // linearOffset equals the target world position and angularOffset the target

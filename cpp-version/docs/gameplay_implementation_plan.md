@@ -315,18 +315,18 @@ All droids begin in a **Patrol** state. Patrol uses the waypoint link graph defi
 Aggression is predicated on the **presence of a weapon** (weapon ≥ 0), not brain type. Unarmed droids never become hostile — they flee if damaged.
 
 **Transitions to hostile:**
-- Armed droids become hostile when the player enters their `proximityRadius` detection range
-- Any droid that takes damage becomes hostile (armed → Chase, unarmed → Flee)
+- Armed droids become hostile when they can **see** the player: within `proximityRadius`, a clear line of sight (`pathClear` including closed doors), and — for head units — inside the head vision cone. Proximity alone is not enough; a player behind a wall/closed door is not detected.
+- Any droid that takes damage becomes hostile (armed → Chase, unarmed → Flee), regardless of sight.
 
-**Disengagement:**
-- Hostile droids return to normal waypoint patrol if the player moves beyond visual range (`visualRadius`) or out of line of sight
-- On disengagement, the droid resumes random waypoint patrol from its current position and target waypoint
+**Disengagement (lose-sight timeout):**
+- A chasing droid tracks how long it has gone **without sight** of the player (`loseSightTimer`) — out of visual range (`visualRadius`), line of sight broken around a corner or behind a closed door, or (head units) the player left the vision cone. Seeing the player resets the timer, so brief occlusion doesn't drop the pursuit.
+- After `AI_LOSE_SIGHT_TIME` (2 s) without sight it gives up: reverts to Patrol, clears hostility, and resumes random waypoint patrol from its current position. Because detection also requires line of sight, it won't immediately re-detect a player still standing behind the wall it lost them behind.
 
 ### Collision response (non-hostile only)
 
 Keeps wandering droids from jamming against each other or walls, adapted from the original uberdroid `collide()`/`blocked()`. Handled in `AIManager` (`onCollision`/`processCollisions`, called from the game loop after `b2World_Step` using Box2D contact events; projectile contacts are ignored — those are damage). Only **non-hostile** units react — a chasing/fleeing unit pushes straight through.
 
-**Redirect, don't stop.** On collision a unit *redirects* — it heads back toward its prior waypoint (`targetWaypoint = previousWaypoint`; if already doing that or it has none, the target is dropped so the next tick re-selects, and the back-avoidance bias steers it off the blocked route). It keeps moving the whole time. A short decision cooldown (`AI_COLLIDE_COOLDOWN`) debounces the redirect so a sustained contact doesn't re-decide every frame.
+**Reverse course, don't stop.** On collision a unit *reverses along the edge it is on* — it turns around and heads back to the waypoint it came from (`targetWaypoint = currentWaypoint`), retracing a link it was already following, so the straight line back is a valid path. It then treats the node it was blocked reaching as its `previousWaypoint`, so back-avoidance biases the next hop away from it. Only if it has no current waypoint to fall back to (knocked off the graph) does it drop the target and reselect. This replaced the earlier "head to `previousWaypoint`" rule, which aimed at a node *off* the current edge and so could route the unit straight through a wall. It keeps moving the whole time. A short decision cooldown (`AI_COLLIDE_COOLDOWN`) debounces the reversal so a sustained contact doesn't re-decide every frame.
 
 **Fine arrival tolerance.** `AI_WAYPOINT_ARRIVAL_DIST` is small (0.15) so a unit reaches close to a waypoint's centre before turning toward the next. The map is tile-based with narrow doorways; the old coarse tolerance (0.5) let units turn half a tile early, cutting angled paths that clipped solid tiles. Reaching centre keeps trajectories aligned to the grid-laid waypoint links.
 
@@ -341,7 +341,7 @@ Keeps wandering droids from jamming against each other or walls, adapted from th
 
 > Known limitations (flagged in `ai_manager.cpp`, not yet solved):
 > - **Straight-line reachability.** `pathClear` is a single line-of-sight cast, so interior geometry (pillars, tables, stub walls) can make a trivially-reachable waypoint fail the cast when the direct line clips it. The real fix is routing over the waypoint graph (BFS/A* on `adjacency_`) or intermediate steering points; wall sliding mitigates most cases meanwhile.
-> - **Door tiles** are currently plain `CATEGORY_STATIC` and so block the cast; they want their own category so a unit's cast ignores an open door while a projectile still respects a closed one.
+> - **Door tiles** have their own `CATEGORY_DOOR` and an `includeDoors` flag on `pathClear`: pathfinding casts exclude doors (a unit doesn't reroute around a door that opens on proximity), while firing/sight casts include them (a closed door blocks the shot and the sightline; an open door clears its filter and doesn't).
 > - **Unit ranking.** Casts exclude other units outright rather than ranking/soft-avoiding paths that pass near them.
 
 > Earlier iterations "stunned" the unit (held position on contact, retreated only after a frustration counter). That was removed: in a cluster, contacts with several different obstacles refreshed the stun every frame and reset the counter, locking units permanently. The rule of thumb is *stop moving toward the collision, not stop moving altogether*.

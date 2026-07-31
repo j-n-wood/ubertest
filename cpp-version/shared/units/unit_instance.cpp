@@ -26,6 +26,18 @@ SectionInstance::~SectionInstance() {
 }
 
 //------------------------------------------------------------------------------
+// Section lookup
+//------------------------------------------------------------------------------
+
+SectionInstance* unit_find_section_by_role(UnitInstance* unit, SectionRole role) {
+    if (!unit) return nullptr;
+    for (auto* s : unit->allSections) {
+        if (s && s->definition && s->definition->role == role) return s;
+    }
+    return nullptr;
+}
+
+//------------------------------------------------------------------------------
 // Motor-joint movement control
 //------------------------------------------------------------------------------
 
@@ -77,6 +89,12 @@ void unit_set_move_target(UnitInstance* unit, Vector2 targetPos, float targetFac
     // enableSleep=false on the body).
     if (b2Body_IsValid(unit->bodyId)) {
         b2Body_SetAwake(unit->bodyId, true);
+    }
+    // Omnidirectional units never orient — their shape reads the same from every side,
+    // so the body facing is pinned to 0 regardless of the requested facing. Enforced here
+    // (the single movement entry point) so it holds for both AI and player control.
+    if (unit->definition && unit->definition->properties.omnidirectional) {
+        targetFacing = 0.0f;
     }
     b2MotorJoint_SetLinearOffset(unit->motorJoint, {targetPos.x, targetPos.y});
     b2MotorJoint_SetAngularOffset(unit->motorJoint, targetFacing);

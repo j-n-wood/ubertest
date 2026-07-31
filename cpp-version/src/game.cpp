@@ -34,6 +34,7 @@ static void game_switch_level(Game* game, int newLevel);
 static void game_change_level(Game* game, int newLevel, const Vector2* target);
 static void game_teleport_player(Game* game, Vector2 targetPos);
 static void game_update_player_rotation(Game* game);
+static void game_update_player_turret(Game* game, float dt);
 static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
@@ -988,10 +989,12 @@ static void game_update_player_fire(Game* game, float dt) {
     if (w.type != WeaponType::Projectile) return;  // beam/area deferred (phase 1)
     if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
 
-    // Aim along the unit's CURRENT facing, not playerDesiredRotation — the body may still
-    // be slewing toward the cursor, so the bolt must leave in the direction it points now.
-    // Forward = {-sin, cos} (inverse of facing_angle_to's atan2(-dx, dz)).
-    float a = b2Rot_GetAngle(b2Body_GetRotation(cu->bodyId));
+    // Aim along the unit's CURRENT firing facing. For a turret unit that's the turret's
+    // (independently-slewed) angle — the turret determines the firing angle — otherwise the
+    // body's current facing (the body may still be slewing toward the cursor, so the bolt
+    // leaves where it points now). Forward = {-sin, cos} (inverse of facing_angle_to).
+    SectionInstance* turret = unit_find_section_by_role(cu, SectionRole::Turret);
+    float a = turret ? turret->facingAngle : b2Rot_GetAngle(b2Body_GetRotation(cu->bodyId));
     float c = cosf(a), s = sinf(a);
     Vector2 dir = {-s, c};
 
@@ -1158,6 +1161,29 @@ static void game_update_player_rotation(Game* game) {
     // movement_tuning.h). Using atan2(dx, dz) previously left the X component
     // negated, so mouse left/right gave reversed facing.
     game->playerDesiredRotation = facing_angle_to(dx, dz);
+}
+
+// Slew the controlled unit's turret/head sections toward the cursor (playerDesiredRotation),
+// mirroring the AI's updateAimingSections so a player-piloted turret droid aims like an AI one.
+// Render-only: sets each aiming section's facingAngle before the unit manager reads it.
+static void game_update_player_turret(Game* game, float dt) {
+    UnitInstance* cu = game_controlled_unit(game);
+    if (!cu || !cu->definition) return;
+    SectionInstance* turret = unit_find_section_by_role(cu, SectionRole::Turret);
+    SectionInstance* head = unit_find_section_by_role(cu, SectionRole::Head);
+    if (!turret && !head) return;
+
+    float perUnit = cu->definition->properties.turretTurnSpeed;
+    float maxStep = (perUnit > 0.0f ? perUnit : TURRET_SLEW_RATE) * dt;
+    auto slew = [&](SectionInstance* sec) {
+        if (!sec) return;
+        float diff = normalize_angle(game->playerDesiredRotation - sec->facingAngle);
+        if (diff > maxStep) diff = maxStep;
+        if (diff < -maxStep) diff = -maxStep;
+        sec->facingAngle = normalize_angle(sec->facingAngle + diff);
+    };
+    slew(turret);
+    slew(head);
 }
 
 //------------------------------------------------------------------------------
@@ -1359,6 +1385,10 @@ void game_update_gameplay(Game* game, float dt) {
         // Remove droids destroyed this step (permanent for the level). This may spawn more
         // explosions (chain reactions) — added to effectManager for next frame.
         game_reap_dead(game);
+
+        // Aim the player-controlled unit's turret/head at the cursor before the manager
+        // reads section facings (AI units are aimed inside aiManager.update above).
+        game_update_player_turret(game, simDt);
 
         // Update unit manager (syncs physics transforms)
         game->unitManager.update(simDt);

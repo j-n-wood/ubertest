@@ -19,7 +19,7 @@
     "visualRadius": 0.0,
     "weapon": 1
   },
-  "proximityRadius": 30.0,
+  "proximityRadius": 3.0,
   "rootSection": {
     "children": [
       {
@@ -30,6 +30,7 @@
           0.0,
           0.1777999997138977
         ],
+        "role": "turret",
         "physics": {
           "angularDamping": 4.0,
           "density": 0.5,

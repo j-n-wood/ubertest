@@ -2,7 +2,7 @@
   "name": "Class 16",
   "id": "droid_class_16",
   "collisionRadius": 0.425,
-  "proximityRadius": 30.000000,
+  "proximityRadius": 10.000000,
   "maxSpeed": 80.000000,
   "acceleration": 400.000000,
   "deceleration": 600.000000,
@@ -42,6 +42,7 @@
         "offset": [-0.000000, 0.000000, 0.304800],
         "localRotation": 0.000000,
         "scale": [1, 1, 1],
+        "role": "turret",
         "physics": {
           "shape": {
             "type": "circle",

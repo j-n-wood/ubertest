@@ -2,7 +2,7 @@
   "name": "Class 20",
   "id": "droid_class_20",
   "collisionRadius": 0.425,
-  "proximityRadius": 36.000000,
+  "proximityRadius": 20.000000,
   "maxSpeed": 250.000000,
   "acceleration": 400.000000,
   "deceleration": 400.000000,
@@ -16,6 +16,7 @@
     "driveType": 1,
     "brainType": 2,
     "hasTurret": false,
+    "fireWhileMoving": true,
     "fireOffset": [0.3, 0.0, 0.0],
     "description": "High security patrol droid. Fitted with powerful sensors to rapidly locate intruders."
   },

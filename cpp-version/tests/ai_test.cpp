@@ -51,6 +51,8 @@ protected:
     UnitDefinition turretDef;
     UnitDefinition omniDef;
     UnitDefinition disruptorDef;
+    UnitDefinition headDef;
+    UnitDefinition fwmDef;
 
     void SetUp() override {
         ASSERT_TRUE(loadWeaponsFromJson(TEST_WEAPONS_JSON));
@@ -88,6 +90,8 @@ protected:
         setupTurretDef();
         setupOmniDef();
         setupDisruptorDef();
+        setupHeadDef();
+        setupFireWhileMovingDef();
     }
 
     void TearDown() override {
@@ -129,13 +133,41 @@ protected:
         turretDef.properties.hasTurret = true;
         turretDef.properties.omnidirectional = false;
         turretDef.properties.visualRadius = 15.0f;
-        // Add a FollowFacing section for the head
+        // Add a turret-role section (the aiming part that drives the firing angle).
+        // Role implies FollowFacing; set the rotationMode too since the fixture builds
+        // the definition directly rather than via the JSON loader (which coerces it).
         turretDef.rootSection.name = "body";
         turretDef.rootSection.rotationMode = SectionRotationMode::FollowUnit;
         SectionDefinition headSection;
         headSection.name = "head";
+        headSection.role = SectionRole::Turret;
         headSection.rotationMode = SectionRotationMode::FollowFacing;
         turretDef.rootSection.children.push_back(std::move(headSection));
+    }
+
+    void setupHeadDef() {
+        headDef.name = "head";
+        headDef.id = "head";
+        headDef.collisionRadius = 0.5f;
+        headDef.proximityRadius = 8.0f;
+        headDef.properties.weapon = 0;
+        headDef.properties.visualRadius = 15.0f;
+        headDef.rootSection.name = "body";
+        SectionDefinition sensor;
+        sensor.name = "sensor";
+        sensor.role = SectionRole::Head;
+        sensor.rotationMode = SectionRotationMode::FollowFacing;
+        headDef.rootSection.children.push_back(std::move(sensor));
+    }
+
+    void setupFireWhileMovingDef() {
+        fwmDef.name = "fwm";
+        fwmDef.id = "fwm";
+        fwmDef.collisionRadius = 0.5f;
+        fwmDef.proximityRadius = 8.0f;
+        fwmDef.properties.weapon = 0;
+        fwmDef.properties.fireWhileMoving = true;
+        fwmDef.properties.visualRadius = 15.0f;
     }
 
     void setupOmniDef() {
@@ -436,8 +468,9 @@ TEST_F(AITestFixture, StandardDroidHaltsToFire) {
     EXPECT_LT(speed, 1.0f) << "Standard droid should be nearly halted within optimum range";
 }
 
-TEST_F(AITestFixture, TurretDroidFiresWhileMoving) {
-    // Turret droid at waypoint 1, player at (12, 0)
+TEST_F(AITestFixture, TurretDroidTracksHeadWhileApproaching) {
+    // Turret droid at waypoint 1 (5,0), player beyond optimum range (10) at (20,0): the
+    // droid is still approaching, so it keeps moving while the turret tracks the player.
     UnitInstance unit;
     initSingleEnemy(unit, turretDef, 1, -10);
 
@@ -445,36 +478,53 @@ TEST_F(AITestFixture, TurretDroidFiresWhileMoving) {
     ai.state = AIState::Chase;
     ai.hostile = true;
 
-    Vector2 playerPos = {12.0f, 0.0f};
+    Vector2 playerPos = {20.0f, 0.0f};  // dist 15 > optimumRange 10 → approaching, not halting
 
-    // Run several ticks to build velocity
     for (int i = 0; i < 30; i++) {
         aiManager.update(0.016f, playerPos, worldId, &projectiles);
         step(0.016f);
     }
 
-    // Turret droid should be moving (velocity > 0)
+    // Still closing the distance, so the body is moving.
     b2Vec2 vel = b2Body_GetLinearVelocity(unit.bodyId);
     float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
-    EXPECT_GT(speed, 0.1f) << "Turret droid should keep moving while chasing";
+    EXPECT_GT(speed, 0.1f) << "Turret droid should keep moving while still approaching";
 
-    // Head section should be tracking player (facingAngle set)
-    bool headTracking = false;
-    for (auto* section : unit.allSections) {
-        if (section->definition &&
-            section->definition->rotationMode == SectionRotationMode::FollowFacing) {
-            headTracking = true;
-            // Head should track the player. Compare against the shared facing
-            // convention rather than a hard-coded angle so the test stays valid
-            // regardless of the internal angle convention.
-            b2Vec2 up = b2Body_GetPosition(unit.bodyId);
-            float expected = facing_angle_to(playerPos.x - up.x, playerPos.y - up.y);
-            EXPECT_NEAR(section->facingAngle, expected, 0.35f)
-                << "Turret head should face the player";
-            break;
-        }
+    // Head (turret) section should be tracking the player.
+    ASSERT_NE(ai.turretSection, nullptr);
+    b2Vec2 up = b2Body_GetPosition(unit.bodyId);
+    float expected = facing_angle_to(playerPos.x - up.x, playerPos.y - up.y);
+    EXPECT_NEAR(ai.turretSection->facingAngle, expected, 0.35f)
+        << "Turret head should track the player";
+}
+
+TEST_F(AITestFixture, TurretDroidHaltsToFire) {
+    // Turret droid WITHOUT fireWhileMoving stops to fire once inside optimum range — the
+    // general case (only fireWhileMoving/omnidirectional units keep moving).
+    UnitInstance unit;
+    initSingleEnemy(unit, turretDef, 1, -10);
+
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    Vector2 playerPos = {8.0f, 0.0f};  // dist 3 < optimumRange 10
+
+    for (int i = 0; i < 10; i++) {
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
     }
-    EXPECT_TRUE(headTracking) << "Turret droid should have a FollowFacing head section";
+
+    b2Vec2 vel = b2Body_GetLinearVelocity(unit.bodyId);
+    float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
+    EXPECT_LT(speed, 1.0f) << "Turret droid should halt within optimum range to fire";
+
+    // The turret still tracks the player even while the body is stopped.
+    ASSERT_NE(ai.turretSection, nullptr);
+    b2Vec2 up = b2Body_GetPosition(unit.bodyId);
+    float expected = facing_angle_to(playerPos.x - up.x, playerPos.y - up.y);
+    EXPECT_NEAR(ai.turretSection->facingAngle, expected, 0.35f)
+        << "Turret head should track the player while halted";
 }
 
 TEST_F(AITestFixture, OmnidirectionalFiresWhileMoving) {
@@ -498,6 +548,77 @@ TEST_F(AITestFixture, OmnidirectionalFiresWhileMoving) {
     b2Vec2 vel = b2Body_GetLinearVelocity(unit.bodyId);
     float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
     EXPECT_GT(speed, 0.1f) << "Omnidirectional droid should keep moving while chasing";
+}
+
+TEST_F(AITestFixture, FireWhileMovingUnitDoesNotHalt) {
+    // A fireWhileMoving unit (type 20) does NOT halt inside optimum range the way a
+    // standard droid does — it keeps maneuvering while shooting.
+    UnitInstance unit;
+    initSingleEnemy(unit, fwmDef, 1, -10);  // at (5, 0)
+
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    Vector2 playerPos = {8.0f, 0.0f};  // dist 3 < optimumRange 10 (would halt a standard droid)
+
+    for (int i = 0; i < 30; i++) {
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
+    }
+
+    b2Vec2 vel = b2Body_GetLinearVelocity(unit.bodyId);
+    float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
+    EXPECT_GT(speed, 0.1f) << "fireWhileMoving droid should keep moving inside optimum range";
+}
+
+TEST_F(AITestFixture, OmnidirectionalHoldsZeroFacing) {
+    // Redefined omnidirectional: the body never orients, it is pinned to angle 0 even
+    // while chasing a player that is off-axis.
+    UnitInstance unit;
+    initSingleEnemy(unit, omniDef, 1, -10);  // at (5, 0)
+
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    Vector2 playerPos = {5.0f, 5.0f};  // off the zero-facing axis
+
+    for (int i = 0; i < 30; i++) {
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
+    }
+
+    float angle = b2Rot_GetAngle(b2Body_GetRotation(unit.bodyId));
+    EXPECT_NEAR(angle, 0.0f, 0.15f) << "Omnidirectional body facing should stay at 0";
+}
+
+TEST_F(AITestFixture, HeadUnitIgnoresTargetBehind) {
+    // A head unit only detects a player inside its forward vision cone. The head starts
+    // facing angle 0 (forward = +Y); a player directly behind (−Y) must go unnoticed.
+    UnitInstance unit;
+    initSingleEnemy(unit, headDef, 1, -10);  // at (5, 0)
+
+    auto& ai = aiManager.components()[0];
+    ASSERT_TRUE(ai.hasHead);
+
+    Vector2 behind = {5.0f, -5.0f};  // within detectionRadius 8 but behind the head
+    aiManager.update(0.016f, behind, worldId, nullptr);
+
+    EXPECT_EQ(ai.state, AIState::Patrol) << "Head unit should not see a target behind it";
+}
+
+TEST_F(AITestFixture, HeadUnitDetectsTargetInFront) {
+    UnitInstance unit;
+    initSingleEnemy(unit, headDef, 1, -10);  // at (5, 0)
+
+    auto& ai = aiManager.components()[0];
+    ASSERT_TRUE(ai.hasHead);
+
+    Vector2 front = {5.0f, 5.0f};  // within detectionRadius 8 and in front (+Y)
+    aiManager.update(0.016f, front, worldId, nullptr);
+
+    EXPECT_EQ(ai.state, AIState::Chase) << "Head unit should detect a target in its forward cone";
 }
 
 //------------------------------------------------------------------------------
@@ -528,6 +649,108 @@ TEST_F(AITestFixture, AreaWeaponDeferredThisPhase) {
 }
 
 //------------------------------------------------------------------------------
+// Line-of-sight uses the projectile width, not the droid body
+//------------------------------------------------------------------------------
+
+// Build a static wall box centred at `c` with half-extents (hx, hy).
+static void makeWall(b2WorldId worldId, Vector2 c, float hx, float hy) {
+    b2BodyDef bd = b2DefaultBodyDef();
+    bd.type = b2_staticBody;
+    bd.position = {c.x, c.y};
+    b2BodyId w = b2CreateBody(worldId, &bd);
+    b2Polygon box = b2MakeBox(hx, hy);
+    b2ShapeDef sd = b2DefaultShapeDef();
+    sd.filter.categoryBits = CATEGORY_STATIC;
+    sd.filter.maskBits = 0xFFFF;
+    b2CreatePolygonShape(w, &sd, &box);
+}
+
+TEST_F(AITestFixture, FiresThroughGapNarrowerThanBody) {
+    // Droid at (0,0) facing +Y, player at (0,4). Two walls at y=2 leave a 0.4-wide gap at
+    // x∈[-0.2,0.2] — wider than the bolt (radius 0.1) but far narrower than the droid body
+    // (radius 0.5). The fire LOS must use the projectile width, so the shot goes through.
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);  // waypoint 0 = (0,0), identity rotation (faces +Y)
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    makeWall(worldId, {-1.2f, 2.0f}, 1.0f, 0.5f);
+    makeWall(worldId, { 1.2f, 2.0f}, 1.0f, 0.5f);
+
+    Vector2 playerPos = {0.0f, 4.0f};
+    aiManager.update(0.016f, playerPos, worldId, &projectiles);
+
+    EXPECT_GT(projectiles.activeCount(), 0)
+        << "A thin bolt should fire through a gap the droid body can't fit through";
+}
+
+TEST_F(AITestFixture, HoldsFireWhenWallFullyBlocksSightline) {
+    // Same setup but a solid wall spans the whole sightline — no gap, so it holds fire.
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    makeWall(worldId, {0.0f, 2.0f}, 3.0f, 0.5f);  // solid across the line of fire
+
+    Vector2 playerPos = {0.0f, 4.0f};
+    aiManager.update(0.016f, playerPos, worldId, &projectiles);
+
+    EXPECT_EQ(projectiles.activeCount(), 0)
+        << "A wall across the sightline should hold fire";
+}
+
+// Build a door box with the same filter the DoorManager uses: category CATEGORY_DOOR, and
+// maskBits MASK_DOOR_SOLID when closed / 0 when open.
+static void makeDoor(b2WorldId worldId, Vector2 c, float hx, float hy, bool closed) {
+    b2BodyDef bd = b2DefaultBodyDef();
+    bd.type = b2_staticBody;
+    bd.position = {c.x, c.y};
+    b2BodyId w = b2CreateBody(worldId, &bd);
+    b2Polygon box = b2MakeBox(hx, hy);
+    b2ShapeDef sd = b2DefaultShapeDef();
+    sd.filter.categoryBits = CATEGORY_DOOR;
+    sd.filter.maskBits = closed ? MASK_DOOR_SOLID : 0;
+    b2CreatePolygonShape(w, &sd, &box);
+}
+
+TEST_F(AITestFixture, HoldsFireWhenClosedDoorBlocksSightline) {
+    // A CLOSED door across the sightline blocks fire (firing LOS includes doors).
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    makeDoor(worldId, {0.0f, 2.0f}, 3.0f, 0.5f, /*closed=*/true);
+
+    Vector2 playerPos = {0.0f, 4.0f};
+    aiManager.update(0.016f, playerPos, worldId, &projectiles);
+
+    EXPECT_EQ(projectiles.activeCount(), 0)
+        << "A closed door should block the firing line of sight";
+}
+
+TEST_F(AITestFixture, FiresThroughOpenDoor) {
+    // An OPEN door clears its filter, so it does not block fire.
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    makeDoor(worldId, {0.0f, 2.0f}, 3.0f, 0.5f, /*closed=*/false);
+
+    Vector2 playerPos = {0.0f, 4.0f};
+    aiManager.update(0.016f, playerPos, worldId, &projectiles);
+
+    EXPECT_GT(projectiles.activeCount(), 0)
+        << "An open door should not block fire";
+}
+
+//------------------------------------------------------------------------------
 // Disengage test
 //------------------------------------------------------------------------------
 
@@ -540,11 +763,61 @@ TEST_F(AITestFixture, DisengageOnVisualRangeLost) {
     ai.state = AIState::Chase;
     ai.hostile = true;
 
-    // Player far beyond visual range
+    // Player far beyond visual range: out of sight, so it gives up after the lose-sight
+    // timeout (not immediately).
     Vector2 playerPos = {100.0f, 100.0f};
 
-    aiManager.update(0.016f, playerPos, worldId, nullptr);
+    int frames = static_cast<int>(AI_LOSE_SIGHT_TIME / 0.016f) + 5;  // just past 2 s
+    for (int i = 0; i < frames; i++) {
+        aiManager.update(0.016f, playerPos, worldId, nullptr);
+    }
 
+    EXPECT_EQ(ai.state, AIState::Patrol);
+    EXPECT_FALSE(ai.hostile);
+}
+
+TEST_F(AITestFixture, StaysHostileWhileSightMaintained) {
+    // Player in clear view the whole time: the unit never gives up.
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);  // at (0,0)
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    Vector2 playerPos = {0.0f, 4.0f};  // in range, clear line of sight
+    for (int i = 0; i < 200; i++) {    // 3.2 s
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
+    }
+
+    EXPECT_EQ(ai.state, AIState::Chase);
+    EXPECT_TRUE(ai.hostile);
+}
+
+TEST_F(AITestFixture, LosesHostilityAfterLostSightTimeout) {
+    // Player is in range but a wall breaks the line of sight. The unit holds the chase
+    // briefly, then reverts to Patrol once AI_LOSE_SIGHT_TIME elapses.
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);  // at (0,0)
+    auto& ai = aiManager.components()[0];
+    ai.state = AIState::Chase;
+    ai.hostile = true;
+
+    makeWall(worldId, {0.0f, 2.0f}, 3.0f, 0.5f);  // blocks LOS to the player at (0,4)
+    Vector2 playerPos = {0.0f, 4.0f};
+
+    // Just under the timeout — still chasing.
+    for (int i = 0; i < 100; i++) {  // 1.6 s
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
+    }
+    EXPECT_EQ(ai.state, AIState::Chase) << "Should still pursue within the grace window";
+
+    // Past the timeout — gives up and does not re-detect through the wall.
+    for (int i = 0; i < 40; i++) {  // +0.64 s → 2.24 s total
+        aiManager.update(0.016f, playerPos, worldId, &projectiles);
+        step(0.016f);
+    }
     EXPECT_EQ(ai.state, AIState::Patrol);
     EXPECT_FALSE(ai.hostile);
 }
@@ -581,18 +854,22 @@ TEST_F(AITestFixture, FleeSelectsWaypointAwayFromPlayer) {
 // Collision response tests
 //------------------------------------------------------------------------------
 
-TEST_F(AITestFixture, CollisionRedirectsNonHostileToPriorWaypoint) {
+TEST_F(AITestFixture, CollisionReversesCourseToCurrentWaypoint) {
     UnitInstance unit;
-    initSingleEnemy(unit, armedDef, 1, -10);
+    initSingleEnemy(unit, armedDef, 1, -10);  // currentWaypoint = 1
     auto& ai = aiManager.components()[0];
     ai.hostile = false;
-    ai.previousWaypoint = 0;  // came from waypoint 0
-    ai.targetWaypoint = 2;    // heading toward waypoint 2
+    ai.currentWaypoint = 1;   // came from waypoint 1
+    ai.previousWaypoint = 0;
+    ai.targetWaypoint = 2;    // heading toward waypoint 2 (edge 1->2)
 
     UnitInstance other;  // dummy collision partner (identity only)
     aiManager.onCollision(&unit, &other);
 
-    EXPECT_EQ(ai.targetWaypoint, 0) << "Collision should redirect toward the prior waypoint";
+    // Reverse along the edge we're on: head back to waypoint 1 (a valid path), not to the
+    // prior waypoint 0 (off the current edge) or a fresh reselection.
+    EXPECT_EQ(ai.targetWaypoint, 1) << "Collision should reverse course to the current waypoint";
+    EXPECT_EQ(ai.previousWaypoint, 2) << "Blocked target is biased against on the next pick";
     EXPECT_GT(ai.collideCooldown, 0.0f) << "Redirect decision is debounced";
 }
 
@@ -601,29 +878,30 @@ TEST_F(AITestFixture, CollisionCooldownDebouncesRedirect) {
     initSingleEnemy(unit, armedDef, 1, -10);
     auto& ai = aiManager.components()[0];
     ai.hostile = false;
+    ai.currentWaypoint = 1;
     ai.previousWaypoint = 0;
     ai.targetWaypoint = 2;
 
     UnitInstance other;
-    aiManager.onCollision(&unit, &other);  // redirect -> target 0, cooldown armed
+    aiManager.onCollision(&unit, &other);  // reverse -> target 1, cooldown armed
     ai.targetWaypoint = 2;                 // pretend AI re-picked 2
     aiManager.onCollision(&unit, &other);  // within cooldown -> ignored
 
     EXPECT_EQ(ai.targetWaypoint, 2) << "A second collision within the cooldown is ignored";
 }
 
-TEST_F(AITestFixture, CollisionWithoutPriorWaypointForcesReselect) {
+TEST_F(AITestFixture, CollisionWithoutCurrentWaypointForcesReselect) {
     UnitInstance unit;
     initSingleEnemy(unit, armedDef, 1, -10);
     auto& ai = aiManager.components()[0];
     ai.hostile = false;
-    ai.previousWaypoint = -1;  // no prior waypoint
+    ai.currentWaypoint = -1;   // knocked off the graph — no edge to reverse along
     ai.targetWaypoint = 2;
 
     UnitInstance other;
     aiManager.onCollision(&unit, &other);
 
-    EXPECT_EQ(ai.targetWaypoint, -1) << "With no prior waypoint the target is dropped for reselection";
+    EXPECT_EQ(ai.targetWaypoint, -1) << "With no current waypoint the target is dropped for reselection";
 }
 
 TEST_F(AITestFixture, StuckUnitAbandonsBlockedRoute) {

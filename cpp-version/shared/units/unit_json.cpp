@@ -105,6 +105,8 @@ DroidProperties parseDroidProperties(const json& j) {
     props.brainType   = j.value("brainType", 0);
     props.hasTurret       = j.value("hasTurret", false);
     props.omnidirectional = j.value("omnidirectional", false);
+    props.fireWhileMoving = j.value("fireWhileMoving", false);
+    props.turretTurnSpeed = j.value("turretTurnSpeed", 0.0f);
     props.visualRadius    = j.value("visualRadius", 0.0f);
     if (j.contains("fireOffset")) {
         props.fireOffset = parseVector3(j["fireOffset"], {0, 0, 0});
@@ -125,6 +127,8 @@ json droidPropertiesToJson(const DroidProperties& props) {
     j["brainType"]   = props.brainType;
     j["hasTurret"]       = props.hasTurret;
     j["omnidirectional"] = props.omnidirectional;
+    if (props.fireWhileMoving) j["fireWhileMoving"] = props.fireWhileMoving;
+    if (props.turretTurnSpeed != 0.0f) j["turretTurnSpeed"] = props.turretTurnSpeed;
     j["visualRadius"]    = props.visualRadius;
     if (props.fireOffset.x != 0 || props.fireOffset.y != 0 || props.fireOffset.z != 0) {
         j["fireOffset"] = vector3ToJson(props.fireOffset);
@@ -233,6 +237,20 @@ std::string rotationModeToString(SectionRotationMode mode) {
     }
 }
 
+SectionRole parseSectionRole(const std::string& str) {
+    if (str == "turret") return SectionRole::Turret;
+    if (str == "head") return SectionRole::Head;
+    return SectionRole::None;
+}
+
+std::string sectionRoleToString(SectionRole role) {
+    switch (role) {
+        case SectionRole::Turret: return "turret";
+        case SectionRole::Head: return "head";
+        default: return "none";
+    }
+}
+
 void parseSection(const json& j, SectionDefinition& section) {
     section.name = j.value("name", "");
     section.modelPath = j.value("model", "");
@@ -250,6 +268,18 @@ void parseSection(const json& j, SectionDefinition& section) {
     if (j.contains("rotationMode")) {
         section.rotationMode = parseRotationMode(j["rotationMode"].get<std::string>());
     }
+
+    // Parse role (turret/head). A non-None role implies FollowFacing — the section
+    // slews toward an aim angle — so force it here regardless of any rotationMode.
+    if (j.contains("role")) {
+        section.role = parseSectionRole(j["role"].get<std::string>());
+        if (section.role != SectionRole::None) {
+            section.rotationMode = SectionRotationMode::FollowFacing;
+        }
+    }
+
+    // GLTF idle/move animation marker.
+    section.animMoving = j.value("animMoving", false);
 
     // Physics (used for debris when unit is dismantled)
     if (j.contains("physics")) {
@@ -287,9 +317,17 @@ json sectionToJson(const SectionDefinition& section) {
         j["scale"] = vector3ToJson(section.scale);
     }
 
-    // Output rotation mode if not default
-    if (section.rotationMode != SectionRotationMode::FollowUnit) {
+    // Role (turret/head). Written instead of rotationMode when set — role implies
+    // FollowFacing, so the explicit rotationMode would be redundant.
+    if (section.role != SectionRole::None) {
+        j["role"] = sectionRoleToString(section.role);
+    } else if (section.rotationMode != SectionRotationMode::FollowUnit) {
+        // Output rotation mode if not default
         j["rotationMode"] = rotationModeToString(section.rotationMode);
+    }
+
+    if (section.animMoving) {
+        j["animMoving"] = true;
     }
 
     // Physics (used for debris when unit is dismantled)

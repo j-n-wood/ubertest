@@ -2,7 +2,7 @@
   "name": "Class 14",
   "id": "droid_class_14",
   "collisionRadius": 0.425,
-  "proximityRadius": 30.000000,
+  "proximityRadius": 7.000000,
   "maxSpeed": 120.000000,
   "acceleration": 300.000000,
   "deceleration": 600.000000,
@@ -21,6 +21,7 @@
   "rootSection": {
     "name": "section_0",
     "model": "models/legs.glb",
+    "animMoving": true,
     "offset": [-0.000000, 0.000000, 0.000000],
     "localRotation": 0.000000,
     "scale": [1, 1, 1],
