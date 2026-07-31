@@ -17,6 +17,7 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/combat/beam_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/effects/effect_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/particles/particle_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/ai/ai_manager.cpp

@@ -2,7 +2,7 @@
   {
     "id": 0,
     "name": "Plasma Bolt",
-    "damage": 11.0,
+    "damage": 20.599,
     "speed": 10.0,
     "fireRate": 0.8,
     "maxRange": 12.0,
@@ -14,11 +14,11 @@
   {
     "id": 1,
     "name": "Gas Axe",
-    "damage": 3.5,
+    "damage": 21.0,
     "speed": 12.5,
     "fireRate": 1.2,
-    "maxRange": 7.5,
-    "optimumRange": 5.0,
+    "maxRange": 2.5,
+    "optimumRange": 1.75,
     "type": "beam",
     "damageType": "cutter",
     "twin": false
@@ -99,11 +99,11 @@
   {
     "id": 8,
     "name": "Exterminator",
-    "damage": 6.0,
+    "damage": 60.0,
     "speed": 12.5,
     "fireRate": 1.2,
-    "maxRange": 8.5,
-    "optimumRange": 8.5,
+    "maxRange": 3.2,
+    "optimumRange": 3.0,
     "type": "beam",
     "damageType": "cutter",
     "twin": false

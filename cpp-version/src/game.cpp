@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include "rlgl.h"
 #include <algorithm>
 #include <filesystem>
 #include <random>
@@ -229,6 +230,19 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     gTextures().loadFile(TEX_ASMD, game->assetPath + "/textures/effects/asmd4x1.png");
     // Explosion effect animation (8x1 sheet). See docs/effects.md.
     gTextures().loadFile(TEX_RLBOOM, game->assetPath + "/textures/effects/rlboom.png");
+    // Beam weapon frame sets (3 frames each, weapon 1 = plasma, weapon 8 = lightning). The
+    // beam quad tiles the texture along its length, so set REPEAT wrap on each frame.
+    {
+        const char* beamFiles[] = {
+            "beam_plasma_0.png", "beam_plasma_1.png", "beam_plasma_2.png",
+            "beam_lightning_0.png", "beam_lightning_1.png", "beam_lightning_2.png",
+        };
+        for (int i = 0; i < 6; ++i) {
+            TextureId id = (TextureId)(TEX_BEAM_PLASMA_0 + i);
+            if (gTextures().loadFile(id, game->assetPath + "/textures/effects/" + beamFiles[i]))
+                SetTextureWrap(gTextures().get(id), TEXTURE_WRAP_REPEAT);
+        }
+    }
     // Player weapon state (the device's plasma bolt; re-inited if a captured unit is armed).
     if (game->playerUnit && game->playerUnit->definition) {
         game->playerWeapon = initWeaponState(game->playerUnit->definition->properties);
@@ -986,12 +1000,10 @@ static void game_update_player_fire(Game* game, float dt) {
 
     if (!game->input.fire) return;
     const WeaponDefinition& w = game->playerWeapon.definition;
-    if (w.type != WeaponType::Projectile) return;  // beam/area deferred (phase 1)
-    if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
 
     // Aim along the unit's CURRENT firing facing. For a turret unit that's the turret's
     // (independently-slewed) angle — the turret determines the firing angle — otherwise the
-    // body's current facing (the body may still be slewing toward the cursor, so the bolt
+    // body's current facing (the body may still be slewing toward the cursor, so the shot
     // leaves where it points now). Forward = {-sin, cos} (inverse of facing_angle_to).
     SectionInstance* turret = unit_find_section_by_role(cu, SectionRole::Turret);
     float a = turret ? turret->facingAngle : b2Rot_GetAngle(b2Body_GetRotation(cu->bodyId));
@@ -1000,7 +1012,7 @@ static void game_update_player_fire(Game* game, float dt) {
 
     b2Vec2 bp = b2Body_GetPosition(cu->bodyId);
     // Fire offset (facing-relative: x = lateral, y = forward), clamped to the unit's collision
-    // radius so a stray/old-data offset can't spawn the bolt inside a wall.
+    // radius so a stray/old-data offset can't spawn the shot inside a wall.
     Vector2 off2d = {cu->definition->properties.fireOffset.x,
                      cu->definition->properties.fireOffset.y};
     float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
@@ -1012,6 +1024,19 @@ static void game_update_player_fire(Game* game, float dt) {
     auto spawnFrom = [&](Vector2 o) {
         return Vector2{bp.x + o.x * c - o.y * s, bp.y + o.x * s + o.y * c};
     };
+
+    // Beam weapons: fire continuously while held (no fire-rate gate), damaging every enemy
+    // the line passes through up to the first wall. Damage accumulates via the realtime
+    // damage tick. Other weapons spawn a projectile gated by the cooldown.
+    if (w.type == WeaponType::Beam) {
+        game->beamManager.fire(game->physics.world_id, spawnFrom(off2d), a, w.maxRange,
+                               w.damage, dt, cu, game->enemyUnits.data(),
+                               game->enemyUnits.size(), w.id);
+        return;
+    }
+    if (w.type != WeaponType::Projectile) return;  // area/instant deferred
+    if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
+
     float lifetime = (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
     game->projectileManager.spawn(game->physics.world_id, spawnFrom(off2d), dir,
                                   w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
@@ -1340,17 +1365,25 @@ void game_update_gameplay(Game* game, float dt) {
     if (!game->paused) {
         float simDt = game->slowMotion ? dt * 0.1f : dt;
 
+        // Beams are transient (only exist the frame they're fired): clear last frame's set
+        // before AI and player firing register this frame's beams.
+        game->beamManager.beginFrame();
+
         // Update AI (applies forces before physics step)
         if (game->playerUnit && game->playerUnit->rootSection) {
             b2Vec2 pp = b2Body_GetPosition(game->playerUnit->bodyId);
             Vector2 playerPos2D = {pp.x, pp.y};
             game->aiManager.update(simDt, playerPos2D,
                                    game->physics.world_id,
-                                   &game->projectileManager);
+                                   &game->projectileManager,
+                                   &game->beamManager, game->playerUnit);
         }
 
         // Player weapon firing (LMB) — spawns before the step so bolts move this frame.
         game_update_player_fire(game, simDt);
+
+        // Advance the shared beam animation cursor.
+        game->beamManager.update(simDt);
 
         // Step physics
         physics_world_step(&game->physics, simDt);
@@ -1613,6 +1646,45 @@ void game_render_gameplay(Game* game) {
 
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
+
+    // Beams: additive quads laid flat in the ground plane along each active beam. The frame
+    // texture (plasma for weapon 1, lightning for weapon 8) TILES along the beam length — the
+    // V texcoord runs 0..length/BEAM_TILE_WORLD with REPEAT wrap, so a beam truncated by a
+    // wall truncates the texture (no stretching). U runs 0..1 across BEAM_HALF_WIDTH*2. The
+    // source images are 32x64 vertical strips, so mapping the 64px (height) axis to V lays
+    // them lengthwise along the beam. Frame cursor is the manager's shared animFrame().
+    {
+        const auto& beams = game->beamManager.beams();
+        if (!beams.empty()) {
+            int frame = game->beamManager.animFrame();
+            BeginBlendMode(BLEND_ADDITIVE);
+            rlDisableBackfaceCulling();  // ground-plane quad — visible from the top-down camera
+            for (const Beam& b : beams) {
+                if (b.length <= 0.0f) continue;
+                TextureId base = (b.weaponId == 8) ? TEX_BEAM_LIGHTNING_0 : TEX_BEAM_PLASMA_0;
+                Texture2D tex = gTextures().get((TextureId)(base + (frame % BEAM_FRAME_COUNT)));
+                if (tex.id == 0) continue;
+                float s = sinf(b.angle), c = cosf(b.angle);
+                Vector2 dir = {-s, c};              // beam direction in the XZ ground plane
+                Vector2 nrm = {dir.y, -dir.x};      // perpendicular (across the beam width)
+                float hw = BEAM_HALF_WIDTH;
+                Vector2 e = {b.origin.x + dir.x * b.length, b.origin.y + dir.y * b.length};
+                float vlen = b.length / BEAM_TILE_WORLD;   // tiles; truncates with length
+                float h = BEAM_HEIGHT;
+                rlSetTexture(tex.id);
+                rlBegin(RL_QUADS);
+                rlColor4ub(255, 255, 255, 255);
+                rlTexCoord2f(0.0f, 0.0f);  rlVertex3f(b.origin.x + nrm.x*hw, h, b.origin.y + nrm.y*hw);
+                rlTexCoord2f(1.0f, 0.0f);  rlVertex3f(b.origin.x - nrm.x*hw, h, b.origin.y - nrm.y*hw);
+                rlTexCoord2f(1.0f, vlen);  rlVertex3f(e.x - nrm.x*hw,        h, e.y - nrm.y*hw);
+                rlTexCoord2f(0.0f, vlen);  rlVertex3f(e.x + nrm.x*hw,        h, e.y + nrm.y*hw);
+                rlEnd();
+                rlSetTexture(0);
+            }
+            rlEnableBackfaceCulling();
+            EndBlendMode();
+        }
+    }
 
     // Projectiles: additive glow billboards, drawn above the sim (render-only, like
     // doors/chargers). The physics radius is PROJECTILE_RADIUS (0.1); the flare is a

@@ -9,11 +9,10 @@ unit" means) and [scoring.md](scoring.md) (kills award score).
 ## Phase 1 scope
 
 This phase covers **projectile** weapons: weapon 0 (Plasma Bolt, the device/class 0) plus the
-laser bolts weapons 2 (Laser Rifle) and 4 (Rapid Laser) carried by combat droids. Beam / area
-/ instant weapons, floor "marks"
-(`mark_radius`/splash), per-weapon colour/light, and particle systems are later phases —
-non-projectile weapon types are parsed but do not fire yet (they're gated off in both the
-player and AI fire paths so they don't consume cooldown or spawn bad projectiles).
+laser bolts weapons 2 (Laser Rifle) and 4 (Rapid Laser) carried by combat droids. **Beam**
+weapons (1 Gas Axe, 8 Exterminator) are also live — see "Beam weapons" below. Area / instant
+weapons, floor "marks" (`mark_radius`/splash), per-weapon colour/light, and particle systems
+are later phases — those non-firing weapon types are parsed but gated off in both fire paths.
 
 ## Data (`weapons.json`)
 
@@ -110,6 +109,35 @@ Because the projectiles live in a `std::vector` that reallocates on growth and c
 without this a projectile spawned after a reallocation is never recognised on contact and
 never deactivates (it bounces off units / lodges in wall corners).
 
+## Beam weapons
+
+Beam weapons (`WeaponType::Beam`: weapon 1 Gas Axe, weapon 8 Exterminator) are an
+instantaneous **hitscan line**, not a moving body. `BeamManager` (`shared/combat/beam_manager.{h,cpp}`)
+is the sim layer, mirroring the door/charger/projectile split — the game draws (see Rendering).
+
+- **Firing point & direction.** The line starts at the firing unit's muzzle (body centre +
+  `fireOffset`, rotated and clamped like a projectile) and runs along the **firing section's
+  facing** — the turret's `facingAngle` if the unit has a turret, else the body facing. Because
+  the direction is recomputed each frame, the beam **sweeps** as the section turns to aim.
+- **Length / blocking.** `castLength` ray-casts from the muzzle out to `maxRange`, clipping to
+  the first solid object — walls and **closed** doors (`CATEGORY_STATIC | CATEGORY_DOOR`; an open
+  door clears its filter and doesn't block). The beam length is `min(maxRange, distance-to-wall)`.
+- **Damage.** Every unit whose body the segment passes through (perpendicular distance ≤ its
+  `collisionRadius + BEAM_HALF_WIDTH`, projection within `[0, length]`) takes damage — the beam
+  is **not** stopped by units, only walls. Damage is **continuous**: `damage` is treated as a
+  per-second rate and fed through the shared realtime-damage accumulator
+  (`accumulateRealtimeDamage`, flushed on the 0.1 s tick by `UnitManager::update`) — the **same
+  path explosions use**. So **`fireRate` is irrelevant** for beams; they damage continuously
+  while held, with no cooldown. The firing unit is excluded. Player beams damage enemy units; AI
+  beams damage the player unit.
+  > **Tuning note.** Because armour is a flat reduction applied *per 0.1 s flush*, a beam only
+  > hurts a unit when `damage × 0.1 > armour` — i.e. armour behaves as a DPS threshold of
+  > ~`armour × 10`. The shipped `damage` values (3.5 / 6.0) are low as DPS; tune them up via the
+  > F4 weapon editor for the beam to bite through armour.
+- **Lifetime.** Beams are transient: `beginFrame()` clears them at the top of the sim block,
+  each active firer calls `fire()` that frame, `update(dt)` advances the shared animation cursor.
+  A beam that isn't re-fired simply isn't drawn next frame.
+
 ## Rendering
 
 Render-only, in `game_render_gameplay` inside `BeginMode3D` after `unitManager.renderAll()`,
@@ -144,15 +172,28 @@ In **V mode** (`showAIDebug`) an opaque magenta `DrawSphere` is drawn at each pr
 render position — an unmissable marker to distinguish a missing/washed-out additive sprite
 from a bad position or a projectile that dies on contact after only a frame or two.
 
+**Beams** are drawn (in `game_render_gameplay`, inside `BeginMode3D`) as **additive quads laid
+flat in the ground plane** along each active beam from `BeamManager::beams()` — not billboards.
+The frame set is chosen by weapon id (weapon 1 → `TEX_BEAM_PLASMA_*`, weapon 8 →
+`TEX_BEAM_LIGHTNING_*`), cycled through 3 frames at `BEAM_ANIM_FPS` (10) via the manager's shared
+`animFrame()`. The source images are **32×64 vertical strips**; the quad maps the 64-px (height)
+axis to the beam **length** (V texcoord) and the 32-px axis across the **width** (U), so the strip
+runs lengthwise. The V coord runs `0 .. length / BEAM_TILE_WORLD` with `TEXTURE_WRAP_REPEAT` (set
+at load), so the texture **tiles** one image per world unit and a wall-truncated beam **truncates
+the texcoord** rather than compressing the image. Backface culling is disabled for the quad
+(a single ground-plane face seen from the top-down camera). The 6 beam frames load in `game_init`.
+
 ## Tests (`tests/weapon_test.cpp`)
 
 Weapon-table parsing (types, twin, damage types, count, cooldown gating) plus a
 `WeaponFileTest.ShippedPlasmaBolt` that loads the real `weapons.json` and asserts weapon 0's
 stats. `ProjectileTestFixture` drives real Box2D: travel along heading, lifetime expiry, hit
-+ damage, miss, and owner `groupIndex` pass-through (no self-hit).
++ damage, miss, and owner `groupIndex` pass-through (no self-hit). `tests/beam_test.cpp` drives
+real Box2D for beams: length reaches `maxRange`, truncates at a wall, on-line/off-line/behind/
+beyond hit tests, continuous damage accumulation, shooter exclusion + wall blocking, and the
+animation-frame cadence.
 
 ## Deferred (later phases)
 
-Beam / area / instant weapon behaviour; floor **marks** (`mark_radius`/splash); particle
-systems and beam rendering; per-weapon colour/light. Visual sprite size is independent of the
-per-weapon physics radius.
+Area / instant weapon behaviour; floor **marks** (`mark_radius`/splash); particle systems;
+per-weapon colour/light. Visual sprite size is independent of the per-weapon physics radius.

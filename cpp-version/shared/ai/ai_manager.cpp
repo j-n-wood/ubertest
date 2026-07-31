@@ -3,6 +3,7 @@
 #include "units/movement_tuning.h"
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
+#include "combat/beam_manager.h"
 #include "level/spawn_config.h"
 #include "physics/body_user_data.h"
 #include "raymath.h"
@@ -109,7 +110,8 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
 //------------------------------------------------------------------------------
 
 void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
-                       ProjectileManager* projectiles) {
+                       ProjectileManager* projectiles,
+                       BeamManager* beams, UnitInstance* playerUnit) {
     m_worldId = worldId;  // cache for movement helpers (raycasts)
     for (auto& ai : components_) {
         if (!ai.unit || !ai.unit->active) continue;
@@ -128,7 +130,7 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
                 updatePatrol(ai, dt, playerPos);
                 break;
             case AIState::Chase:
-                updateChase(ai, dt, playerPos, worldId, projectiles);
+                updateChase(ai, dt, playerPos, worldId, projectiles, beams, playerUnit);
                 break;
             case AIState::Flee:
                 updateFlee(ai, dt, playerPos);
@@ -441,7 +443,8 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
 //------------------------------------------------------------------------------
 
 void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
-                            b2WorldId worldId, ProjectileManager* projectiles) {
+                            b2WorldId worldId, ProjectileManager* projectiles,
+                            BeamManager* beams, UnitInstance* playerUnit) {
     Vector2 unitPos = getUnitPosition(ai);
     float distToPlayer = Vector2Distance(unitPos, playerPos);
 
@@ -553,8 +556,12 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
         updateAimingSections(ai, facing_angle_to(toPlayer.x, toPlayer.y), dt);
     }
 
-    // Try to fire
-    tryFireAtPlayer(ai, playerPos, worldId, projectiles);
+    // Fire: beam weapons hitscan continuously (sweeping with the aim); others spawn bolts.
+    if (ai.armed && ai.weaponState.definition.type == WeaponType::Beam) {
+        fireBeamAtPlayer(ai, dt, playerPos, worldId, beams, playerUnit);
+    } else {
+        tryFireAtPlayer(ai, playerPos, worldId, projectiles);
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -836,4 +843,44 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
                            wdef.speed, wdef.damage, lifetime,
                            ai.unit->collisionGroupId, wdef.id, wdef.radius);
     }
+}
+
+bool AIManager::beamActive(const AIComponent& ai, Vector2 playerPos) const {
+    if (!ai.armed) return false;
+    Vector2 unitPos = getUnitPosition(ai);
+    if (Vector2Distance(unitPos, playerPos) > ai.weaponState.definition.maxRange) return false;
+    // Thin sightline; closed doors block. No facing gate — the beam sweeps as the unit aims.
+    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true)) return false;
+    if (!headSeesTarget(ai, playerPos)) return false;
+    return true;
+}
+
+void AIManager::fireBeamAtPlayer(AIComponent& ai, float dt, Vector2 playerPos,
+                                 b2WorldId worldId, BeamManager* beams, UnitInstance* playerUnit) {
+    if (!beams || !playerUnit) return;
+    if (!beamActive(ai, playerPos)) return;
+
+    const auto& wdef = ai.weaponState.definition;
+    Vector2 unitPos = getUnitPosition(ai);
+    float bodyAngle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
+    // Fire along the turret's facing if it has one, else the body's.
+    float angle = ai.turretSection ? ai.turretSection->facingAngle : bodyAngle;
+
+    // Muzzle = unit centre + fire offset (facing-relative, rotated by the body), clamped to
+    // the collision radius so it can't originate inside a wall — same rule as projectiles.
+    Vector2 off2d = {0.0f, 0.0f};
+    if (ai.unit->definition) {
+        off2d = {ai.unit->definition->properties.fireOffset.x,
+                 ai.unit->definition->properties.fireOffset.y};
+        float offLen = sqrtf(off2d.x * off2d.x + off2d.y * off2d.y);
+        float maxOff = ai.unit->definition->collisionRadius;
+        if (offLen > maxOff && offLen > 1e-5f) { off2d.x *= maxOff / offLen; off2d.y *= maxOff / offLen; }
+    }
+    float cosB = cosf(bodyAngle), sinB = sinf(bodyAngle);
+    Vector2 origin = {unitPos.x + off2d.x * cosB - off2d.y * sinB,
+                      unitPos.y + off2d.x * sinB + off2d.y * cosB};
+
+    UnitInstance* target[1] = {playerUnit};
+    beams->fire(worldId, origin, angle, wdef.maxRange, wdef.damage, dt, ai.unit,
+                target, 1, wdef.id);
 }

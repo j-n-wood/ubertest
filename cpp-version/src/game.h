@@ -23,6 +23,7 @@
 #include "units/weapon.h"
 #include "rendering/sprite_animation.h"
 #include "combat/projectile_manager.h"
+#include "combat/beam_manager.h"
 #include "effects/effect_manager.h"
 #include "particles/particle_manager.h"
 #include "ai/ai_manager.h"
@@ -100,6 +101,7 @@ struct Game {
 
     // Combat & AI
     ProjectileManager projectileManager;
+    BeamManager beamManager;   // beam weapons (hitscan lines, continuous damage) — see docs/weapons.md
     AIManager aiManager;
 
     // Transient world effects (explosions, ...): spawned on unit death, do area damage over

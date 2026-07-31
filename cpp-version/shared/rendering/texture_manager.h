@@ -29,6 +29,14 @@ enum TextureId {
     TEX_SHIP_MAP_LIT,   // ship-view lit overlay
     TEX_ASMD,           // weapon-3 blast: a 4x1 sprite sheet (see SpriteAnimation)
     TEX_RLBOOM,         // explosion effect: an 8x1 sprite sheet (see EffectManager)
+    // Beam weapon frame sets: 3 vertical 32x64 frames each, tiled along the beam length
+    // with TEXTURE_WRAP_REPEAT. Contiguous runs so `base + frame` indexes the frame.
+    TEX_BEAM_PLASMA_0,    // weapon 1 (Gas Axe) frames 0..2
+    TEX_BEAM_PLASMA_1,
+    TEX_BEAM_PLASMA_2,
+    TEX_BEAM_LIGHTNING_0, // weapon 8 (Exterminator) frames 0..2
+    TEX_BEAM_LIGHTNING_1,
+    TEX_BEAM_LIGHTNING_2,
     TEX_COUNT
 };
 

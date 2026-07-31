@@ -9,6 +9,7 @@
 struct UnitInstance;
 struct SpawnEntry;
 struct ProjectileManager;
+class BeamManager;
 
 //------------------------------------------------------------------------------
 // AI Manager — updates all enemy AI components each frame
@@ -25,9 +26,11 @@ public:
               const std::vector<std::vector<int>>& adjacency,
               const std::vector<UnitInstance*>& enemies);
 
-    // Tick all AI components.
+    // Tick all AI components. `beams`/`playerUnit` are optional — supplied by the game so
+    // beam-weapon units can hitscan-damage the player; nullptr (e.g. in tests) disables beams.
     void update(float dt, Vector2 playerPos, b2WorldId worldId,
-                ProjectileManager* projectiles);
+                ProjectileManager* projectiles,
+                BeamManager* beams = nullptr, UnitInstance* playerUnit = nullptr);
 
     // Notify that a unit took damage — triggers Chase (armed) or Flee (unarmed).
     void onDamageTaken(UnitInstance* unit);
@@ -56,7 +59,8 @@ public:
 private:
     void updatePatrol(AIComponent& ai, float dt, Vector2 playerPos);
     void updateChase(AIComponent& ai, float dt, Vector2 playerPos,
-                     b2WorldId worldId, ProjectileManager* projectiles);
+                     b2WorldId worldId, ProjectileManager* projectiles,
+                     BeamManager* beams, UnitInstance* playerUnit);
     void updateFlee(AIComponent& ai, float dt, Vector2 playerPos);
 
     // Waypoint selection
@@ -111,6 +115,13 @@ private:
     bool canFire(const AIComponent& ai, Vector2 playerPos) const;
     void tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
                          b2WorldId worldId, ProjectileManager* projectiles);
+
+    // Beam weapons: active while armed, the player is within maxRange, and there's a clear
+    // sightline (walls + closed doors block it, head cone respected) — no fire-rate gate. The
+    // beam sweeps with the firing section as it aims; damage lands via the hitscan geometry.
+    bool beamActive(const AIComponent& ai, Vector2 playerPos) const;
+    void fireBeamAtPlayer(AIComponent& ai, float dt, Vector2 playerPos,
+                          b2WorldId worldId, BeamManager* beams, UnitInstance* playerUnit);
 
     std::vector<AIComponent> components_;
     std::vector<Vector3> waypointPositions_;
