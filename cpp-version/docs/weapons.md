@@ -137,6 +137,12 @@ is the sim layer, mirroring the door/charger/projectile split — the game draws
 - **Lifetime.** Beams are transient: `beginFrame()` clears them at the top of the sim block,
   each active firer calls `fire()` that frame, `update(dt)` advances the shared animation cursor.
   A beam that isn't re-fired simply isn't drawn next frame.
+- **Impact sparks.** When a beam terminates on solid geometry, `fire()` records the impact
+  point and surface normal on the `Beam` (`castRay`). The game (sim block) emits a **directional
+  jet of sparks** from that point — the incident direction reflected across the normal
+  (`r = d − 2(d·n)n`) — via `ParticleManager::burst` with a small `spreadRad` cone. Colour is
+  per-weapon (plasma → green-white, lightning → blue-white). Emission is rate-limited to ~30
+  sparks/second per hitting beam through a fractional accumulator (`Game::beamSparkAccum`).
 
 ## Rendering
 

@@ -102,6 +102,7 @@ struct Game {
     // Combat & AI
     ProjectileManager projectileManager;
     BeamManager beamManager;   // beam weapons (hitscan lines, continuous damage) — see docs/weapons.md
+    float beamSparkAccum = 0.0f;  // fractional carry for rate-limiting beam impact sparks
     AIManager aiManager;
 
     // Transient world effects (explosions, ...): spawned on unit death, do area damage over

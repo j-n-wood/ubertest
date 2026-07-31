@@ -62,6 +62,22 @@ TEST(Particles, SwapPopKeepsArraysConsistent) {
     }
 }
 
+TEST(Particles, DirectionalBurstEmitsAlongDirAngle) {
+    // A tight cone (spreadRad 0) along +X: every particle should move in +X, none in Y.
+    ParticleManager m;
+    ParticleBurst dir = fixedCfg(8);
+    dir.dirAngle = 0.0f;      // velocity angle 0 → +X
+    dir.spreadRad = 0.0f;     // exact direction
+    m.burst(dir, {0.0f, 0.0f});
+    m.update(0.1f);
+    ParticleSpan s = m.renderData();
+    ASSERT_EQ(s.n, 8u);
+    for (std::size_t i = 0; i < s.n; ++i) {
+        EXPECT_GT(s.posX[i], 0.0f) << "moved along +X";
+        EXPECT_NEAR(s.posY[i], 0.0f, 1e-4f) << "no Y component";
+    }
+}
+
 TEST(Particles, ClearEmpties) {
     ParticleManager m;
     m.burst(fixedCfg(5), {0, 0});

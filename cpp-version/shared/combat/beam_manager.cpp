@@ -9,17 +9,32 @@ namespace {
 Vector2 forwardOf(float angle) { return {-std::sin(angle), std::cos(angle)}; }
 }  // namespace
 
-float BeamManager::castLength(b2WorldId world, Vector2 origin, float angle, float maxRange) {
-    if (B2_IS_NULL(world) || maxRange <= 0.0f) return maxRange > 0.0f ? maxRange : 0.0f;
+BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float maxRange) {
     Vector2 dir = forwardOf(angle);
+    float range = maxRange > 0.0f ? maxRange : 0.0f;
+    BeamHit out;
+    out.length = range;
+    out.point = {origin.x + dir.x * range, origin.y + dir.y * range};  // range end if no hit
+    if (B2_IS_NULL(world) || range <= 0.0f) return out;
+
     b2Vec2 o = {origin.x, origin.y};
-    b2Vec2 translation = {dir.x * maxRange, dir.y * maxRange};
+    b2Vec2 translation = {dir.x * range, dir.y * range};
     // Probe against walls and CLOSED doors (an open door clears its filter and is skipped).
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_PROJECTILE;
     filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR;
     b2RayResult r = b2World_CastRayClosest(world, o, translation, filter);
-    return r.hit ? r.fraction * maxRange : maxRange;
+    if (r.hit) {
+        out.length = r.fraction * range;
+        out.hitWall = true;
+        out.point = {r.point.x, r.point.y};
+        out.normal = {r.normal.x, r.normal.y};
+    }
+    return out;
+}
+
+float BeamManager::castLength(b2WorldId world, Vector2 origin, float angle, float maxRange) {
+    return castRay(world, origin, angle, maxRange).length;
 }
 
 bool BeamManager::hitsUnit(Vector2 origin, float angle, float length, const UnitInstance* unit) {
@@ -41,7 +56,7 @@ bool BeamManager::hitsUnit(Vector2 origin, float angle, float length, const Unit
 float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxRange,
                         float dps, float dt, const UnitInstance* shooter,
                         UnitInstance* const* targets, std::size_t targetCount, int weaponId) {
-    float length = castLength(world, origin, angle, maxRange);
+    BeamHit hit = castRay(world, origin, angle, maxRange);
 
     // Continuous damage: accumulate dps*dt onto every unit the beam passes through, flushed
     // on the shared realtime-damage tick (like explosion damage). No fireRate gating.
@@ -50,14 +65,22 @@ float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxR
         for (std::size_t i = 0; i < targetCount; ++i) {
             UnitInstance* t = targets[i];
             if (!t || t == shooter || !t->active) continue;
-            if (hitsUnit(origin, angle, length, t)) {
+            if (hitsUnit(origin, angle, hit.length, t)) {
                 accumulateRealtimeDamage(t->combatState, raw);
             }
         }
     }
 
-    beams_.push_back(Beam{origin, angle, length, weaponId});
-    return length;
+    Beam b;
+    b.origin = origin;
+    b.angle = angle;
+    b.length = hit.length;
+    b.weaponId = weaponId;
+    b.hitWall = hit.hitWall;
+    b.hitPoint = hit.point;
+    b.hitNormal = hit.normal;
+    beams_.push_back(b);
+    return hit.length;
 }
 
 void BeamManager::update(float dt) {

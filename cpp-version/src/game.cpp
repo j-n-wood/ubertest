@@ -1385,6 +1385,52 @@ void game_update_gameplay(Game* game, float dt) {
         // Advance the shared beam animation cursor.
         game->beamManager.update(simDt);
 
+        // Beam impact sparks: where a beam terminates on solid geometry, emit a directional
+        // jet of sparks reflected across the surface normal, rate-limited to ~30/s per beam.
+        {
+            const auto& beams = game->beamManager.beams();
+            int hitting = 0;
+            for (const Beam& b : beams) if (b.hitWall) ++hitting;
+            if (hitting > 0) {
+                constexpr float SPARKS_PER_SEC = 30.0f;
+                game->beamSparkAccum += hitting * SPARKS_PER_SEC * simDt;
+                int toSpawn = (int)game->beamSparkAccum;
+                game->beamSparkAccum -= (float)toSpawn;
+                for (int k = 0; k < toSpawn; ++k) {
+                    // Pick a random hitting beam to emit from this spark.
+                    int pick = GetRandomValue(0, hitting - 1);
+                    const Beam* b = nullptr;
+                    for (const Beam& cand : beams) {
+                        if (cand.hitWall && pick-- == 0) { b = &cand; break; }
+                    }
+                    if (!b) continue;
+                    // Reflect the incident beam direction across the surface normal.
+                    Vector2 d = {-sinf(b->angle), cosf(b->angle)};   // incident direction
+                    Vector2 n = b->hitNormal;
+                    float dn = d.x * n.x + d.y * n.y;
+                    Vector2 r = {d.x - 2.0f * dn * n.x, d.y - 2.0f * dn * n.y};
+
+                    ParticleBurst spark;
+                    spark.count = 1;
+                    spark.speedMin = 2.0f;  spark.speedMax = 5.0f;
+                    spark.lifeMin = 0.22f;  spark.lifeMax = 0.50f;
+                    spark.startSize = 0.22f; spark.endSize = 0.0f;
+                    spark.angularVelMax = 360.0f;
+                    spark.texture = TEX_FLARE;
+                    spark.dirAngle = atan2f(r.y, r.x);
+                    spark.spreadRad = 40.0f * DEG2RAD;  // cone about the reflection
+                    if (b->weaponId == 8) {  // lightning → blue-white
+                        spark.startColor = {200, 225, 255, 255};
+                        spark.endColor   = {40, 90, 255, 0};
+                    } else {                 // plasma → green-white
+                        spark.startColor = {205, 255, 190, 255};
+                        spark.endColor   = {40, 190, 60, 0};
+                    }
+                    game->particleManager.burst(spark, b->hitPoint);
+                }
+            }
+        }
+
         // Step physics
         physics_world_step(&game->physics, simDt);
 

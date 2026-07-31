@@ -114,6 +114,35 @@ TEST_F(BeamTest, FireExcludesShooterAndUnitsBehindWall) {
     EXPECT_NEAR(shooter.combatState.currentHealth, 100.0f, 0.01f) << "the shooter never damages itself";
 }
 
+TEST_F(BeamTest, CastRayReportsWallImpact) {
+    makeWall({0.0f, 5.0f}, 3.0f, 0.5f);  // near face at y = 4.5, facing -Y toward the muzzle
+    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
+    EXPECT_TRUE(hit.hitWall);
+    EXPECT_NEAR(hit.point.y, 4.5f, 0.05f);
+    EXPECT_NEAR(hit.point.x, 0.0f, 0.05f);
+    EXPECT_LT(hit.normal.y, -0.5f) << "surface normal points back toward the muzzle (-Y)";
+}
+
+TEST_F(BeamTest, CastRayNoWallNoImpact) {
+    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
+    EXPECT_FALSE(hit.hitWall);
+    EXPECT_NEAR(hit.length, 10.0f, 0.01f);
+    EXPECT_NEAR(hit.point.y, 10.0f, 0.01f);  // point sits at the range end
+}
+
+TEST_F(BeamTest, FireRecordsWallImpactForSparks) {
+    UnitInstance shooter;
+    makeUnit(shooter, {0.0f, 0.0f});
+    makeWall({0.0f, 5.0f}, 3.0f, 0.5f);
+
+    BeamManager bm;
+    bm.beginFrame();
+    bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 0.0f, 0.0f, &shooter, nullptr, 0, 1);
+    ASSERT_EQ(bm.beams().size(), 1u);
+    EXPECT_TRUE(bm.beams()[0].hitWall);
+    EXPECT_NEAR(bm.beams()[0].hitPoint.y, 4.5f, 0.05f);
+}
+
 TEST_F(BeamTest, AnimationFrameCyclesAtBeamFps) {
     BeamManager bm;
     EXPECT_EQ(bm.animFrame(), 0);

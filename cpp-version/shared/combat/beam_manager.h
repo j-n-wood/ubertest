@@ -26,6 +26,19 @@ struct Beam {
     float angle = 0.0f;        // facing angle (radians); direction = {-sin, cos}
     float length = 0.0f;       // truncated length (world units) after wall/range clipping
     int weaponId = -1;         // selects the frame set (plasma vs lightning)
+    // Impact on solid geometry (false when the beam reached maxRange without hitting a wall).
+    // Used to spawn reflected sparks at the surface. hitNormal is the surface normal (outward).
+    bool hitWall = false;
+    Vector2 hitPoint = {0, 0};
+    Vector2 hitNormal = {0, 0};
+};
+
+// Result of a beam ray-cast: clipped length plus the impact point/normal when a wall was hit.
+struct BeamHit {
+    float length = 0.0f;
+    bool hitWall = false;
+    Vector2 point = {0, 0};
+    Vector2 normal = {0, 0};
 };
 
 // Tunables.
@@ -57,8 +70,11 @@ public:
     const std::vector<Beam>& beams() const { return beams_; }
     int animFrame() const { return frame_; }   // 0 .. BEAM_FRAME_COUNT-1
 
-    // Distance from `origin` along `angle` to the first solid wall/closed door, clamped to
-    // `maxRange` (== maxRange if nothing is hit). Exposed for testing.
+    // Ray-cast the beam: clipped length + impact point/normal at the first solid wall/closed
+    // door (hitWall=false and point at the range end if nothing is hit). Exposed for testing.
+    static BeamHit castRay(b2WorldId world, Vector2 origin, float angle, float maxRange);
+
+    // Distance-only convenience wrapper over castRay. Exposed for testing.
     static float castLength(b2WorldId world, Vector2 origin, float angle, float maxRange);
 
     // Does the beam segment (origin, angle, length) pass through `unit`'s body

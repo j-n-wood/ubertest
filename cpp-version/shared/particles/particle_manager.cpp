@@ -10,7 +10,9 @@ float frand(float lo, float hi) { return lo + (hi - lo) * frand01(); }
 
 void ParticleManager::burst(const ParticleBurst& cfg, Vector2 pos) {
     for (int i = 0; i < cfg.count; ++i) {
-        float ang = frand01() * 2.0f * PI;               // full 360° radial spread
+        // Full 360° radial by default; a small spreadRad emits a directional cone.
+        float ang = (cfg.spreadRad >= PI) ? frand01() * 2.0f * PI
+                                          : cfg.dirAngle + frand(-cfg.spreadRad, cfg.spreadRad);
         float speed = frand(cfg.speedMin, cfg.speedMax);
         posX_.push_back(pos.x);
         posY_.push_back(pos.y);

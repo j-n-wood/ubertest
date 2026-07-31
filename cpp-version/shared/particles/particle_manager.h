@@ -33,6 +33,11 @@ struct ParticleBurst {
     Color     endColor    = {255, 80, 0, 0};    // fades to transparent (additive → out)
     float     angularVelMax = 180.0f;           // deg/s, random sign
     TextureId texture     = TEX_FLARE;
+    // Emission direction. Velocity angle = atan2(vy, vx). `spreadRad` is the half-cone about
+    // `dirAngle`; the default (>= PI) is a full 360° radial burst (back-compatible). A small
+    // spread emits a directional jet — e.g. sparks reflected off a surface.
+    float     dirAngle    = 0.0f;               // radians
+    float     spreadRad   = PI;                 // half-cone; >= PI = full radial
 };
 
 // Read-only view of the particle arrays for rendering (pointers valid until the next
