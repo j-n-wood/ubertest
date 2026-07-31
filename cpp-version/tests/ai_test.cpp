@@ -854,6 +854,33 @@ TEST_F(AITestFixture, FleeSelectsWaypointAwayFromPlayer) {
 // Collision response tests
 //------------------------------------------------------------------------------
 
+TEST_F(AITestFixture, DwellRangeDependsOnTypeCode) {
+    // Default type: pauses in [AI_DWELL_MIN, AI_DWELL_MAX].
+    armedDef.properties.typeCode = 100;
+    UnitInstance def;
+    initSingleEnemy(def, armedDef, 1, -10);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMin, AI_DWELL_MIN);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMax, AI_DWELL_MAX);
+
+    // typeCode 300-399: never pauses (0/0).
+    armedDef.properties.typeCode = 329;
+    UnitInstance fast;
+    initSingleEnemy(fast, armedDef, 1, -10);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMin, 0.0f);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMax, 0.0f);
+
+    // Boundaries: 300 and 399 are inside the band, 299 and 400 are not.
+    armedDef.properties.typeCode = 300;
+    UnitInstance lo;  initSingleEnemy(lo, armedDef, 1, -10);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMax, 0.0f);
+    armedDef.properties.typeCode = 399;
+    UnitInstance hi;  initSingleEnemy(hi, armedDef, 1, -10);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMax, 0.0f);
+    armedDef.properties.typeCode = 400;
+    UnitInstance over;  initSingleEnemy(over, armedDef, 1, -10);
+    EXPECT_FLOAT_EQ(aiManager.components()[0].dwellMax, AI_DWELL_MAX);
+}
+
 TEST_F(AITestFixture, CollisionReversesCourseToCurrentWaypoint) {
     UnitInstance unit;
     initSingleEnemy(unit, armedDef, 1, -10);  // currentWaypoint = 1

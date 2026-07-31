@@ -45,6 +45,14 @@ float slewToward(float current, float target, float maxStep) {
     return normalizeAngle(current + diff);
 }
 
+// Patrol dwell (pause-at-waypoint) range in seconds for a unit, by typeCode. Default is
+// [AI_DWELL_MIN, AI_DWELL_MAX]; typeCode 300-399 never pauses (0/0) — those types keep
+// moving straight through waypoints.
+std::pair<float, float> dwellRangeForType(int typeCode) {
+    if (typeCode >= 300 && typeCode <= 399) return {0.0f, 0.0f};
+    return {AI_DWELL_MIN, AI_DWELL_MAX};
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -84,6 +92,9 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
         ai.omnidirectional = props.omnidirectional;
         ai.fireWhileMoving = props.fireWhileMoving;
         ai.turretTurnSpeed = props.turretTurnSpeed;
+        auto dwell = dwellRangeForType(props.typeCode);
+        ai.dwellMin = dwell.first;
+        ai.dwellMax = dwell.second;
 
         if (ai.armed) {
             ai.weaponState = initWeaponState(props);
@@ -376,7 +387,7 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
             } else {
                 // Not colinear or first waypoint — dwell
                 ai.targetWaypoint = next;
-                ai.dwellTimer = randomFloat(AI_DWELL_MIN, AI_DWELL_MAX);
+                ai.dwellTimer = randomFloat(ai.dwellMin, ai.dwellMax);
             }
         }
         holdPosition(ai);

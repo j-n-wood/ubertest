@@ -45,6 +45,12 @@ struct AIComponent {
     bool fireWhileMoving = false; // aim body at target, don't halt to fire, no LOS facing gate
     float turretTurnSpeed = 0.0f; // per-unit turret/head slew rate (rad/s); 0 = global default
 
+    // Per-unit patrol dwell range (s) at a waypoint, derived from typeCode at init (see
+    // dwellRangeForType). Defaults to the global AI_DWELL_MIN/MAX; typeCode 300-399 → 0/0
+    // (never pause). A random value in [dwellMin, dwellMax] is taken on each arrival.
+    float dwellMin = 0.5f;
+    float dwellMax = 1.2f;
+
     // Cached aiming sections (nullptr if the unit has none). Slewed toward an aim angle
     // each frame; the turret's facing sets the firing angle, the head's the visibility cone.
     SectionInstance* turretSection = nullptr;
@@ -92,8 +98,8 @@ struct AIComponent {
 // early (the old 0.5) cut corners at an angle and clipped solid tiles. Reaching
 // close to centre keeps trajectories aligned to the (grid-laid) waypoint links.
 inline constexpr float AI_WAYPOINT_ARRIVAL_DIST = 0.15f; // Distance to consider "arrived"
-inline constexpr float AI_DWELL_MIN = 0.5f;
-inline constexpr float AI_DWELL_MAX = 2.0f;
+inline constexpr float AI_DWELL_MIN = 0.5f;  // default patrol pause range at a waypoint
+inline constexpr float AI_DWELL_MAX = 1.2f;  // (per-unit override derived from typeCode)
 inline constexpr float AI_BACK_AVOIDANCE_WEIGHT = 0.2f;  // Reduced probability for previous waypoint
 inline constexpr float AI_COLINEAR_THRESHOLD = 0.7f;     // Dot product threshold to skip dwell
 inline constexpr float AI_FACING_THRESHOLD = 0.25f;      // Radians (~14 degrees) for fire alignment
