@@ -133,7 +133,7 @@ TsxLoadResult loadTsxTileset(const std::string& filePath) {
 // Compute UV coordinates for a tile ID
 //------------------------------------------------------------------------------
 void getTileUV(const TmxTileset& tileset, int tileId,
-               float* u0, float* v0, float* u1, float* v1) {
+               float* u0, float* v0, float* u1, float* v1, int rowOffset) {
 
     // Empty tile or invalid
     if (tileId <= 0 || tileset.imageWidth <= 0 || tileset.imageHeight <= 0) {
@@ -151,6 +151,15 @@ void getTileUV(const TmxTileset& tileset, int tileId,
     // Calculate grid position
     int col = localId % tileset.columns;
     int row = localId / tileset.columns;
+
+    // Colour-variant palette: shift down whole rows, clamped to the atlas' row range so an
+    // out-of-range offset can't sample past the image.
+    if (rowOffset != 0 && tileset.columns > 0) {
+        int totalRows = tileset.tileCount / tileset.columns;
+        row += rowOffset;
+        if (row < 0) row = 0;
+        if (totalRows > 0 && row > totalRows - 1) row = totalRows - 1;
+    }
 
     // Calculate pixel positions (including spacing)
     float pixelX = static_cast<float>(col * (tileset.tileWidth + tileset.spacing));

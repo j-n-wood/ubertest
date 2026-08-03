@@ -111,26 +111,23 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     // the rest are fresh. Each world gets a static origin body for unit motor joints.
     {
         int n = (int)game->levels.size();
-        game->levelWorlds.assign(n, b2_nullWorldId);
-        game->levelOrigins.assign(n, b2_nullBodyId);
-        game->levelUnits.assign(n, {});
-        game->levelPopulated.assign(n, false);
-        game->levelLastActive.assign(n, 0.0);
+        game->levelRuntime.clear();
+        game->levelRuntime.resize(n);   // sized once; parallel to levels
         for (int L = 0; L < n; ++L) {
             if (L == 0) {
-                game->levelWorlds[0] = game->physics.world_id;  // reuse the init world
+                game->levelRuntime[0].world = game->physics.world_id;  // reuse the init world
             } else {
                 b2WorldDef wd = b2DefaultWorldDef();
                 wd.gravity = (b2Vec2){0.0f, 0.0f};
-                game->levelWorlds[L] = b2CreateWorld(&wd);
+                game->levelRuntime[L].world = b2CreateWorld(&wd);
             }
-            game->levelOrigins[L] = unit_create_origin_body(game->levelWorlds[L]);
+            game->levelRuntime[L].origin = unit_create_origin_body(game->levelRuntime[L].world);
         }
     }
 
     // Build render data for starting level (level_0_maintenance)
     game->currentLevel = 0;
-    game->physics.world_id = game->levelWorlds[0];  // active world
+    game->physics.world_id = game->levelRuntime[0].world;  // active world
     if (!game_build_level_render_data(game)) {
         TraceLog(LOG_ERROR, "Failed to build render data for level %d", game->currentLevel);
     }
@@ -341,6 +338,21 @@ static bool game_load_levels(Game* game) {
 // Render Data Building
 //------------------------------------------------------------------------------
 
+// The tileset colour row the active level should render on: its base row (map property
+// `tileRow`), or the last ("lights out") row once the level is cleared. Clamped to the atlas'
+// row range. Shared by the floor mesh and the animated door/charger tiles so they stay in sync.
+static int game_effective_tile_row(const Game* game) {
+    int L = game->currentLevel;
+    if (L < 0 || L >= (int)game->levels.size()) return 0;
+    int totalRows = game->tileset.columns > 0 ? game->tileset.tileCount / game->tileset.columns : 1;
+    int lastRow = totalRows > 0 ? totalRows - 1 : 0;
+    bool cleared = L < (int)game->levelRuntime.size() && game->levelRuntime[L].cleared;
+    int row = cleared ? lastRow : game->levels[L].tileRow;
+    if (row < 0) row = 0;
+    if (row > lastRow) row = lastRow;
+    return row;
+}
+
 static bool game_build_level_render_data(Game* game) {
     if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
         return false;
@@ -375,17 +387,21 @@ static bool game_build_level_render_data(Game* game) {
     // Create render data structure
     data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
 
+    // Effective tileset colour row (base row, or the darkened last row when cleared).
+    int effectiveRow = game_effective_tile_row(game);
+
     // Generate mesh based on available resources
     if (game->tileProperties.valid && gTextures().loaded(TEX_TILE_BUMP)) {
         // CustomTiles mode with bump mapping
         data.tileMesh = createLevelTileMeshCustom(
             meshLevel, game->tileset, game->tileProperties,
-            gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, 1.0f);
-        TraceLog(LOG_INFO, "Created CustomTiles mesh");
+            gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, 1.0f,
+            effectiveRow);
+        TraceLog(LOG_INFO, "Created CustomTiles mesh (row %d)", effectiveRow);
     } else {
         // Fallback to standard Tilemap mode
-        data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, 1.0f);
-        TraceLog(LOG_INFO, "Created Tilemap mesh (fallback)");
+        data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, 1.0f, effectiveRow);
+        TraceLog(LOG_INFO, "Created Tilemap mesh (fallback, row %d)", effectiveRow);
     }
 
     if (data.tileMesh.vertexCount > 0) {
@@ -492,7 +508,8 @@ static void game_create_doors(Game* game) {
         Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ? gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
         game->doorRenderer.build(game->levels[game->currentLevel], game->tileset,
                                  game->tileProperties, gTextures().get(TEX_TILE_ATLAS), bumpTex,
-                                 &game->sceneRenderer, game->doorManager.views());
+                                 &game->sceneRenderer, game->doorManager.views(),
+                                 game_effective_tile_row(game));
     }
     TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
 }
@@ -537,7 +554,8 @@ static void game_create_chargers(Game* game) {
         Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ? gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
         game->chargerRenderer.build(game->levels[game->currentLevel], game->tileset,
                                     game->tileProperties, gTextures().get(TEX_TILE_ATLAS), bumpTex,
-                                    &game->sceneRenderer, game->chargerManager.views());
+                                    &game->sceneRenderer, game->chargerManager.views(),
+                                    game_effective_tile_row(game));
     }
     TraceLog(LOG_INFO, "Created %zu chargers from level data", specs.size());
 }
@@ -704,9 +722,9 @@ static void game_spawn_enemies(Game* game) {
     // Create the level's persistent roster in ITS OWN world (they live there for the
     // ship's lifetime; frozen when the level is inactive). Fixed once per level.
     const int L = game->currentLevel;
-    b2WorldId world = game->levelWorlds[L];
-    b2BodyId origin = game->levelOrigins[L];
-    game->levelUnits[L].clear();
+    b2WorldId world = game->levelRuntime[L].world;
+    b2BodyId origin = game->levelRuntime[L].origin;
+    game->levelRuntime[L].units.clear();
     game->enemyUnits.clear();
     std::vector<UnitInstance*> enemies;
 
@@ -726,13 +744,14 @@ static void game_spawn_enemies(Game* game) {
         if (enemy) {
             enemy->levelIndex = L;
             enemies.push_back(enemy);
-            game->levelUnits[L].push_back(enemy);
+            game->levelRuntime[L].units.push_back(enemy);
             game->enemyUnits.push_back(enemy);
         } else {
             TraceLog(LOG_WARNING, "Failed to create enemy '%s'", defId.c_str());
         }
     }
-    game->levelPopulated[L] = true;
+    game->levelRuntime[L].populated = true;
+    game->levelRuntime[L].hadEnemies = !game->levelRuntime[L].units.empty();  // gates lights-out
 
     // Apply lighting shader to all unit models (including new enemies)
     game->unitManager.applyShaderToModels(
@@ -821,11 +840,11 @@ static void game_teleport_player(Game* game, Vector2 targetPos) {
 // in their own world (positions persist). Also tears down the transient collision bodies
 // of that level's world; doors/chargers are rebuilt on the next activation.
 static void game_deactivate_level(Game* game, int level) {
-    if (level < 0 || level >= (int)game->levelUnits.size()) return;
-    for (UnitInstance* u : game->levelUnits[level]) {
+    if (level < 0 || level >= (int)game->levelRuntime.size()) return;
+    for (UnitInstance* u : game->levelRuntime[level].units) {
         if (u) u->active = false;
     }
-    game->levelLastActive[level] = game->gameClock;
+    game->levelRuntime[level].lastActive = game->gameClock;
     game->aiManager.components().clear();
 
     for (auto& body : game->collisionBodies) {
@@ -840,6 +859,16 @@ static void game_deactivate_level(Game* game, int level) {
 // can extend the condition rather than the empty-unit check being baked in.
 static bool game_level_has_simulation(const Game* game) {
     return !game->enemyUnits.empty();
+}
+
+// True while any hostile (non-captured) enemy remains on the active level. Dead units are
+// already reaped out of enemyUnits; the player-captured unit is retained-but-flagged, so this
+// treats destroyed AND captured as "gone" — the condition for the level's lights to go out.
+static bool game_level_hostiles_remain(const Game* game) {
+    for (UnitInstance* u : game->enemyUnits) {
+        if (u && u != game->transfer.captured) return true;
+    }
+    return false;
 }
 
 // Roll the active level's simulation forward `seconds` of game-time so its droids are where
@@ -876,15 +905,15 @@ static void game_simulate_level_catchup(Game* game, double seconds) {
 // from the waypoint nearest each droid, then roll the level forward by the time it was away.
 static void game_reactivate_current_level(Game* game) {
     const int L = game->currentLevel;
-    if (L < 0 || L >= (int)game->levelUnits.size()) return;
+    if (L < 0 || L >= (int)game->levelRuntime.size()) return;
     const LevelRenderData& rd = game->levelRenderData[L];
 
-    const double away = game->gameClock - game->levelLastActive[L];
+    const double away = game->gameClock - game->levelRuntime[L].lastActive;
 
     game->enemyUnits.clear();
     std::vector<SpawnEntry> spawns;
     std::vector<UnitInstance*> enemies;
-    for (UnitInstance* u : game->levelUnits[L]) {
+    for (UnitInstance* u : game->levelRuntime[L].units) {
         if (!u || !u->definition || !b2Body_IsValid(u->bodyId)) continue;
         u->active = true;
         // Regenerate health for the time the level was inactive (single pass).
@@ -927,7 +956,7 @@ static void game_reactivate_current_level(Game* game) {
 // captured unit is handled by the transfer controller, so it is skipped here.
 static void game_reap_dead(Game* game) {
     const int L = game->currentLevel;
-    if (L < 0 || L >= (int)game->levelUnits.size()) return;
+    if (L < 0 || L >= (int)game->levelRuntime.size()) return;
 
     std::vector<UnitInstance*> dead;
     for (UnitInstance* u : game->enemyUnits) {
@@ -948,7 +977,7 @@ static void game_reap_dead(Game* game) {
             game_spawn_explosion(game, {p.x, p.y}, u->collisionGroupId);
         }
         game->aiManager.forgetUnit(u);
-        drop(game->levelUnits[L], u);
+        drop(game->levelRuntime[L].units, u);
         drop(game->enemyUnits, u);
         game->unitManager.destroyInstance(u);  // permanent — won't return on re-entry
     }
@@ -1102,7 +1131,7 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
 
     // Activate the new level's world + geometry.
     game->currentLevel = newLevel;
-    game->physics.world_id = game->levelWorlds[newLevel];
+    game->physics.world_id = game->levelRuntime[newLevel].world;
     if (!game_build_level_render_data(game)) {
         TraceLog(LOG_ERROR, "Failed to build render data for level %d", newLevel);
         return;
@@ -1128,12 +1157,12 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     // Migrate the persistent player device into the new level's world at the arrival tile.
     if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
         float ang = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
-        unit_rebind_world(game->playerUnit, game->levelWorlds[newLevel],
-                          game->levelOrigins[newLevel], tp, ang);
+        unit_rebind_world(game->playerUnit, game->levelRuntime[newLevel].world,
+                          game->levelRuntime[newLevel].origin, tp, ang);
     }
 
     // Populate on first visit; otherwise wake the persistent roster.
-    if (!game->levelPopulated[newLevel]) game_spawn_enemies(game);
+    if (!game->levelRuntime[newLevel].populated) game_spawn_enemies(game);
     else game_reactivate_current_level(game);
 
     game->unitManager.update(0);  // sync render transforms in the new world
@@ -1500,6 +1529,21 @@ void game_update_gameplay(Game* game, float dt) {
         // Remove droids destroyed this step (permanent for the level). This may spawn more
         // explosions (chain reactions) — added to effectManager for next frame.
         game_reap_dead(game);
+
+        // Lights out: the first time a populated level has no hostile (non-captured) enemies
+        // left, latch it permanently and rebuild the tiles on the darkened atlas row. One-shot
+        // (guarded by !cleared), and captures are already applied earlier via transfer_update.
+        if (game->currentLevel >= 0 && game->currentLevel < (int)game->levelRuntime.size()) {
+            LevelRuntime& lr = game->levelRuntime[game->currentLevel];
+            if (!lr.cleared && lr.hadEnemies && !game_level_hostiles_remain(game)) {
+                lr.cleared = true;
+                game_build_level_render_data(game);   // relight the floor → lights-out row
+                int row = game_effective_tile_row(game);
+                game->doorRenderer.setRowOffset(row);     // animated door/charger tiles too
+                game->chargerRenderer.setRowOffset(row);
+                TraceLog(LOG_INFO, "Level %d cleared — lights out", game->currentLevel);
+            }
+        }
 
         // Aim the player-controlled unit's turret/head at the cursor before the manager
         // reads section facings (AI units are aimed inside aiManager.update above).
@@ -2080,10 +2124,9 @@ void game_destroy(Game* game) {
     // Destroy every per-level world (frees origins, collision, and any remaining bodies).
     // Unit bodies were already freed by unitManager.destroy() above. game->physics.world_id
     // aliases one of these, so don't destroy it separately.
-    for (b2WorldId w : game->levelWorlds) {
-        if (!B2_IS_NULL(w)) b2DestroyWorld(w);
+    for (const LevelRuntime& lr : game->levelRuntime) {
+        if (!B2_IS_NULL(lr.world)) b2DestroyWorld(lr.world);
     }
-    game->levelWorlds.clear();
-    game->levelOrigins.clear();
+    game->levelRuntime.clear();
     game->physics.world_id = b2_nullWorldId;
 }

@@ -30,13 +30,14 @@ int ChargerRenderer::gidFor(int authoredRow, int frameIndex) const {
 void ChargerRenderer::build(const TmxLevel& level, const TmxTileset& tileset,
                             const TilePropertiesConfig& props, Texture2D atlas,
                             Texture2D bump, SceneRenderer* renderer,
-                            const std::vector<ChargerView>& views) {
+                            const std::vector<ChargerView>& views, int rowOffset) {
     destroy();
     tileset_ = tileset;
     props_ = props;
     atlas_ = atlas;
     bump_ = bump;
     renderer_ = renderer;
+    rowOffset_ = rowOffset;
     time_ = 0.0f;
     buildFrameTables();
 
@@ -68,11 +69,18 @@ void ChargerRenderer::rebuildModel() {
     freeLevelRenderData(&data_);  // UnloadModel keeps shared atlas/bump/shader alive
     int bumpW = bump_.id > 0 ? bump_.width : 0;
     int bumpH = bump_.id > 0 ? bump_.height : 0;
-    data_.tileMesh = createLevelTileMeshCustom(chargerLevel_, tileset_, props_, bumpW, bumpH, 1.0f);
+    data_.tileMesh = createLevelTileMeshCustom(chargerLevel_, tileset_, props_, bumpW, bumpH, 1.0f,
+                                               rowOffset_);
     if (data_.tileMesh.vertexCount > 0) {
         data_.tileModel = createLevelTileModel(data_.tileMesh, atlas_, bump_, renderer_);
         data_.meshValid = true;
     }
+}
+
+void ChargerRenderer::setRowOffset(int rowOffset) {
+    if (rowOffset == rowOffset_) return;
+    rowOffset_ = rowOffset;
+    rebuildModel();
 }
 
 void ChargerRenderer::update(float dt, const std::vector<ChargerView>& views) {

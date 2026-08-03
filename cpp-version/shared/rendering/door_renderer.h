@@ -23,13 +23,17 @@ public:
     DoorRenderer(const DoorRenderer&) = delete;
     DoorRenderer& operator=(const DoorRenderer&) = delete;
 
-    // Build the door model from the current door set (call on level load/switch).
+    // Build the door model from the current door set (call on level load/switch). rowOffset
+    // shifts the diffuse atlas by whole colour rows to match the level's tileset row selection.
     void build(const TmxLevel& level, const TmxTileset& tileset,
                const TilePropertiesConfig& props, Texture2D atlas, Texture2D bump,
-               SceneRenderer* renderer, const std::vector<DoorView>& views);
+               SceneRenderer* renderer, const std::vector<DoorView>& views, int rowOffset = 0);
 
     // Refresh animation: rebuild the model if any door's tile frame changed.
     void update(const std::vector<DoorView>& views);
+
+    // Switch the tileset colour row (e.g. "lights out"): re-bake the model if it changed.
+    void setRowOffset(int rowOffset);
 
     void render() const;
     void destroy();
@@ -52,6 +56,7 @@ private:
     std::vector<std::pair<float, int>> hFrames_;
     std::vector<std::pair<float, int>> vFrames_;
 
+    int rowOffset_ = 0;            // diffuse atlas colour-row shift (level tileset row / lights-out)
     LevelRenderData data_{};       // holds the door mesh + model
     std::vector<int> gidCache_;    // per-view currently-shown GID
     std::vector<int> cellIndex_;   // per-view tile index (row*width+col)

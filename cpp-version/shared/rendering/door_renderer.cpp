@@ -49,13 +49,14 @@ int DoorRenderer::selectGid(DoorOrientation orientation, float openFraction,
 void DoorRenderer::build(const TmxLevel& level, const TmxTileset& tileset,
                          const TilePropertiesConfig& props, Texture2D atlas,
                          Texture2D bump, SceneRenderer* renderer,
-                         const std::vector<DoorView>& views) {
+                         const std::vector<DoorView>& views, int rowOffset) {
     destroy();
     tileset_ = tileset;
     props_ = props;
     atlas_ = atlas;
     bump_ = bump;
     renderer_ = renderer;
+    rowOffset_ = rowOffset;
     buildFrameTables();
 
     // Door-only level: same dimensions/tileset, every cell empty except door cells.
@@ -91,7 +92,8 @@ void DoorRenderer::rebuildModel() {
 
     int bumpW = bump_.id > 0 ? bump_.width : 0;
     int bumpH = bump_.id > 0 ? bump_.height : 0;
-    data_.tileMesh = createLevelTileMeshCustom(doorLevel_, tileset_, props_, bumpW, bumpH, 1.0f);
+    data_.tileMesh = createLevelTileMeshCustom(doorLevel_, tileset_, props_, bumpW, bumpH, 1.0f,
+                                               rowOffset_);
     if (data_.tileMesh.vertexCount > 0) {
         data_.tileModel = createLevelTileModel(data_.tileMesh, atlas_, bump_, renderer_);
         data_.meshValid = true;
@@ -115,6 +117,12 @@ void DoorRenderer::update(const std::vector<DoorView>& views) {
         changed = true;
     }
     if (changed) rebuildModel();
+}
+
+void DoorRenderer::setRowOffset(int rowOffset) {
+    if (rowOffset == rowOffset_) return;
+    rowOffset_ = rowOffset;
+    rebuildModel();
 }
 
 void DoorRenderer::render() const {

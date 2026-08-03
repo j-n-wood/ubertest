@@ -49,7 +49,8 @@ Vector3 tmxPixelToWorld(float x, float y, const TmxLevel& level, float worldScal
 Mesh createLevelTileMesh(
     const TmxLevel& level,
     const TmxTileset& tileset,
-    float worldScale
+    float worldScale,
+    int rowOffset
 ) {
     Mesh mesh = {0};
 
@@ -97,7 +98,7 @@ Mesh createLevelTileMesh(
 
             // Get UV coordinates for this tile
             float u0, v0, u1, v1;
-            getTileUV(tileset, tileId, &u0, &v0, &u1, &v1);
+            getTileUV(tileset, tileId, &u0, &v0, &u1, &v1, rowOffset);
 
             // Vertex base index for this tile
             int baseVert = vi;
@@ -218,7 +219,8 @@ Mesh createLevelTileMeshCustom(
     const TilePropertiesConfig& tileProps,
     int bumpAtlasWidth,
     int bumpAtlasHeight,
-    float worldScale
+    float worldScale,
+    int rowOffset
 ) {
     Mesh mesh = {0};
 
@@ -282,9 +284,9 @@ Mesh createLevelTileMeshCustom(
             // Get tile center in world space
             Vector3 center = tmxGridToWorld(col, row, level, worldScale);
 
-            // Get diffuse UV coordinates from tileset atlas
+            // Get diffuse UV coordinates from tileset atlas (rowOffset selects the colour row)
             float u0, v0, u1, v1;
-            getTileUV(tileset, tileId, &u0, &v0, &u1, &v1);
+            getTileUV(tileset, tileId, &u0, &v0, &u1, &v1, rowOffset);
 
             // Get bump atlas UV coordinates based on tile properties
             const TileRenderProperties& props = tileProps.getProperties(tileId);

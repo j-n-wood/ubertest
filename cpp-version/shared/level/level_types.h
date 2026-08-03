@@ -113,6 +113,8 @@ struct TmxLevel {
     std::vector<TmxWaypoint> waypoints;
     std::vector<TmxLift> lifts; // Lift markers from the object layer
     std::string tilesetSource; // Reference to TSX file (e.g., "default.tsx")
+    int tileRow = 0;           // Base tileset colour row (map property "tileRow"); the tileset
+                               // atlas stacks colour-variant rows of the same tiles.
 };
 
 //------------------------------------------------------------------------------

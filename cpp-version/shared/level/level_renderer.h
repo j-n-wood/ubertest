@@ -35,23 +35,27 @@ void freeLevelRenderData(LevelRenderData* data);
 // Create a mesh for all tiles in the level (Tilemap mode)
 // Uses tileset UV coordinates for texture mapping
 // Both diffuse and bump textures use the same UVs
+// rowOffset shifts the diffuse atlas down by whole rows (colour-variant palette / lights-out).
 Mesh createLevelTileMesh(
     const TmxLevel& level,
     const TmxTileset& tileset,
-    float worldScale = 1.0f
+    float worldScale = 1.0f,
+    int rowOffset = 0
 );
 
 // Create a mesh for all tiles with custom bump UVs (CustomTiles mode)
 // Diffuse UVs from tileset atlas, bump UVs from tiles.json bumpTileIndex
 // Uses mesh.texcoords2 for bump atlas coordinates
 // bumpAtlasWidth/Height: actual texture dimensions for UV calculation
+// rowOffset shifts only the DIFFUSE atlas by whole rows (bump UVs are independent).
 Mesh createLevelTileMeshCustom(
     const TmxLevel& level,
     const TmxTileset& tileset,
     const TilePropertiesConfig& tileProps,
     int bumpAtlasWidth,
     int bumpAtlasHeight,
-    float worldScale = 1.0f
+    float worldScale = 1.0f,
+    int rowOffset = 0
 );
 
 // Create a Model from the tile mesh with materials set up

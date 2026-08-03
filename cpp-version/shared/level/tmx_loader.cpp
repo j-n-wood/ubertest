@@ -107,6 +107,10 @@ TmxLoadResult loadTmxLevel(const std::string& filePath) {
     result.level.tileWidth = mapElem->IntAttribute("tilewidth", 64);
     result.level.tileHeight = mapElem->IntAttribute("tileheight", 64);
 
+    // Optional map-level custom property: base tileset colour row (default 0). The tileset
+    // atlas stacks colour-variant rows of the same tiles; this selects which one this deck uses.
+    findIntProperty(mapElem, "tileRow", &result.level.tileRow);
+
     // Extract level name + stable deck number from filename
     result.level.name = extractLevelName(fs::path(filePath).filename().string());
     result.level.number = extractLevelNumber(fs::path(filePath).filename().string());

@@ -21,6 +21,7 @@ add_executable(run_tests
     combat_state_test.cpp
     weapon_test.cpp
     beam_test.cpp
+    tileset_uv_test.cpp
     unit_json_test.cpp
     sprite_animation_test.cpp
     spawn_test.cpp
@@ -37,6 +38,7 @@ add_executable(run_tests
     ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/tileset_loader.cpp
     ${CMAKE_SOURCE_DIR}/src/pages/page_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_json.cpp

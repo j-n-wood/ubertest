@@ -17,8 +17,10 @@ TsxLoadResult loadTsxTileset(const std::string& filePath);
 // Compute UV coordinates for a tile ID
 // Returns UV rect as (u0, v0, u1, v1) - top-left and bottom-right corners
 // tileId is 1-based (0 = empty tile, returns zero rect)
+// rowOffset shifts sampling down by whole atlas rows (colour-variant palettes; the atlas has
+// several identical tile rows in different colours). Clamped to the atlas' row range.
 void getTileUV(const TmxTileset& tileset, int tileId,
-               float* u0, float* v0, float* u1, float* v1);
+               float* u0, float* v0, float* u1, float* v1, int rowOffset = 0);
 
 // Load tileset image as raylib texture
 // Returns texture with id=0 on failure

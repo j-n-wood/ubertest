@@ -22,10 +22,12 @@ void StatusPage::render() {
         deck = game_->levels[game_->currentLevel].name.c_str();
     }
 
-    // Live droid count.
+    // Live droid count — hostiles only: exclude the player device and the unit the player has
+    // captured (it's kept in enemyUnits but flagged), matching the "level cleared" condition.
     int live = 0;
     for (const UnitInstance* e : game_->enemyUnits) {
-        if (e && e->active && b2Body_IsValid(e->bodyId)) live++;
+        if (!e || e == game_->playerUnit || e == game_->transfer.captured) continue;
+        if (e->active && b2Body_IsValid(e->bodyId)) live++;
     }
 
     int x = 80, y = 140;

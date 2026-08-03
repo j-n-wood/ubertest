@@ -122,8 +122,8 @@ void destroyUnit(Game* g, UnitInstance* u) {
         v.erase(std::remove(v.begin(), v.end(), x), v.end());
     };
     drop(g->enemyUnits, u);
-    if (u->levelIndex >= 0 && u->levelIndex < (int)g->levelUnits.size()) {
-        drop(g->levelUnits[u->levelIndex], u);
+    if (u->levelIndex >= 0 && u->levelIndex < (int)g->levelRuntime.size()) {
+        drop(g->levelRuntime[u->levelIndex].units, u);
     }
     g->unitManager.destroyInstance(u);
 }
@@ -153,8 +153,9 @@ bool enterControllingNewUnit(Game* g, const std::string& defId, Vector2 pos, flo
     // Create the captured unit in the ACTIVE level's world so it shares physics with the
     // player device (which lives in that world).
     const int L = g->currentLevel;
-    b2WorldId world = (L >= 0 && L < (int)g->levelWorlds.size()) ? g->levelWorlds[L] : b2_nullWorldId;
-    b2BodyId origin = (L >= 0 && L < (int)g->levelOrigins.size()) ? g->levelOrigins[L] : b2_nullBodyId;
+    bool validL = (L >= 0 && L < (int)g->levelRuntime.size());
+    b2WorldId world = validL ? g->levelRuntime[L].world : b2_nullWorldId;
+    b2BodyId origin = validL ? g->levelRuntime[L].origin : b2_nullBodyId;
     UnitInstance* u = g->unitManager.createInstance(defId, pos, angle, world, origin);
     if (!u) {
         g->transfer.mode = ControlMode::Free;
@@ -164,7 +165,7 @@ bool enterControllingNewUnit(Game* g, const std::string& defId, Vector2 pos, flo
     u->levelIndex = L;
     g->unitManager.applyShaderToModels(sceneRendererGetShader(&g->sceneRenderer));
     g->enemyUnits.push_back(u);
-    if (L >= 0 && L < (int)g->levelUnits.size()) g->levelUnits[L].push_back(u);  // roster member
+    if (validL) g->levelRuntime[L].units.push_back(u);  // roster member
     g->transfer.captured = u;
     g->transfer.mode = ControlMode::Controlling;
     deviceEnterOverlay(g);

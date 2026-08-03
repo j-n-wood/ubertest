@@ -42,6 +42,22 @@ struct RotationTestConfig {
     std::string unitId = "droid_class_0";  // Unit to test with
 };
 
+// Per-level runtime state (one entry per level, parallel to Game::levels), retained for the
+// ship's lifetime. Only the active level's world (== physics.world_id) is stepped/rendered;
+// inactive levels' droids freeze in place in their own world. Holds only value handles and
+// non-owning pointers (the GPU-bearing render/collision artifacts are kept in their own
+// vectors), so it's plain/copyable. Sized once at ship load and torn down wholesale on
+// reset/ship-switch. See docs/levels.md.
+struct LevelRuntime {
+    b2WorldId world  = b2_nullWorldId;   // retained per-level physics world
+    b2BodyId  origin = b2_nullBodyId;    // motor-joint anchor in that world
+    std::vector<UnitInstance*> units;    // persistent droid roster (non-owning; UnitManager owns)
+    bool   populated  = false;           // roster created (lazily, on first entry)
+    bool   hadEnemies = false;           // roster ever had >= 1 enemy (gates the lights-out switch)
+    bool   cleared    = false;           // all enemies destroyed/captured — lights out (permanent)
+    double lastActive = 0.0;             // gameClock when last deactivated (away-heal timing)
+};
+
 struct Game {
     // Physics
     PhysicsWorld physics;
@@ -58,14 +74,10 @@ struct Game {
     std::vector<LevelCollisionData> levelCollisionData;
     int currentLevel;
 
-    // Per-level physics worlds (one per level, retained for the ship's lifetime). Only the
-    // active level's world (== physics.world_id) is stepped/rendered; inactive levels'
-    // droids freeze in place in their own world. See docs/levels.md.
-    std::vector<b2WorldId> levelWorlds;                 // parallel to levels
-    std::vector<b2BodyId> levelOrigins;                 // motor-joint anchor per world
-    std::vector<std::vector<UnitInstance*>> levelUnits; // persistent roster per level
-    std::vector<bool> levelPopulated;                   // roster created (lazily, on first entry)
-    std::vector<double> levelLastActive;                // gameClock when last deactivated (heal timing)
+    // Per-level runtime state (world, roster, flags), parallel to `levels`. See LevelRuntime
+    // above and docs/levels.md. The GPU/build artifacts (levelRenderData, levelCollisionData)
+    // stay in their own vectors above.
+    std::vector<LevelRuntime> levelRuntime;
     double gameClock = 0.0;                              // accumulated gameplay time (for away-heal)
 
     // Tileset (shared across levels)

@@ -24,10 +24,13 @@ public:
     ChargerRenderer(const ChargerRenderer&) = delete;
     ChargerRenderer& operator=(const ChargerRenderer&) = delete;
 
+    // rowOffset shifts the diffuse atlas by whole colour rows to match the level's tileset row.
     void build(const TmxLevel& level, const TmxTileset& tileset,
                const TilePropertiesConfig& props, Texture2D atlas, Texture2D bump,
-               SceneRenderer* renderer, const std::vector<ChargerView>& views);
+               SceneRenderer* renderer, const std::vector<ChargerView>& views, int rowOffset = 0);
     void update(float dt, const std::vector<ChargerView>& views);
+    // Switch the tileset colour row (e.g. "lights out"): re-bake the model if it changed.
+    void setRowOffset(int rowOffset);
     void render() const;
     void destroy();
 
@@ -48,6 +51,7 @@ private:
     // Tileset row -> that row's charger local ids, sorted by column (animation order).
     std::map<int, std::vector<int>> rowFrames_;
 
+    int rowOffset_ = 0;            // diffuse atlas colour-row shift (level tileset row / lights-out)
     LevelRenderData data_{};
     float time_ = 0.0f;            // free-running animation clock
     std::vector<int> gidCache_;    // per-view currently-shown GID

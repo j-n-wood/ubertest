@@ -8,13 +8,18 @@ things that ever cross worlds are the **player device** and the **unit it is pil
 
 ## Model
 
-- `Game::levelWorlds[L]` — the `b2WorldId` for level L; `levelOrigins[L]` — the static
-  motor-joint anchor in that world. Level 0 reuses the world from `physics_world_init`; the
-  rest are created fresh. `game->physics.world_id` is repointed to the active level's world
-  on every activation, so all systems (units, AI, projectiles, doors, collision, stepping)
-  operate on the active world with no per-call-site changes.
-- `Game::levelUnits[L]` — the **persistent roster** of that level's droids (`UnitInstance*`),
-  living in `levelWorlds[L]`. `UnitInstance::levelIndex` records a unit's level (the player
+- **`Game::levelRuntime[L]`** (`struct LevelRuntime`) holds a level's *runtime* state, one entry
+  per level, parallel to `Game::levels[L]` (the static `TmxLevel` map data). Fields: `world`
+  (`b2WorldId`) and `origin` (the static motor-joint anchor body); `units` (the persistent
+  roster of `UnitInstance*`); `populated` / `hadEnemies` / `cleared` flags; and `lastActive`
+  (away-heal timing). It holds only value handles and non-owning pointers, so it is plain and
+  copyable; the GPU/build artifacts (`levelRenderData[L]`, `levelCollisionData[L]`) stay in their
+  own vectors. Sized once at ship load (levels are fixed) and torn down wholesale — a game reset
+  or ship switch clears the ship's per-level data and reloads, so all these flags reset for free.
+- Level 0 reuses the world from `physics_world_init`; the rest are created fresh.
+  `game->physics.world_id` is repointed to `levelRuntime[active].world` on every activation, so
+  all systems (units, AI, projectiles, doors, collision, stepping) operate on the active world
+  with no per-call-site changes. `UnitInstance::levelIndex` records a unit's level (the player
   device is `-1`; it migrates).
 - Droids are created **lazily on first entry** (`game_spawn_enemies` → `resolveSpawns` once,
   fixing the roster of types), then persist. When a level is deactivated its droids are set
@@ -32,7 +37,7 @@ things that ever cross worlds are the **player device** and the **unit it is pil
 ## Level switch (`game_change_level`)
 
 1. Release transfer control, remembering the piloted class + health.
-2. `game_deactivate_level(old)` — freeze its droids, stamp `levelLastActive`, tear down the
+2. `game_deactivate_level(old)` — freeze its droids, stamp `levelRuntime[old].lastActive`, tear down the
    old collision bodies.
 3. Point `physics.world_id` at the new world; rebuild render data + collision + doors +
    chargers + consoles into it (single managers, rebuilt per entry — their `init()` destroys
@@ -50,14 +55,14 @@ is simply retained.
 
 On re-entry a single pass regenerates each survivor's health for the time the level was
 inactive:
-`away_healed_health(current, max, gameClock − levelLastActive[L], AWAY_HEAL_FRACTION_PER_SEC)`
+`away_healed_health(current, max, gameClock − levelRuntime[L].lastActive, AWAY_HEAL_FRACTION_PER_SEC)`
 (`shared/units/heal.h`, ~2%/s → full in ~50s). `gameClock` accumulates gameplay time.
 
 ## Away-level catch-up (`game_simulate_level_catchup`)
 
 Because droids persist **in place**, a level would otherwise look frozen exactly as the player
 left it. Instead, at the end of reactivation the level is **rolled forward** by the time it was
-away (`gameClock − levelLastActive[L]`) so its droids are where they'd have wandered to:
+away (`gameClock − levelRuntime[L].lastActive`) so its droids are where they'd have wandered to:
 
 - **Headless & patrol-only.** A bounded loop of `aiManager.update → doorManager.update →
   physics_world_step → processCollisions`, run with a **far-away synthetic player** so the AI
@@ -83,6 +88,26 @@ roster + the active `enemyUnits` and destroys it — permanent, so it won't retu
 re-entry. (This finally wires enemy death; the captured unit's death is handled by the
 transfer controller.)
 
+## Tileset colour row & "lights out"
+
+The level tileset atlas (`map_blocks.png`) stacks **several colour-variant rows of the same
+tiles** (44 columns × 7 rows). `getTileUV(..., rowOffset)` shifts diffuse sampling down whole
+rows (clamped to range; the independent bump atlas is unaffected); the tile mesh bakes those UVs
+at build time, so a row change means (re)building the mesh — which already happens on every
+level entry and is cheap enough for the occasional relight. `game_effective_tile_row(game)` is
+the single source of the row, used by the floor mesh **and** the animated door/charger tiles
+(`DoorRenderer`/`ChargerRenderer` take a `rowOffset` in `build()` and a `setRowOffset()` for the
+relight) so all tiles on a deck share the same colour.
+
+- **Base row** — a map-level TMX property `tileRow` (default 0), parsed into `TmxLevel::tileRow`,
+  lets each deck pick a base palette.
+- **Lights out** — when a level is first **cleared** (every enemy destroyed *or* captured —
+  `game_level_hostiles_remain` false, gated by `hadEnemies`), `LevelRuntime::cleared` latches
+  **permanently** and the tiles rebuild on the **last (darkened) row**. Detected on the rising
+  edge right after `game_reap_dead` (captures already applied via `transfer_update`). A
+  re-entered cleared level renders dark automatically because `game_build_level_render_data`
+  reads `cleared` at build time. Effective row = `cleared ? lastRow : tileRow`.
+
 ## Shared models
 
 Because a droid type's GLTF loads once via the [ModelCache](../shared/units/model_cache.h)
@@ -93,7 +118,7 @@ retaining every visited level's droids is cheap on the GPU. Only the single skel
 ## Teardown
 
 `game_destroy` frees unit bodies (`unitManager.destroy()`), then the door/charger bodies,
-then `b2DestroyWorld` for every `levelWorlds[L]` (which frees origins, collision, and any
+then `b2DestroyWorld` for every `levelRuntime[L].world` (which frees origins, collision, and any
 remainder), then the shared models — in that order so nothing double-frees.
 
 ## Deferred
