@@ -33,6 +33,18 @@ struct Projectile {
 inline constexpr float PROJECTILE_RADIUS = 0.1f;
 
 //------------------------------------------------------------------------------
+// Projectile impact — one recorded per projectile that hit something this step, for the
+// render layer to spawn impact sparks (render-only; the sim just records the geometry).
+//------------------------------------------------------------------------------
+
+struct ProjectileImpact {
+    Vector2 point = {0, 0};    // world impact point
+    Vector2 normal = {0, 0};   // surface normal at impact (from a hit event; else −incident)
+    Vector2 incident = {0, 0}; // unit travel direction of the projectile
+    int weaponId = -1;
+};
+
+//------------------------------------------------------------------------------
 // Projectile Manager
 //------------------------------------------------------------------------------
 
@@ -60,11 +72,16 @@ public:
     // Read access for rendering or testing.
     const std::vector<Projectile>& getProjectiles() const { return m_projectiles; }
 
+    // Impacts recorded by the most recent processContactEvents (one per projectile that hit
+    // something). Consumed by the render layer to spawn impact sparks; valid until the next call.
+    const std::vector<ProjectileImpact>& impacts() const { return m_impacts; }
+
     // Number of currently active projectiles.
     int activeCount() const;
 
 private:
     std::vector<Projectile> m_projectiles;
+    std::vector<ProjectileImpact> m_impacts;  // rebuilt each processContactEvents
 };
 
 #endif // PROJECTILE_MANAGER_H

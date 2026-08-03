@@ -34,6 +34,12 @@ enum class DamageType {
 // Weapon Definition (immutable stats loaded from weapons.json)
 //------------------------------------------------------------------------------
 
+// Default per-hit impact spark count when a weapon doesn't specify one. Larger/heavier
+// weapons override with a higher `impactSparks` in weapons.json.
+inline constexpr int DEFAULT_IMPACT_SPARKS = 16;
+// Default impact spark colour (plasma green-white) — matches the pre-per-weapon look.
+inline constexpr Color DEFAULT_SPARK_COLOR = {205, 255, 190, 255};
+
 struct WeaponDefinition {
     int id = -1;                    // Weapon ID (-1 = no weapon)
     std::string name;
@@ -46,6 +52,8 @@ struct WeaponDefinition {
     WeaponType type = WeaponType::Projectile;
     DamageType damageType = DamageType::Plasma;
     bool twin = false;             // Fires two projectiles
+    int impactSparks = DEFAULT_IMPACT_SPARKS;   // per-hit impact spark count (projectiles)
+    Color sparkColor = DEFAULT_SPARK_COLOR;     // impact spark colour (beam + projectile)
 };
 
 //------------------------------------------------------------------------------

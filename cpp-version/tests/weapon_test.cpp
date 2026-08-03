@@ -113,6 +113,51 @@ TEST_F(WeaponTestFixture, AllWeaponsLoaded) {
     EXPECT_EQ(weaponCount(), 9);
 }
 
+// Per-weapon impact-spark count + colour (weapons.json). Unspecified weapons take the defaults;
+// specified ones override (e.g. the plasma cannon test: 24 sparks in bright blue).
+TEST(WeaponImpactSparks, ParsedAndDefaulted) {
+    const char* js = R"([
+      {"id": 0, "name": "Plain", "type": "projectile", "damageType": "plasma", "twin": false},
+      {"id": 3, "name": "Cannon", "type": "projectile", "damageType": "plasma", "twin": false,
+       "impactSparks": 24, "sparkColor": [80, 160, 255]}
+    ])";
+    ASSERT_TRUE(loadWeaponsFromJson(js));
+
+    WeaponDefinition plain = getWeaponDefinition(0);
+    EXPECT_EQ(plain.impactSparks, DEFAULT_IMPACT_SPARKS);
+    EXPECT_EQ(plain.sparkColor.r, DEFAULT_SPARK_COLOR.r);
+    EXPECT_EQ(plain.sparkColor.g, DEFAULT_SPARK_COLOR.g);
+    EXPECT_EQ(plain.sparkColor.b, DEFAULT_SPARK_COLOR.b);
+
+    WeaponDefinition cannon = getWeaponDefinition(3);
+    EXPECT_EQ(cannon.impactSparks, 24);
+    EXPECT_EQ(cannon.sparkColor.r, 80);
+    EXPECT_EQ(cannon.sparkColor.g, 160);
+    EXPECT_EQ(cannon.sparkColor.b, 255);
+    EXPECT_EQ(cannon.sparkColor.a, 255);
+}
+
+TEST(WeaponImpactSparks, SurvivesSaveRoundTrip) {
+    const char* js = R"([
+      {"id": 3, "name": "Cannon", "type": "projectile", "damageType": "plasma", "twin": false,
+       "impactSparks": 24, "sparkColor": [80, 160, 255]}
+    ])";
+    ASSERT_TRUE(loadWeaponsFromJson(js));
+
+    std::string path = ::testing::TempDir() + "weapons_sparks_roundtrip.json";
+    ASSERT_TRUE(saveWeaponsToFile(path));
+
+    std::ifstream in(path);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("\"impactSparks\": 24"), std::string::npos);
+    EXPECT_NE(text.find("\"sparkColor\""), std::string::npos);
+
+    ASSERT_TRUE(loadWeaponsFromFile(path));
+    WeaponDefinition c = getWeaponDefinition(3);
+    EXPECT_EQ(c.impactSparks, 24);
+    EXPECT_EQ(c.sparkColor.b, 255);
+}
+
 // The runtime weapon editor tunes the table in place (getWeaponByIndex) and writes it
 // back with saveWeaponsToFile. Edits must round-trip, and the emitted numbers must be
 // clean (no float->double artefacts like 12.5 -> "12.500000476837158").
@@ -260,6 +305,34 @@ TEST_F(ProjectileTestFixture, HitsTarget) {
 
     EXPECT_FLOAT_EQ(target.combatState.currentHealth, 60.0f); // 100 - 40
     EXPECT_EQ(mgr.activeCount(), 0); // Projectile consumed
+}
+
+TEST_F(ProjectileTestFixture, RecordsImpactOnHit) {
+    // A projectile that hits something records an impact (point/normal/incident/weaponId) for
+    // the render layer to spawn impact sparks; a clean flight records none.
+    UnitInstance target;
+    target.combatState = {100.0f, 100.0f, 0.0f, true};
+    createUnitBody(target, {5.0f, 0.0f}, 0.5f, -2);
+
+    mgr.spawn(worldId, {0, 0}, {1, 0}, 10.0f, 40.0f, 5.0f, /*owner*/ -1, /*weaponId*/ 7);
+
+    bool sawImpact = false;
+    ProjectileImpact rec{};
+    for (int i = 0; i < 100; ++i) {
+        step(0.01f);
+        mgr.processContactEvents(worldId);
+        if (!mgr.impacts().empty()) { rec = mgr.impacts().front(); sawImpact = true; }
+        if (mgr.activeCount() == 0) break;
+    }
+
+    ASSERT_TRUE(sawImpact);
+    EXPECT_EQ(rec.weaponId, 7);
+    EXPECT_GT(rec.incident.x, 0.9f);  // travelling +X
+    EXPECT_NEAR(rec.point.y, 0.0f, 0.2f);
+    // Impact clears on a step with no new contact.
+    step(0.01f);
+    mgr.processContactEvents(worldId);
+    EXPECT_TRUE(mgr.impacts().empty());
 }
 
 TEST_F(ProjectileTestFixture, MissesDistantTarget) {

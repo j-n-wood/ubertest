@@ -1006,6 +1006,33 @@ void game_spawn_explosion(Game* game, Vector2 pos, int32_t group) {
     game->particleManager.burst(EXPLOSION_SPARKS, pos);  // render-only spark spray
 }
 
+// Impact sparks: a directional burst of `count` sparks in colour `color`, reflected off a
+// surface. Shared by beam impacts (one per rate-limited emission) and projectile impacts (one
+// burst per hit). `count` and `color` come from the firing weapon (weapons.json). `incidentDir`
+// is the travel direction; `normal` the surface normal. The reflection r = d − 2(d·n)n is
+// sign-independent in n, so the normal's orientation doesn't matter. The spark fades to
+// transparent over its life (same hue), so `color` is the bright core.
+static void game_spawn_impact_sparks(Game* game, Vector2 pos, Vector2 incidentDir,
+                                     Vector2 normal, Color color, int count) {
+    if (count <= 0) return;
+    float dn = incidentDir.x * normal.x + incidentDir.y * normal.y;
+    Vector2 r = {incidentDir.x - 2.0f * dn * normal.x, incidentDir.y - 2.0f * dn * normal.y};
+    if (fabsf(r.x) < 1e-6f && fabsf(r.y) < 1e-6f) r = incidentDir;  // degenerate normal
+
+    ParticleBurst spark;
+    spark.count = count;
+    spark.speedMin = 2.0f;  spark.speedMax = 5.0f;
+    spark.lifeMin = 0.22f;  spark.lifeMax = 0.50f;
+    spark.startSize = 0.22f; spark.endSize = 0.0f;
+    spark.angularVelMax = 360.0f;
+    spark.texture = TEX_FLARE;
+    spark.dirAngle = atan2f(r.y, r.x);
+    spark.spreadRad = 40.0f * DEG2RAD;  // cone about the reflection
+    spark.startColor = color;
+    spark.endColor   = {color.r, color.g, color.b, 0};  // fade out, same hue
+    game->particleManager.burst(spark, pos);
+}
+
 // The unit the player is currently driving: the captured unit when piloting, else the device.
 static UnitInstance* game_controlled_unit(Game* game) {
     return game->transfer.captured ? game->transfer.captured : game->playerUnit;
@@ -1469,29 +1496,11 @@ void game_update_gameplay(Game* game, float dt) {
                         if (cand.hit && pick-- == 0) { b = &cand; break; }
                     }
                     if (!b) continue;
-                    // Reflect the incident beam direction across the surface normal.
-                    Vector2 d = {-sinf(b->angle), cosf(b->angle)};   // incident direction
-                    Vector2 n = b->hitNormal;
-                    float dn = d.x * n.x + d.y * n.y;
-                    Vector2 r = {d.x - 2.0f * dn * n.x, d.y - 2.0f * dn * n.y};
-
-                    ParticleBurst spark;
-                    spark.count = 1;
-                    spark.speedMin = 2.0f;  spark.speedMax = 5.0f;
-                    spark.lifeMin = 0.22f;  spark.lifeMax = 0.50f;
-                    spark.startSize = 0.22f; spark.endSize = 0.0f;
-                    spark.angularVelMax = 360.0f;
-                    spark.texture = TEX_FLARE;
-                    spark.dirAngle = atan2f(r.y, r.x);
-                    spark.spreadRad = 40.0f * DEG2RAD;  // cone about the reflection
-                    if (b->weaponId == 8) {  // lightning → blue-white
-                        spark.startColor = {200, 225, 255, 255};
-                        spark.endColor   = {40, 90, 255, 0};
-                    } else {                 // plasma → green-white
-                        spark.startColor = {205, 255, 190, 255};
-                        spark.endColor   = {40, 190, 60, 0};
-                    }
-                    game->particleManager.burst(spark, b->hitPoint);
+                    // One spark per emission, reflected off the surface (incident = {-sin,cos}),
+                    // in the weapon's spark colour.
+                    Color col = getWeaponDefinition(b->weaponId).sparkColor;
+                    game_spawn_impact_sparks(game, b->hitPoint, {-sinf(b->angle), cosf(b->angle)},
+                                             b->hitNormal, col, 1);
                 }
             }
         }
@@ -1517,6 +1526,15 @@ void game_update_gameplay(Game* game, float dt) {
         game->projectileManager.update(simDt);
         game->projectileManager.syncFromPhysics();
         game->projectileManager.processContactEvents(game->physics.world_id);
+
+        // Projectile impact sparks: one burst per hit (fired once, unlike the beam's continuous
+        // stream). Per-weapon count + colour come from weapons.json (larger shots → more sparks).
+        for (const ProjectileImpact& imp : game->projectileManager.impacts()) {
+            WeaponDefinition wdef = getWeaponDefinition(imp.weaponId);
+            game_spawn_impact_sparks(game, imp.point, imp.incident, imp.normal,
+                                     wdef.sparkColor, wdef.impactSparks);
+        }
+
         game->projectileManager.cleanup();
 
         // Effects (explosions): advance + accumulate area damage onto units in range. Runs

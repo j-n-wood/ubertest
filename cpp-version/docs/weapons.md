@@ -31,6 +31,8 @@ Each weapon (`shared/units/weapon.h : WeaponDefinition`):
 | `damageType`   | armour-interaction tag (plasma/flame/cutter/…)      |
 | `twin`         | fire two projectiles per shot                        |
 | `radius`       | projectile physics (collision) radius, world units (default 0.1) |
+| `impactSparks` | per-hit impact-spark count (default 16); bigger shots make more |
+| `sparkColor`   | impact-spark colour `[r,g,b]` (default plasma green-white); used by beam + projectile impacts |
 
 Weapon 0 = Plasma Bolt: damage 11, speed 3.0 (world units/s), fireRate 0.8s, maxRange 12,
 projectile → lifetime 4s. Speed/range are hand-tuned gameplay values (slow enough to read
@@ -109,6 +111,16 @@ Because the projectiles live in a `std::vector` that reallocates on growth and c
 without this a projectile spawned after a reallocation is never recognised on contact and
 never deactivates (it bounces off units / lodges in wall corners).
 
+**Impact sparks.** Projectile shapes enable Box2D **hit events** (`enableHitEvents`), so
+`processContactEvents` records a `ProjectileImpact` (point, surface normal, incident direction,
+weapon id) for every projectile that hits something — using the hit event's precise point/normal,
+or falling back to the projectile position and reverse-of-travel when no hit event fired. The
+game consumes `ProjectileManager::impacts()` after `processContactEvents` and, via the shared
+`game_spawn_impact_sparks` helper, emits **one** reflected-spark burst per impact (same look as
+beam impacts). The burst's **count and colour come from the weapon** (`impactSparks` /
+`sparkColor` in weapons.json — e.g. the Plasma Cannon fires 24 bright-blue sparks), so larger
+shots throw more sparks. `sparkColor` also drives the per-emission colour of beam impacts.
+
 ## Beam weapons
 
 Beam weapons (`WeaponType::Beam`: weapon 1 Gas Axe, weapon 8 Exterminator) are an
@@ -141,9 +153,9 @@ is the sim layer, mirroring the door/charger/projectile split — the game draws
 - **Impact sparks.** When a beam terminates on **any** collision — wall, closed door, or unit —
   `fire()` sets `Beam::hit` and records the impact point and surface normal (`castRay`). The game
   (sim block) emits a **directional jet of sparks** from that point — the incident direction
-  reflected across the normal (`r = d − 2(d·n)n`) — via `ParticleManager::burst` with a small
-  `spreadRad` cone. Colour is per-weapon (plasma → green-white, lightning → blue-white). Emission
-  is rate-limited to ~30 sparks/second per hitting beam through a fractional accumulator
+  reflected across the normal (`r = d − 2(d·n)n`) — via the shared `game_spawn_impact_sparks`
+  helper (a `spreadRad` cone, per-weapon colour), also used by projectile impacts. Emission is
+  rate-limited to ~30 sparks/second per hitting beam through a fractional accumulator
   (`Game::beamSparkAccum`). A beam that reaches `maxRange` untouched has `hit=false` and no sparks.
 
 ## Rendering

@@ -71,6 +71,15 @@ static WeaponDefinition parseWeaponFromJson(const json& j) {
     w.type         = parseWeaponType(j.value("type", "projectile"));
     w.damageType   = parseDamageType(j.value("damageType", "plasma"));
     w.twin         = j.value("twin", false);
+    w.impactSparks = j.value("impactSparks", DEFAULT_IMPACT_SPARKS);
+    if (j.contains("sparkColor") && j["sparkColor"].is_array()) {
+        const auto& c = j["sparkColor"];
+        auto ch = [&](size_t i, unsigned char dflt) -> unsigned char {
+            return i < c.size() ? static_cast<unsigned char>(c[i].get<int>()) : dflt;
+        };
+        w.sparkColor = {ch(0, DEFAULT_SPARK_COLOR.r), ch(1, DEFAULT_SPARK_COLOR.g),
+                        ch(2, DEFAULT_SPARK_COLOR.b), ch(3, 255)};
+    }
     return w;
 }
 
@@ -141,6 +150,14 @@ bool saveWeaponsToFile(const std::string& path) {
         o["type"]         = weaponTypeToString(w.type);
         o["damageType"]   = damageTypeToString(w.damageType);
         o["twin"]         = w.twin;
+        // Impact-spark overrides — omitted at their defaults to keep the file lean.
+        if (w.impactSparks != DEFAULT_IMPACT_SPARKS) o["impactSparks"] = w.impactSparks;
+        const Color& sc = w.sparkColor;
+        if (sc.r != DEFAULT_SPARK_COLOR.r || sc.g != DEFAULT_SPARK_COLOR.g ||
+            sc.b != DEFAULT_SPARK_COLOR.b || sc.a != DEFAULT_SPARK_COLOR.a) {
+            if (sc.a == 255) o["sparkColor"] = {sc.r, sc.g, sc.b};
+            else             o["sparkColor"] = {sc.r, sc.g, sc.b, sc.a};
+        }
         arr.push_back(std::move(o));
     }
 

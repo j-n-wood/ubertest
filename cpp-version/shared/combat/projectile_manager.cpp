@@ -63,6 +63,7 @@ void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direc
     shapeDef.friction = 0.0f;
     shapeDef.restitution = 0.0f;
     shapeDef.enableContactEvents = true;
+    shapeDef.enableHitEvents = true;  // gives impact point + surface normal for impact sparks
     shapeDef.filter.categoryBits = CATEGORY_PROJECTILE;
     shapeDef.filter.maskBits = MASK_PROJECTILE;
     shapeDef.filter.groupIndex = ownerId;
@@ -112,6 +113,14 @@ void ProjectileManager::syncFromPhysics() {
 
 void ProjectileManager::processContactEvents(b2WorldId worldId) {
     b2ContactEvents events = b2World_GetContactEvents(worldId);
+    m_impacts.clear();
+
+    // Helper: the projectile index carried by a shape's body userData, or -1.
+    auto projectileIndexOf = [](b2ShapeId shape) -> long {
+        auto* ud = static_cast<BodyUserData*>(b2Body_GetUserData(b2Shape_GetBody(shape)));
+        if (!ud || ud->tag != BodyTag::Projectile) return -1;
+        return static_cast<long>(reinterpret_cast<size_t>(ud->owner));
+    };
 
     for (int i = 0; i < events.beginCount; ++i) {
         const b2ContactBeginTouchEvent& event = events.beginEvents[i];
@@ -150,6 +159,25 @@ void ProjectileManager::processContactEvents(b2WorldId worldId) {
                 applyDamage(unit->combatState, proj.damage);
             }
         }
+
+        // Record an impact for the render layer (impact sparks). Prefer a hit event's precise
+        // point/normal for this projectile; otherwise fall back to the projectile position and
+        // the reverse of its travel direction (a head-on spray).
+        ProjectileImpact imp;
+        imp.weaponId = proj.weaponId;
+        imp.incident = Vector2Normalize(proj.velocity);
+        imp.point = proj.position;
+        imp.normal = Vector2Scale(imp.incident, -1.0f);
+        for (int h = 0; h < events.hitCount; ++h) {
+            const b2ContactHitEvent& hit = events.hitEvents[h];
+            if (projectileIndexOf(hit.shapeIdA) == static_cast<long>(idx) ||
+                projectileIndexOf(hit.shapeIdB) == static_cast<long>(idx)) {
+                imp.point = {hit.point.x, hit.point.y};
+                imp.normal = {hit.normal.x, hit.normal.y};
+                break;
+            }
+        }
+        m_impacts.push_back(imp);
 
         // Deactivate projectile on any contact
         proj.active = false;

@@ -46,7 +46,9 @@
     "radius": 0.2,
     "type": "projectile",
     "damageType": "plasma",
-    "twin": false
+    "twin": false,
+    "impactSparks": 24,
+    "sparkColor": [80, 160, 255]
   },
   {
     "id": 4,
@@ -106,6 +108,7 @@
     "optimumRange": 3.0,
     "type": "beam",
     "damageType": "cutter",
-    "twin": false
+    "twin": false,
+    "sparkColor": [200, 225, 255]
   }
 ]
