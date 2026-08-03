@@ -6,12 +6,12 @@
 //------------------------------------------------------------------------------
 TEST(AlertBandTest, Thresholds) {
     EXPECT_EQ(alert_band(0.0), AlertBand::Green);
-    EXPECT_EQ(alert_band(499.9), AlertBand::Green);
-    EXPECT_EQ(alert_band(500.0), AlertBand::Yellow);
-    EXPECT_EQ(alert_band(999.9), AlertBand::Yellow);
-    EXPECT_EQ(alert_band(1000.0), AlertBand::Amber);
-    EXPECT_EQ(alert_band(1499.9), AlertBand::Amber);
-    EXPECT_EQ(alert_band(1500.0), AlertBand::Red);
+    EXPECT_EQ(alert_band(999.9), AlertBand::Green);
+    EXPECT_EQ(alert_band(1000.0), AlertBand::Yellow);
+    EXPECT_EQ(alert_band(1999.9), AlertBand::Yellow);
+    EXPECT_EQ(alert_band(2000.0), AlertBand::Amber);
+    EXPECT_EQ(alert_band(2999.9), AlertBand::Amber);
+    EXPECT_EQ(alert_band(3000.0), AlertBand::Red);
     EXPECT_EQ(alert_band(5000.0), AlertBand::Red);
 }
 

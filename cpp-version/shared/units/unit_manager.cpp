@@ -1,7 +1,9 @@
 #include "unit_manager.h"
 #include "unit_json.h"
 #include "movement_tuning.h"
+#include "../rendering/env_map.h"
 #include "rlgl.h"
+#include "raymath.h"
 #include <cmath>
 #include <algorithm>
 #include <filesystem>
@@ -311,6 +313,12 @@ SectionInstance* UnitManager::createSectionInstance(
             section->model = LoadModel(resolvedPath.c_str());
             section->hasModel = IsModelValid(section->model);
             section->ownsModel = true;
+            // Bind env maps from glTF material `extras` for per-instance (animated/no-cache) models
+            // too; this Model owns the textures and frees them on its own UnloadModel.
+            if (section->hasModel) {
+                modelSetSmoothTextureFilter(section->model);
+                envMapApplyExtras(section->model, resolvedPath);
+            }
             // Load animations only for per-instance (animated) models.
             if (section->hasModel) {
                 section->animations = LoadModelAnimations(resolvedPath.c_str(), &section->animCount);
@@ -636,7 +644,53 @@ void UnitManager::updateSectionTransforms(
 // Rendering
 //------------------------------------------------------------------------------
 
+void UnitManager::drawModelWithEnv(const Model& model, Vector3 position, float rotAngleDeg,
+                                    Vector3 scale) {
+    // Replicate DrawModelEx's transform (scale -> rotate about +Y -> translate, then model.transform).
+    Matrix matScale = MatrixScale(scale.x, scale.y, scale.z);
+    Matrix matRotation = MatrixRotate({0.0f, 1.0f, 0.0f}, rotAngleDeg * DEG2RAD);
+    Matrix matTranslation = MatrixTranslate(position.x, position.y, position.z);
+    Matrix transform = MatrixMultiply(MatrixMultiply(matScale, matRotation), matTranslation);
+    transform = MatrixMultiply(model.transform, transform);
+
+    const bool haveEnvLoc = (m_useEnvMapLoc >= 0);
+    const int envOn = 1;
+    const int envOff = 0;
+
+    for (int i = 0; i < model.meshCount; i++) {
+        const Material& material = model.materials[model.meshMaterial[i]];
+
+        // A material is env-mapped iff envMapApplyExtras bound a texture into its metalness slot.
+        if (haveEnvLoc) {
+            const MaterialMap& envSlot = material.maps[MATERIAL_MAP_METALNESS];
+            if (envSlot.texture.id > 0) {
+                SetShaderValue(m_envShader, m_useEnvMapLoc, &envOn, SHADER_UNIFORM_INT);
+                if (m_envIntensityLoc >= 0) {
+                    SetShaderValue(m_envShader, m_envIntensityLoc, &envSlot.value, SHADER_UNIFORM_FLOAT);
+                }
+            } else {
+                SetShaderValue(m_envShader, m_useEnvMapLoc, &envOff, SHADER_UNIFORM_INT);
+            }
+        }
+
+        DrawMesh(model.meshes[i], material, transform);
+    }
+
+    // Restore env-off so any later draws sharing this shader (tiles, debris, other units' first
+    // mesh before its own toggle) are never left with a stray env term.
+    if (haveEnvLoc) SetShaderValue(m_envShader, m_useEnvMapLoc, &envOff, SHADER_UNIFORM_INT);
+}
+
 void UnitManager::applyShaderToModels(Shader shader) {
+    // Capture the shader and (once per distinct program) resolve the env-map uniform locations
+    // used by drawModelWithEnv.
+    m_envShader = shader;
+    if (shader.id != m_envLocsShaderId) {
+        m_useEnvMapLoc = GetShaderLocation(shader, "useEnvMap");
+        m_envIntensityLoc = GetShaderLocation(shader, "envIntensity");
+        m_envLocsShaderId = shader.id;
+    }
+
     for (auto& instance : m_instances) {
         if (!instance) continue;
         for (auto* section : instance->allSections) {
@@ -714,13 +768,11 @@ void UnitManager::renderSection(SectionInstance* section, const std::vector<floa
         // When mapping to 3D (physics Y -> world Z), the rotation direction flips
         // visually because we're looking at the XZ plane from +Y (above)
         // Negate the angle to get correct visual rotation
-        DrawModelEx(
+        drawModelWithEnv(
             section->model,
             position,
-            {0, 1, 0},
             -section->worldRotation * RAD2DEG,
-            section->definition->scale,
-            WHITE
+            section->definition->scale
         );
     }
 
@@ -740,14 +792,7 @@ void UnitManager::renderDebris() {
 
         Vector3 position = {pos.x, debris.height, pos.y};
 
-        DrawModelEx(
-            debris.model,
-            position,
-            {0, 1, 0},
-            -rot * RAD2DEG,
-            {1, 1, 1},
-            WHITE
-        );
+        drawModelWithEnv(debris.model, position, -rot * RAD2DEG, {1, 1, 1});
     }
 }
 

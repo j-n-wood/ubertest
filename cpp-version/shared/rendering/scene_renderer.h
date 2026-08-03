@@ -22,6 +22,8 @@ struct SceneRenderer {
     int useNormalMapLoc;
     int bumpIntensityLoc;
     int effectiveEyeHeightLoc;
+    int useEnvMapLoc;       // Per-material env-map toggle (set during unit draw loop)
+    int envIntensityLoc;    // Per-material env-map additive strength
 
     // Current settings
     int debugMode;
@@ -88,5 +90,9 @@ void sceneRendererSetLightEnabled(SceneRenderer* renderer, int index, bool enabl
 
 // Get the shader (for direct access if needed)
 Shader sceneRendererGetShader(SceneRenderer* renderer);
+
+// Env-map uniform locations (set per-material during the unit draw loop). -1 if unavailable.
+int sceneRendererGetUseEnvMapLoc(SceneRenderer* renderer);
+int sceneRendererGetEnvIntensityLoc(SceneRenderer* renderer);
 
 #endif // SCENE_RENDERER_H

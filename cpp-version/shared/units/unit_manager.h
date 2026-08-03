@@ -159,6 +159,18 @@ private:
     // Collision group counter (decrements for each new unit, negative values)
     int32_t m_nextCollisionGroup = -1;
 
+    // Env-map shader plumbing. Captured from applyShaderToModels; the per-mesh draw loop toggles
+    // the shader's `useEnvMap`/`envIntensity` uniforms for materials carrying an env map (bound in
+    // the MATERIAL_MAP_METALNESS slot by envMapApplyExtras). Locations are resolved once per shader.
+    Shader m_envShader{};
+    int m_useEnvMapLoc = -1;
+    int m_envIntensityLoc = -1;
+    unsigned int m_envLocsShaderId = 0;
+
+    // Draw a model like DrawModelEx, but toggle the env-map uniforms per material so env-mapped
+    // materials get the additive spherical reflection and others don't.
+    void drawModelWithEnv(const Model& model, Vector3 position, float rotAngleDeg, Vector3 scale);
+
     //--------------------------------------------------------------------------
     // Internal Helpers
     //--------------------------------------------------------------------------

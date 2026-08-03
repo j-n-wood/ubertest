@@ -36,6 +36,8 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     renderer->useNormalMapLoc = GetShaderLocation(renderer->shader, "useNormalMap");
     renderer->bumpIntensityLoc = GetShaderLocation(renderer->shader, "bumpIntensity");
     renderer->effectiveEyeHeightLoc = GetShaderLocation(renderer->shader, "effectiveEyeHeight");
+    renderer->useEnvMapLoc = GetShaderLocation(renderer->shader, "useEnvMap");
+    renderer->envIntensityLoc = GetShaderLocation(renderer->shader, "envIntensity");
 
     // Set default values
     renderer->debugMode = 0;
@@ -59,6 +61,12 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     SetShaderValue(renderer->shader, renderer->useNormalMapLoc, &useNormalMapInt, SHADER_UNIFORM_INT);
     SetShaderValue(renderer->shader, renderer->bumpIntensityLoc, &renderer->bumpIntensity, SHADER_UNIFORM_FLOAT);
     SetShaderValue(renderer->shader, renderer->effectiveEyeHeightLoc, &renderer->effectiveEyeHeight, SHADER_UNIFORM_FLOAT);
+    // Env mapping defaults off; the unit draw loop toggles it per-material. Keeping it 0 here
+    // ensures tiles/level geometry (which share this shader) never pick up a stray env term.
+    int envOff = 0;
+    float envDefaultIntensity = 1.0f;
+    SetShaderValue(renderer->shader, renderer->useEnvMapLoc, &envOff, SHADER_UNIFORM_INT);
+    SetShaderValue(renderer->shader, renderer->envIntensityLoc, &envDefaultIntensity, SHADER_UNIFORM_FLOAT);
 
     // Load default flat normal map (derived from shader path)
     // shaderPath is like "shaders/" so we go up one level to find textures/
@@ -241,4 +249,12 @@ Shader sceneRendererGetShader(SceneRenderer* renderer) {
         return (Shader){0};
     }
     return renderer->shader;
+}
+
+int sceneRendererGetUseEnvMapLoc(SceneRenderer* renderer) {
+    return (renderer && renderer->initialized) ? renderer->useEnvMapLoc : -1;
+}
+
+int sceneRendererGetEnvIntensityLoc(SceneRenderer* renderer) {
+    return (renderer && renderer->initialized) ? renderer->envIntensityLoc : -1;
 }

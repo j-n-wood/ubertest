@@ -19,6 +19,12 @@
 // level's world and the droid library. Destroy before the GL context closes.
 //------------------------------------------------------------------------------
 
+// Set smooth (bilinear) filtering on a model's diffuse/base-colour textures. Raylib's glTF loader
+// leaves textures on the default POINT filter, which looks blocky when a model is drawn larger than
+// its texture (e.g. the small copper disk). Unit models want linear magnification. Call once after
+// LoadModel. (Tile textures use a separate pixel-art pipeline and are intentionally point-filtered.)
+void modelSetSmoothTextureFilter(Model& model);
+
 class ModelCache {
 public:
     ~ModelCache();

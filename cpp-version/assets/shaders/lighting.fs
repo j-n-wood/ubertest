@@ -57,9 +57,19 @@ in vec3 fragTangent;
 in vec3 fragBitangent;
 
 uniform sampler2D texture0;  // Diffuse map
+uniform sampler2D texture1;  // Environment map (Raylib: texture1 = MATERIAL_MAP_METALNESS slot) for old-school spherical env mapping
 uniform sampler2D texture2;  // Normal/bump map (Raylib convention: texture2 = MATERIAL_MAP_NORMAL)
 uniform vec4 colDiffuse;
-uniform vec4 colSpecular;  // RGB = specular color, A = normalized shininess (0-1)
+uniform vec4 colSpecular;  // RGB = specular color, A = normalized shininess (0-1). Also modulates the env map (legacy SPECULARITY).
+
+// Environment mapping (legacy DRAWTYPE ENVMAP / EFFECTTEXTURE). Not a standard GLTF feature:
+// the env texture is passed as material `extras` (see docs/env_mapping.md) and bound to texture1.
+// The eye-space normal's XY is used as the UV (normals toward camera -> (0.5,0.5), scaled by 0.5),
+// giving a cheap spherical reflection. colSpecular (from the legacy SPECULARITY) modulates it,
+// then it is added on top of the lit surface, scaled by envIntensity.
+uniform mat4 matView;        // World->eye matrix (auto-provided by Raylib as SHADER_LOC_MATRIX_VIEW)
+uniform int useEnvMap;       // 1 = this material has an env map bound to texture1, 0 = none
+uniform float envIntensity;  // Additive strength of the env contribution (per-material)
 
 uniform vec3 viewPos;
 uniform float effectiveEyeHeight;  // Height above ground for specular calculations (-1 = use viewPos.y)
@@ -214,6 +224,16 @@ void main() {
     vec3 diffuseColor = colDiffuse.rgb * texelColor.rgb;
     vec3 result = (ambientLight + diffuseLight) * diffuseColor;
     result += specularLight;
+
+    // Old-school spherical environment mapping (additive reflection/glow layer).
+    // UV = eye-space normal XY remapped to [0,1] (0.5,0.5 = facing camera). Modulated by the
+    // legacy SPECULARITY (colSpecular) in all four channels, then scaled by envIntensity.
+    if (useEnvMap == 1) {
+        vec3 nEye = normalize((matView * vec4(normal, 0.0)).xyz);
+        vec2 envUV = nEye.xy * 0.5 + 0.5;
+        vec4 envSample = texture(texture1, envUV) * colSpecular;
+        result += envIntensity * envSample.a * envSample.rgb;
+    }
 
     finalColor = vec4(result, colDiffuse.a * texelColor.a);
 }

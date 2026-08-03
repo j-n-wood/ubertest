@@ -353,6 +353,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/centercongrey.jpg",
+        "envColor": [
+          0.3,
+          0.3,
+          0.3,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
@@ -395,6 +403,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/centercongrey.jpg",
+        "envColor": [
+          0.3,
+          0.3,
+          0.3,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
@@ -437,6 +453,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/dalek_thermfin.png",
+        "envColor": [
+          0.3,
+          0.3,
+          0.3,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
@@ -466,13 +490,13 @@
   ],
   "images": [
     {
-      "uri": "textures/red.tga"
+      "uri": "textures/dalek.png"
     },
     {
-      "uri": "textures/dalek_h.tga"
+      "uri": "textures/dalek_head.png"
     },
     {
-      "uri": "textures/thermfin.tga"
+      "uri": "textures/chrome1.png"
     }
   ],
   "textures": [

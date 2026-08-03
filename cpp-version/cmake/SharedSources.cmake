@@ -4,6 +4,7 @@
 set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/lighting/light.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/scene_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/env_map.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp

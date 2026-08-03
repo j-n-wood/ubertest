@@ -50,7 +50,7 @@
       "type": "VEC3",
       "min": [
         -0.225278765,
-        -0,
+        0,
         -0.180223003
       ],
       "max": [
@@ -121,6 +121,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/centercongrey.jpg",
+        "envColor": [
+          0.3,
+          0.3,
+          0.3,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {

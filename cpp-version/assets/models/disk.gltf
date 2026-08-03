@@ -121,6 +121,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/envmapgold.png",
+        "envColor": [
+          0.8,
+          0.4,
+          0.2,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
@@ -150,7 +158,7 @@
   ],
   "images": [
     {
-      "uri": "textures/centercongrey.jpg"
+      "uri": "textures/copper1.jpg"
     }
   ],
   "textures": [

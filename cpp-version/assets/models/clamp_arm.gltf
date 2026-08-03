@@ -276,6 +276,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/envmapgold.png",
+        "envColor": [
+          0.4,
+          0.4,
+          0.4,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {

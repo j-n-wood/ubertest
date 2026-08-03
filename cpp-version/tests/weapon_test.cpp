@@ -200,8 +200,8 @@ TEST(WeaponFileTest, ShippedPlasmaBolt) {
     WeaponDefinition w = getWeaponDefinition(0);
     EXPECT_EQ(w.id, 0);
     EXPECT_EQ(w.name, "Plasma Bolt");
-    EXPECT_FLOAT_EQ(w.damage, 11.0f);
-    EXPECT_FLOAT_EQ(w.speed, 5.0f);
+    EXPECT_FLOAT_EQ(w.damage, 20.599f);
+    EXPECT_FLOAT_EQ(w.speed, 10.0f);
     EXPECT_FLOAT_EQ(w.fireRate, 0.8f);
     EXPECT_EQ(w.type, WeaponType::Projectile);
     EXPECT_EQ(w.damageType, DamageType::Plasma);

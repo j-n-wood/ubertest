@@ -583,6 +583,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/envmapgold.png",
+        "envColor": [
+          0.6,
+          0.6,
+          0.6,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
@@ -625,6 +633,14 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "envTexture": "textures/metal_grey_1_256.png",
+        "envColor": [
+          0.6,
+          0.6,
+          0.6,
+          1.0
+        ],
+        "envIntensity": 1.0,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {
