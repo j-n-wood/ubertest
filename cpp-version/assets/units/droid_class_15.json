@@ -16,7 +16,8 @@
     "driveType": 1,
     "brainType": 2,
     "hasTurret": false,
-    "fireWhileMoving": true,    
+    "fireWhileMoving": true,
+    "fireOffset": [0.0, 0.2, 1.26],
     "description": "Low security droid with rapid-fire weaponry. These are no longer produced and are becoming quite rare."
   },
   "rootSection": {

@@ -2,7 +2,7 @@
   "name": "Class 7",
   "id": "droid_class_7",
   "collisionRadius": 0.300000,
-  "proximityRadius": 30.000000,
+  "proximityRadius": 6.000000,
   "maxSpeed": 250.000000,
   "acceleration": 350.000000,
   "deceleration": 600.000000,

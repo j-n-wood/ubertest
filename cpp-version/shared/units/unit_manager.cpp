@@ -91,6 +91,21 @@ void UnitManager::unloadDefinition(std::string_view id) {
     m_definitions.erase(std::string(id));
 }
 
+UnitDefinition* UnitManager::reloadDefinition(std::string_view id, std::string_view path) {
+    auto it = m_definitions.find(std::string(id));
+    if (it == m_definitions.end()) return nullptr;
+
+    // Parse into a fresh object first; only swap on success so a bad file leaves the cache intact.
+    auto fresh = std::make_unique<UnitDefinition>();
+    if (!loadUnitDefinitionFromFile(path, *fresh)) return nullptr;
+
+    // Retire the old object (keep it alive — live instances still point into its section tree),
+    // then install the reloaded one so getDefinition/getDefinitionMutable/new spawns see it.
+    m_retiredDefinitions.push_back(std::move(it->second));
+    it->second = std::move(fresh);
+    return it->second.get();
+}
+
 void UnitManager::preloadDefinitions(std::string_view directory) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(directory, ec)) {

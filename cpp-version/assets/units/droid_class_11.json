@@ -1,120 +1,133 @@
 {
-  "name": "Class 11",
+  "acceleration": 300.0,
+  "coastDamping": -1.0,
+  "collisionRadius": 0.42500001192092896,
+  "deceleration": 600.0,
   "id": "droid_class_11",
-  "collisionRadius": 0.425,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 100.000000,
-  "acceleration": 300.000000,
-  "deceleration": 600.000000,
+  "maxSpeed": 100.0,
+  "name": "Class 11",
   "properties": {
-    "classId": 11,
-    "typeCode": 516,
-    "energy": 50,
     "armour": 0.0,
-    "weapon": -1,
-    "droidType": 2,
-    "driveType": 2,
     "brainType": 2,
+    "classId": 11,
+    "description": "Basic crew droid, used for passenger support and simple crew duties.",
+    "driveType": 2,
+    "droidType": 2,
+    "energy": 50,
     "hasTurret": false,
-    "description": "Basic crew droid, used for passenger support and simple crew duties."
+    "headTurnSpeed": 5.788402557373047,
+    "omnidirectional": false,
+    "typeCode": 516,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 4.0,
   "rootSection": {
-    "name": "section_0",
-    "model": "models/legs.glb",
     "animMoving": true,
-    "offset": [-0.000000, 0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
-    "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.250000
-      },
-      "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
-      "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
     "children": [
       {
-        "name": "section_1",
-        "model": "models/rect_torso.gltf",
-        "offset": [-0.000000, 0.025400, 0.431800],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
-        "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.028742
-          },
-          "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
-          "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
         "children": [
           {
+            "model": "models/crew_arm.gltf",
             "name": "section_2",
-            "model": "models/crew_arm.gltf",
-            "offset": [-0.241300, 0.000000, -0.228600],
-            "localRotation": 0.000000,
-            "scale": [1, 1, 1],
+            "offset": [
+              -0.24130000174045563,
+              0.0,
+              -0.22859999537467957
+            ],
             "physics": {
-              "shape": {
-                "type": "circle",
-                "radius": 0.069164
-              },
+              "angularDamping": 4.0,
               "density": 0.5,
-              "friction": 0.3,
-              "restitution": 0.1,
+              "friction": 0.30000001192092896,
+              "isSensor": false,
               "linearDamping": 2.0,
-              "angularDamping": 4.0
-            },
-            "children": []
+              "restitution": 0.10000000149011612,
+              "shape": {
+                "radius": 0.06916400045156479,
+                "type": "circle"
+              }
+            }
           },
           {
+            "model": "models/crew_arm.gltf",
             "name": "section_3",
-            "model": "models/crew_arm.gltf",
-            "offset": [0.241300, 0.000000, -0.228600],
-            "localRotation": 0.000000,
-            "scale": [1, 1, 1],
+            "offset": [
+              0.24130000174045563,
+              0.0,
+              -0.22859999537467957
+            ],
             "physics": {
-              "shape": {
-                "type": "circle",
-                "radius": 0.069164
-              },
+              "angularDamping": 4.0,
               "density": 0.5,
-              "friction": 0.3,
-              "restitution": 0.1,
+              "friction": 0.30000001192092896,
+              "isSensor": false,
               "linearDamping": 2.0,
-              "angularDamping": 4.0
-            },
-            "children": []
+              "restitution": 0.10000000149011612,
+              "shape": {
+                "radius": 0.06916400045156479,
+                "type": "circle"
+              }
+            }
           },
           {
-            "name": "section_4",
             "model": "models/cylinder_head_small.gltf",
-            "offset": [-0.000000, 0.000000, 0.431800],
-            "localRotation": 0.000000,
-            "scale": [1, 1, 1],
+            "name": "section_4",
+            "offset": [
+              -0.0,
+              0.0,
+              0.4318000078201294
+            ],
             "physics": {
-              "shape": {
-                "type": "box",
-                "width": 0.183815,
-                "height": 0.021482
-              },
+              "angularDamping": 4.0,
               "density": 0.5,
-              "friction": 0.3,
-              "restitution": 0.1,
+              "friction": 0.30000001192092896,
+              "isSensor": false,
               "linearDamping": 2.0,
-              "angularDamping": 4.0
+              "restitution": 0.10000000149011612,
+              "shape": {
+                "height": 0.02148200012743473,
+                "type": "box",
+                "width": 0.18381500244140625
+              }
             },
-            "children": []
+            "role": "head"
           }
-        ]
+        ],
+        "model": "models/rect_torso.gltf",
+        "name": "section_1",
+        "offset": [
+          -0.0,
+          0.02539999969303608,
+          1.3317999839782715
+        ],
+        "physics": {
+          "angularDamping": 4.0,
+          "density": 0.5,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
+          "linearDamping": 2.0,
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.028742000460624695,
+            "type": "circle"
+          }
+        }
       }
-    ]
-  }
+    ],
+    "model": "models/legs.glb",
+    "name": "section_0",
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.25,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 3.187582492828369
 }

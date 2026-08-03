@@ -19,6 +19,7 @@
     "omnidirectional": false,
     "typeCode": 999,
     "visualRadius": 0.0,
+    "fireOffset": [0.0, 0.43, 0.72],
     "weapon": 3
   },
   "proximityRadius": 10.0,

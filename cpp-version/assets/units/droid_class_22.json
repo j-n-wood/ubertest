@@ -16,6 +16,7 @@
     "driveType": 4,
     "brainType": 2,
     "hasTurret": false,
+    "fireOffset": [0.12, 0.53, 0.72],    
     "description": "Slow high security robot, specialised for interior use."
   },
   "rootSection": {

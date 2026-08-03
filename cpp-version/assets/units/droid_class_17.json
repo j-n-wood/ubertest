@@ -20,6 +20,7 @@
     "turretTurnSpeed": 4.05844259262085,
     "typeCode": 711,
     "visualRadius": 0.0,
+    "fireOffset": [0.22, 0.45, 1.22],
     "weapon": 3
   },
   "proximityRadius": 12.0,

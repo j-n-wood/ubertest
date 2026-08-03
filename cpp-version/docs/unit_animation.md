@@ -73,7 +73,11 @@ player-controlled unit, `game_update_player_turret` slews the same sections towa
 > stop the pedestal spin and aim with the mouse — the body slews toward the cursor at `turnSpeed`
 > while the turret slews at `turretTurnSpeed` and the head at `headTurnSpeed`, with facing lines
 > (body / turret / head) and a target marker drawn so the different heading + rate are visible. The
-> debug-edit panel (V) has live `turn (rad/s)`, `turret rate`, and `head rate` sliders. See
+> debug-edit panel (V) has live `turn (rad/s)`, `turret rate`, and `head rate` sliders, a red
+> **fire-offset marker** (the projectile spawn point; a second marker for twin weapons), and
+> **Save / Load from JSON** buttons — Load hot-reloads the unit file so hand-edited rarely-tuned
+> properties can be re-read without a restart (it swaps in a fresh definition and retires the old
+> one, so live gameplay instances stay valid; `UnitManager::reloadDefinition`). See
 > `src/pages/droid_library_page.cpp`.
 
 ## Unit-level facing behaviours

@@ -1,81 +1,89 @@
 {
-  "name": "Class 12",
+  "acceleration": 300.0,
+  "coastDamping": -1.0,
+  "collisionRadius": 0.42500001192092896,
+  "deceleration": 600.0,
   "id": "droid_class_12",
-  "collisionRadius": 0.425,
-  "proximityRadius": 30.000000,
-  "maxSpeed": 120.000000,
-  "acceleration": 300.000000,
-  "deceleration": 600.000000,
+  "maxSpeed": 120.0,
+  "name": "Class 12",
   "properties": {
-    "classId": 12,
-    "typeCode": 571,
-    "energy": 50,
     "armour": 0.0,
-    "weapon": -1,
-    "droidType": 2,
-    "driveType": 2,
     "brainType": 2,
+    "classId": 12,
+    "description": "Cargo handling and general purpose crew droid.",
+    "driveType": 2,
+    "droidType": 2,
+    "energy": 50,
     "hasTurret": false,
-    "description": "Cargo handling and general purpose crew droid."
+    "omnidirectional": false,
+    "typeCode": 571,
+    "visualRadius": 0.0,
+    "weapon": -1
   },
+  "proximityRadius": 4.0,
   "rootSection": {
-    "name": "section_0",
-    "model": "models/track_j5.gltf",
-    "offset": [-0.000000, 0.000000, 0.000000],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
-    "physics": {
-      "shape": {
-        "type": "box",
-        "width": 0.692944,
-        "height": 1.219597
-      },
-      "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
-      "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
     "children": [
       {
-        "name": "section_1",
-        "model": "models/body_j5.gltf",
-        "offset": [-0.000000, -0.254000, 0.889000],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
-        "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.484187
-          },
-          "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
-          "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
         "children": [
           {
-            "name": "section_2",
             "model": "models/head_j5.gltf",
-            "offset": [-0.000000, 0.254000, 0.431800],
-            "localRotation": 0.000000,
-            "scale": [1, 1, 1],
+            "name": "section_2",
+            "offset": [
+              -0.0,
+              0.2540000081062317,
+              0.4318000078201294
+            ],
             "physics": {
-              "shape": {
-                "type": "circle",
-                "radius": 0.187920
-              },
+              "angularDamping": 4.0,
               "density": 0.5,
-              "friction": 0.3,
-              "restitution": 0.1,
+              "friction": 0.30000001192092896,
+              "isSensor": false,
               "linearDamping": 2.0,
-              "angularDamping": 4.0
+              "restitution": 0.10000000149011612,
+              "shape": {
+                "radius": 0.1879200041294098,
+                "type": "circle"
+              }
             },
-            "children": []
+            "role": "head"
           }
-        ]
+        ],
+        "model": "models/body_j5.gltf",
+        "name": "section_1",
+        "offset": [
+          -0.0,
+          -0.2540000081062317,
+          0.8889999985694885
+        ],
+        "physics": {
+          "angularDamping": 4.0,
+          "density": 0.5,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
+          "linearDamping": 2.0,
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.4841870069503784,
+            "type": "circle"
+          }
+        }
       }
-    ]
-  }
+    ],
+    "model": "models/track_j5.gltf",
+    "name": "section_0",
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "height": 1.2195969820022583,
+        "type": "box",
+        "width": 0.6929439902305603
+      }
+    }
+  },
+  "turnSpeed": 2.962904453277588
 }

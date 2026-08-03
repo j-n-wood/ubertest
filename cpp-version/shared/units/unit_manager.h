@@ -50,6 +50,12 @@ public:
     // Unload a definition from cache (allows reloading from file)
     void unloadDefinition(std::string_view id);
 
+    // Hot-reload a loaded definition from `path` (droid-library Load-from-JSON). Parses into a
+    // FRESH definition and swaps it in, RETIRING the old object (kept alive) so live instances —
+    // whose section pointers reference the old tree — stay valid; getDefinition/new spawns see
+    // the reloaded one. Returns the new definition, or nullptr on parse failure (cache unchanged).
+    UnitDefinition* reloadDefinition(std::string_view id, std::string_view path);
+
     // Preload all definitions from a directory
     void preloadDefinitions(std::string_view directory);
 
@@ -138,6 +144,11 @@ private:
 
     // Definition cache (id -> definition)
     std::unordered_map<std::string, std::unique_ptr<UnitDefinition>> m_definitions;
+
+    // Definitions retired by reloadDefinition(): kept alive (not freed until teardown) so any
+    // live instance still pointing into an old section tree remains valid. Debug-only; grows by
+    // one per hot-reload.
+    std::vector<std::unique_ptr<UnitDefinition>> m_retiredDefinitions;
 
     // Active instances
     std::vector<std::unique_ptr<UnitInstance>> m_instances;

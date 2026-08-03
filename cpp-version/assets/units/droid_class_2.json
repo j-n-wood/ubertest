@@ -20,7 +20,7 @@
     "visualRadius": 0.0,
     "weapon": -1
   },
-  "proximityRadius": 30.0,
+  "proximityRadius": 6.0,
   "rootSection": {
     "model": "models/disk.gltf",
     "name": "section_0",

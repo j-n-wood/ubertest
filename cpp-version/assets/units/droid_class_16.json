@@ -18,6 +18,7 @@
     "omnidirectional": false,
     "typeCode": 629,
     "visualRadius": 0.0,
+    "fireOffset": [0.0, 0.4, 0.66],
     "weapon": 3
   },
   "proximityRadius": 10.0,

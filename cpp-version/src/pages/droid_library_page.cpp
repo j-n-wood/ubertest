@@ -242,6 +242,27 @@ void DroidLibraryPage::render() {
             if (d->proximityRadius > 0.0f) {
                 DrawCircle3D(c, d->proximityRadius, (Vector3){1, 0, 0}, 90.0f, ORANGE);
             }
+            // Fire offset marker (red) — where projectiles spawn: body centre + fireOffset
+            // (x = lateral, y = forward, z = height), rotated by the TURRET facing if the unit
+            // has one (that's where the player's shots leave), else the body angle. For a twin
+            // weapon the second (lateral-mirrored) barrel is marked too. See docs/weapons.md.
+            {
+                const Vector3& fo = d->properties.fireOffset;
+                float fireAngle = spin_;
+                if (display_) {
+                    if (SectionInstance* t = unit_find_section_by_role(display_, SectionRole::Turret))
+                        fireAngle = t->facingAngle;
+                }
+                float cs = std::cos(fireAngle), sn = std::sin(fireAngle);
+                auto fireMarker = [&](float lateral) {
+                    Vector3 mp = {lateral * cs - fo.y * sn, fo.z, lateral * sn + fo.y * cs};
+                    DrawSphere(mp, 0.05f, RED);
+                    DrawLine3D({0.0f, fo.z, 0.0f}, mp, (Color){255, 80, 80, 160});
+                };
+                fireMarker(fo.x);
+                if (d->properties.weapon >= 0 && getWeaponDefinition(d->properties.weapon).twin)
+                    fireMarker(-fo.x);
+            }
             rlDrawRenderBatchActive();
             rlEnableDepthTest();
         }
@@ -360,15 +381,26 @@ void DroidLibraryPage::render() {
                       &mdef->proximityRadius, 0.0f, 12.0f);
             ey += 30;
 
-            if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 160, 32}, "Save to JSON")) {
-                std::string path = game_->assetPath + "/units/" + ids_[index_] + ".json";
+            std::string path = game_->assetPath + "/units/" + ids_[index_] + ".json";
+            if (GuiButton((Rectangle){(float)ex, (float)ey + 8, 120, 32}, "Save to JSON")) {
                 bool ok = saveUnitDefinitionToFile(path, *mdef);
                 saveMsg_ = ok ? "Saved " + ids_[index_] + ".json" : "Save FAILED";
                 saveMsgTimer_ = 2.5f;
             }
+            // Load re-reads the file (for rarely-edited properties changed by hand). Swaps in a
+            // fresh definition — retiring the old one so live gameplay instances stay valid — then
+            // rebuilds the display droid. NOTE: mdef is stale after this (points at the retired
+            // object); it isn't used again this frame.
+            if (GuiButton((Rectangle){(float)ex + 130, (float)ey + 8, 120, 32}, "Load from JSON")) {
+                bool ok = game_->unitManager.reloadDefinition(ids_[index_], path) != nullptr;
+                if (ok) rebuildDisplay();
+                saveMsg_ = ok ? "Loaded " + ids_[index_] + ".json" : "Load FAILED";
+                saveMsgTimer_ = 2.5f;
+            }
             if (saveMsgTimer_ > 0.0f) {
-                DrawText(saveMsg_.c_str(), ex + 172, ey + 16, 16,
-                         saveMsg_.rfind("Save FAILED", 0) == 0 ? RED : GREEN);
+                DrawText(saveMsg_.c_str(), ex + 262, ey + 16, 16,
+                         (saveMsg_.rfind("Save FAILED", 0) == 0 ||
+                          saveMsg_.rfind("Load FAILED", 0) == 0) ? RED : GREEN);
             }
         }
     }

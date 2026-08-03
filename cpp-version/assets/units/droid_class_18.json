@@ -17,6 +17,7 @@
     "brainType": 2,
     "hasTurret": false,
     "fireWhileMoving": true,
+    "fireOffset": [0.0, 0.45, 1.22],
     "description": "Semi-autonomous battle droid, used for scouting and rapid raiding."
   },
   "rootSection": {
