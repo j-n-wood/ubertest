@@ -880,7 +880,7 @@ void AIManager::fireBeamAtPlayer(AIComponent& ai, float dt, Vector2 playerPos,
     Vector2 origin = {unitPos.x + off2d.x * cosB - off2d.y * sinB,
                       unitPos.y + off2d.x * sinB + off2d.y * cosB};
 
-    UnitInstance* target[1] = {playerUnit};
-    beams->fire(worldId, origin, angle, wdef.maxRange, wdef.damage, dt, ai.unit,
-                target, 1, wdef.id);
+    // The beam ray hits (and damages) whatever unit it reaches first — normally the player,
+    // which the unit is aiming at; anything between shields it. No target list needed.
+    beams->fire(worldId, origin, angle, wdef.maxRange, wdef.damage, dt, ai.unit, wdef.id);
 }

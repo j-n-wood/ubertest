@@ -6,11 +6,13 @@
 #include "physics/body_user_data.h"
 #include "box2d/box2d.h"
 
-// Beam simulation: hitscan length (wall/door clipping), which units the line hits, and the
-// continuous damage-accumulation path (shared with explosions). Rendering is not covered.
+// Beam simulation: the hitscan ray stops at the first wall, closed door, OR unit (other than
+// the shooter). The unit it stops on takes continuous damage; anything behind it is shielded.
+// Rendering is not covered.
 //
 // Angle convention matches the game: forward = {-sin a, cos a}. All beams below fire north
-// (+Y) with angle 0, forward {0, 1}, so units are placed along +Y.
+// (+Y) with angle 0, forward {0, 1}, so units/walls are placed along +Y. Units have radius
+// 0.5, so a ray from the origin hits a unit centred at (0, d) at its front face y = d - 0.5.
 class BeamTest : public ::testing::Test {
 protected:
     b2WorldId world;
@@ -26,13 +28,17 @@ protected:
     }
     void TearDown() override { b2DestroyWorld(world); }
 
+    // A unit with a dynamic body tagged so the beam ray can identify it (and skip the shooter).
     void makeUnit(UnitInstance& u, Vector2 pos) {
         u.definition = &def;
         u.combatState = initCombatState(def.properties);  // health 100, armour 0
         u.active = true;
+        u.bodyUserData.tag = BodyTag::Unit;
+        u.bodyUserData.owner = &u;
         b2BodyDef bd = b2DefaultBodyDef();
         bd.type = b2_dynamicBody;
         bd.position = {pos.x, pos.y};
+        bd.userData = &u.bodyUserData;
         u.bodyId = b2CreateBody(world, &bd);
         b2Circle circle = {{0, 0}, def.collisionRadius};
         b2ShapeDef sd = b2DefaultShapeDef();
@@ -54,7 +60,7 @@ protected:
     }
 };
 
-TEST_F(BeamTest, CastLengthReachesMaxRangeWithNoWall) {
+TEST_F(BeamTest, CastLengthReachesMaxRangeWithNoObstacle) {
     EXPECT_NEAR(BeamManager::castLength(world, {0.0f, 0.0f}, 0.0f, 10.0f), 10.0f, 0.01f);
 }
 
@@ -63,84 +69,106 @@ TEST_F(BeamTest, CastLengthTruncatesAtWall) {
     EXPECT_NEAR(BeamManager::castLength(world, {0.0f, 0.0f}, 0.0f, 10.0f), 4.5f, 0.05f);
 }
 
-TEST_F(BeamTest, HitsUnitOnLineOnly) {
-    UnitInstance on, off, behind, beyond;
-    makeUnit(on, {0.0f, 3.0f});      // on the line, within length
-    makeUnit(off, {2.0f, 3.0f});     // 2 units to the side (> radius + half-width)
-    makeUnit(behind, {0.0f, -3.0f}); // behind the muzzle
-    makeUnit(beyond, {0.0f, 12.0f}); // past the length
-
-    EXPECT_TRUE(BeamManager::hitsUnit({0, 0}, 0.0f, 10.0f, &on));
-    EXPECT_FALSE(BeamManager::hitsUnit({0, 0}, 0.0f, 10.0f, &off));
-    EXPECT_FALSE(BeamManager::hitsUnit({0, 0}, 0.0f, 10.0f, &behind));
-    EXPECT_FALSE(BeamManager::hitsUnit({0, 0}, 0.0f, 10.0f, &beyond));
+TEST_F(BeamTest, CastRayStopsAtUnit) {
+    UnitInstance u;
+    makeUnit(u, {0.0f, 3.0f});  // front face at y = 2.5
+    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
+    EXPECT_FALSE(hit.hitWall);
+    EXPECT_EQ(hit.unit, &u);
+    EXPECT_NEAR(hit.length, 2.5f, 0.1f);
 }
 
-TEST_F(BeamTest, FireDamagesUnitOnLineAndRecordsGeometry) {
+TEST_F(BeamTest, CastRayReportsWallImpact) {
+    makeWall({0.0f, 5.0f}, 3.0f, 0.5f);  // near face y = 4.5, facing -Y toward the muzzle
+    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
+    EXPECT_TRUE(hit.hitWall);
+    EXPECT_EQ(hit.unit, nullptr);
+    EXPECT_NEAR(hit.point.y, 4.5f, 0.05f);
+    EXPECT_LT(hit.normal.y, -0.5f) << "surface normal points back toward the muzzle (-Y)";
+}
+
+TEST_F(BeamTest, CastRayNoObstacleNoImpact) {
+    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
+    EXPECT_FALSE(hit.hitWall);
+    EXPECT_EQ(hit.unit, nullptr);
+    EXPECT_NEAR(hit.length, 10.0f, 0.01f);
+    EXPECT_NEAR(hit.point.y, 10.0f, 0.01f);  // point sits at the range end
+}
+
+TEST_F(BeamTest, FireDamagesFirstUnitAndRecordsGeometry) {
     UnitInstance shooter, target;
     makeUnit(shooter, {0.0f, 0.0f});
     makeUnit(target, {0.0f, 3.0f});
 
     BeamManager bm;
     bm.beginFrame();
-    UnitInstance* targets[] = {&target};
     float len = bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, /*dps=*/100.0f, /*dt=*/0.1f,
-                        &shooter, targets, 1, /*weaponId=*/1);
+                        &shooter, /*weaponId=*/1);
 
-    EXPECT_NEAR(len, 10.0f, 0.01f);
+    EXPECT_NEAR(len, 2.5f, 0.1f);  // stops at the target's front face
     ASSERT_EQ(bm.beams().size(), 1u);
     EXPECT_EQ(bm.beams()[0].weaponId, 1);
+    EXPECT_TRUE(bm.beams()[0].hit) << "a unit impact clips the beam and spawns sparks";
 
-    // Damage is accumulated (100 dps * 0.1 s = 10 raw); flush the realtime tick to realise it.
+    // 100 dps * 0.1 s = 10 raw, accumulated; flush the realtime tick to realise it.
     updateRealtimeDamage(target.combatState, 0.1f);
     EXPECT_NEAR(target.combatState.currentHealth, 90.0f, 0.01f);
 }
 
-TEST_F(BeamTest, FireExcludesShooterAndUnitsBehindWall) {
+TEST_F(BeamTest, BeamStopsAtFirstUnitShieldingThoseBehind) {
+    UnitInstance shooter, nearU, farU;
+    makeUnit(shooter, {0.0f, 0.0f});
+    makeUnit(nearU, {0.0f, 3.0f});
+    makeUnit(farU, {0.0f, 6.0f});
+
+    BeamManager bm;
+    bm.beginFrame();
+    bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 100.0f, 0.1f, &shooter, 1);
+
+    updateRealtimeDamage(nearU.combatState, 0.1f);
+    updateRealtimeDamage(farU.combatState, 0.1f);
+    EXPECT_LT(nearU.combatState.currentHealth, 100.0f) << "near unit is hit";
+    EXPECT_NEAR(farU.combatState.currentHealth, 100.0f, 0.01f) << "far unit is shielded by the near one";
+}
+
+TEST_F(BeamTest, FireNeverDamagesTheShooter) {
+    UnitInstance shooter, target;
+    makeUnit(shooter, {0.0f, 0.0f});  // the muzzle sits on the shooter
+    makeUnit(target, {0.0f, 3.0f});
+
+    BeamManager bm;
+    bm.beginFrame();
+    bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 100.0f, 0.1f, &shooter, 1);
+
+    updateRealtimeDamage(shooter.combatState, 0.1f);
+    EXPECT_NEAR(shooter.combatState.currentHealth, 100.0f, 0.01f);
+}
+
+TEST_F(BeamTest, WallBeforeUnitBlocksDamageAndSparks) {
     UnitInstance shooter, target;
     makeUnit(shooter, {0.0f, 0.0f});
-    makeUnit(target, {0.0f, 4.0f});
-    makeWall({0.0f, 2.0f}, 3.0f, 0.5f);  // wall at y ∈ [1.5, 2.5] between shooter and target
+    makeWall({0.0f, 2.0f}, 3.0f, 0.5f);  // wall front at y = 1.5
+    makeUnit(target, {0.0f, 4.0f});      // behind the wall
 
     BeamManager bm;
     bm.beginFrame();
-    UnitInstance* targets[] = {&shooter, &target};  // shooter included in the list on purpose
-    float len = bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 100.0f, 0.1f, &shooter, targets, 2, 1);
+    float len = bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 100.0f, 0.1f, &shooter, 1);
 
-    EXPECT_NEAR(len, 1.5f, 0.05f);  // clipped at the wall
+    EXPECT_NEAR(len, 1.5f, 0.05f);
+    ASSERT_EQ(bm.beams().size(), 1u);
+    EXPECT_TRUE(bm.beams()[0].hit) << "stopped on the wall → spawns sparks";
     updateRealtimeDamage(target.combatState, 0.1f);
-    updateRealtimeDamage(shooter.combatState, 0.1f);
     EXPECT_NEAR(target.combatState.currentHealth, 100.0f, 0.01f) << "target is behind the wall";
-    EXPECT_NEAR(shooter.combatState.currentHealth, 100.0f, 0.01f) << "the shooter never damages itself";
 }
 
-TEST_F(BeamTest, CastRayReportsWallImpact) {
-    makeWall({0.0f, 5.0f}, 3.0f, 0.5f);  // near face at y = 4.5, facing -Y toward the muzzle
-    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
-    EXPECT_TRUE(hit.hitWall);
-    EXPECT_NEAR(hit.point.y, 4.5f, 0.05f);
-    EXPECT_NEAR(hit.point.x, 0.0f, 0.05f);
-    EXPECT_LT(hit.normal.y, -0.5f) << "surface normal points back toward the muzzle (-Y)";
-}
-
-TEST_F(BeamTest, CastRayNoWallNoImpact) {
-    BeamHit hit = BeamManager::castRay(world, {0.0f, 0.0f}, 0.0f, 10.0f);
-    EXPECT_FALSE(hit.hitWall);
-    EXPECT_NEAR(hit.length, 10.0f, 0.01f);
-    EXPECT_NEAR(hit.point.y, 10.0f, 0.01f);  // point sits at the range end
-}
-
-TEST_F(BeamTest, FireRecordsWallImpactForSparks) {
+TEST_F(BeamTest, FireWithNoObstacleDoesNotSpark) {
     UnitInstance shooter;
     makeUnit(shooter, {0.0f, 0.0f});
-    makeWall({0.0f, 5.0f}, 3.0f, 0.5f);
-
     BeamManager bm;
     bm.beginFrame();
-    bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 0.0f, 0.0f, &shooter, nullptr, 0, 1);
+    bm.fire(world, {0.0f, 0.0f}, 0.0f, 10.0f, 100.0f, 0.1f, &shooter, 1);
     ASSERT_EQ(bm.beams().size(), 1u);
-    EXPECT_TRUE(bm.beams()[0].hitWall);
-    EXPECT_NEAR(bm.beams()[0].hitPoint.y, 4.5f, 0.05f);
+    EXPECT_FALSE(bm.beams()[0].hit) << "reached maxRange with nothing in the way";
 }
 
 TEST_F(BeamTest, AnimationFrameCyclesAtBeamFps) {

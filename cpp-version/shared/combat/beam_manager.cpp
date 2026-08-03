@@ -7,9 +7,38 @@
 namespace {
 // Forward direction for a facing angle (matches facing_angle_to elsewhere: dir = {-sin, cos}).
 Vector2 forwardOf(float angle) { return {-std::sin(angle), std::cos(angle)}; }
+
+// Ray-cast sink: keeps the closest non-shooter hit. The shooter's own body is ignored (the
+// muzzle sits on it). Returning the hit fraction makes Box2D narrow the search to nearer
+// shapes, so the last recorded hit is the closest.
+struct BeamCastCtx {
+    const UnitInstance* shooter = nullptr;
+    bool hit = false;
+    float fraction = 1.0f;
+    b2Vec2 point{};
+    b2Vec2 normal{};
+    bool isUnit = false;
+    UnitInstance* unit = nullptr;
+};
+float beamCastCallback(b2ShapeId shape, b2Vec2 point, b2Vec2 normal, float fraction, void* ctx) {
+    auto* c = static_cast<BeamCastCtx*>(ctx);
+    auto* ud = static_cast<BodyUserData*>(b2Body_GetUserData(b2Shape_GetBody(shape)));
+    bool isUnit = ud && ud->tag == BodyTag::Unit;
+    if (isUnit && ud->owner == static_cast<const void*>(c->shooter)) {
+        return -1.0f;  // ignore the shooter's own body, keep casting
+    }
+    c->hit = true;
+    c->fraction = fraction;
+    c->point = point;
+    c->normal = normal;
+    c->isUnit = isUnit;
+    c->unit = isUnit ? static_cast<UnitInstance*>(ud->owner) : nullptr;
+    return fraction;   // clip the ray to this hit (only nearer shapes are reported after)
+}
 }  // namespace
 
-BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float maxRange) {
+BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float maxRange,
+                             const UnitInstance* shooter) {
     Vector2 dir = forwardOf(angle);
     float range = maxRange > 0.0f ? maxRange : 0.0f;
     BeamHit out;
@@ -19,16 +48,19 @@ BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float
 
     b2Vec2 o = {origin.x, origin.y};
     b2Vec2 translation = {dir.x * range, dir.y * range};
-    // Probe against walls and CLOSED doors (an open door clears its filter and is skipped).
+    // Stop at walls, CLOSED doors (an open door clears its filter), and units.
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_PROJECTILE;
-    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR;
-    b2RayResult r = b2World_CastRayClosest(world, o, translation, filter);
-    if (r.hit) {
-        out.length = r.fraction * range;
-        out.hitWall = true;
-        out.point = {r.point.x, r.point.y};
-        out.normal = {r.normal.x, r.normal.y};
+    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR | CATEGORY_UNIT;
+    BeamCastCtx ctx;
+    ctx.shooter = shooter;
+    b2World_CastRay(world, o, translation, filter, beamCastCallback, &ctx);
+    if (ctx.hit) {
+        out.length = ctx.fraction * range;
+        out.point = {ctx.point.x, ctx.point.y};
+        out.normal = {ctx.normal.x, ctx.normal.y};
+        out.hitWall = !ctx.isUnit;   // geometry → sparks; a unit absorbs the beam
+        out.unit = ctx.unit;
     }
     return out;
 }
@@ -37,38 +69,14 @@ float BeamManager::castLength(b2WorldId world, Vector2 origin, float angle, floa
     return castRay(world, origin, angle, maxRange).length;
 }
 
-bool BeamManager::hitsUnit(Vector2 origin, float angle, float length, const UnitInstance* unit) {
-    if (!unit || !b2Body_IsValid(unit->bodyId)) return false;
-    b2Vec2 up = b2Body_GetPosition(unit->bodyId);
-    Vector2 dir = forwardOf(angle);
-    Vector2 w = {up.x - origin.x, up.y - origin.y};
-    float along = w.x * dir.x + w.y * dir.y;      // projection onto the beam direction
-    if (along < 0.0f || along > length) return false;  // behind the muzzle or past the end
-    // Perpendicular distance from the beam centre-line.
-    float cx = origin.x + dir.x * along;
-    float cy = origin.y + dir.y * along;
-    float dx = up.x - cx, dy = up.y - cy;
-    float perp = std::sqrt(dx * dx + dy * dy);
-    float radius = unit->definition ? unit->definition->collisionRadius : 0.3f;
-    return perp <= radius + BEAM_HALF_WIDTH;
-}
-
 float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxRange,
-                        float dps, float dt, const UnitInstance* shooter,
-                        UnitInstance* const* targets, std::size_t targetCount, int weaponId) {
-    BeamHit hit = castRay(world, origin, angle, maxRange);
+                        float dps, float dt, const UnitInstance* shooter, int weaponId) {
+    BeamHit hit = castRay(world, origin, angle, maxRange, shooter);
 
-    // Continuous damage: accumulate dps*dt onto every unit the beam passes through, flushed
-    // on the shared realtime-damage tick (like explosion damage). No fireRate gating.
-    if (dps > 0.0f && dt > 0.0f && targets) {
-        float raw = dps * dt;
-        for (std::size_t i = 0; i < targetCount; ++i) {
-            UnitInstance* t = targets[i];
-            if (!t || t == shooter || !t->active) continue;
-            if (hitsUnit(origin, angle, hit.length, t)) {
-                accumulateRealtimeDamage(t->combatState, raw);
-            }
-        }
+    // The beam stops at (and damages) the first unit it reaches — continuous dps*dt fed
+    // through the shared realtime-damage accumulator, like explosion damage. No fireRate gate.
+    if (hit.unit && hit.unit->active && dps > 0.0f && dt > 0.0f) {
+        accumulateRealtimeDamage(hit.unit->combatState, dps * dt);
     }
 
     Beam b;
@@ -76,7 +84,7 @@ float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxR
     b.angle = angle;
     b.length = hit.length;
     b.weaponId = weaponId;
-    b.hitWall = hit.hitWall;
+    b.hit = hit.hitWall || hit.unit != nullptr;   // any collision (geometry or unit) sparks
     b.hitPoint = hit.point;
     b.hitNormal = hit.normal;
     beams_.push_back(b);

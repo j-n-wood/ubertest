@@ -26,19 +26,23 @@ struct Beam {
     float angle = 0.0f;        // facing angle (radians); direction = {-sin, cos}
     float length = 0.0f;       // truncated length (world units) after wall/range clipping
     int weaponId = -1;         // selects the frame set (plasma vs lightning)
-    // Impact on solid geometry (false when the beam reached maxRange without hitting a wall).
-    // Used to spawn reflected sparks at the surface. hitNormal is the surface normal (outward).
-    bool hitWall = false;
+    // Impact: true when the beam terminated on ANY collision — wall, closed door, or unit
+    // (false when it reached maxRange with nothing in the way). Drives reflected impact sparks.
+    // hitNormal is the surface normal at the impact (points back toward the muzzle).
+    bool hit = false;
     Vector2 hitPoint = {0, 0};
     Vector2 hitNormal = {0, 0};
 };
 
-// Result of a beam ray-cast: clipped length plus the impact point/normal when a wall was hit.
+// Result of a beam ray-cast. The ray stops at the first solid thing (wall, closed door, or
+// unit) other than the shooter. `hitWall` is true only for geometry (spawns sparks); `unit`
+// is the unit it stopped on (nullptr otherwise) and takes the beam's damage.
 struct BeamHit {
     float length = 0.0f;
-    bool hitWall = false;
+    bool hitWall = false;      // stopped on a wall/closed door (→ impact sparks)
     Vector2 point = {0, 0};
     Vector2 normal = {0, 0};
+    UnitInstance* unit = nullptr;  // unit the beam stopped on (absorbs the beam), if any
 };
 
 // Tunables.
@@ -54,15 +58,14 @@ public:
     // before any fire() this frame.
     void beginFrame() { beams_.clear(); }
 
-    // Register and simulate one beam for this frame. Casts from `origin` along `angle` for
-    // up to `maxRange`, clipping to the first wall/closed door. Continuously accumulates
-    // `dps * dt` of damage onto every target whose body the beam passes through (excluding
-    // `shooter`), via the same realtime-damage accumulator explosions use — so fireRate is
-    // irrelevant and the beam damages while held. Records the clipped geometry for rendering.
-    // Returns the clipped length.
+    // Register and simulate one beam for this frame. Casts from `origin` along `angle` for up
+    // to `maxRange`, stopping at the first wall, closed door, OR unit (other than `shooter`).
+    // If it stops on a unit, that unit continuously takes `dps * dt` damage via the same
+    // realtime-damage accumulator explosions use — so fireRate is irrelevant and the beam
+    // damages while held. A unit blocks the beam, so anything behind it is shielded. Records
+    // the clipped geometry (and any wall impact) for rendering. Returns the clipped length.
     float fire(b2WorldId world, Vector2 origin, float angle, float maxRange,
-               float dps, float dt, const UnitInstance* shooter,
-               UnitInstance* const* targets, std::size_t targetCount, int weaponId);
+               float dps, float dt, const UnitInstance* shooter, int weaponId);
 
     // Advance the shared animation cursor (frame index cycles at BEAM_ANIM_FPS).
     void update(float dt);
@@ -70,17 +73,14 @@ public:
     const std::vector<Beam>& beams() const { return beams_; }
     int animFrame() const { return frame_; }   // 0 .. BEAM_FRAME_COUNT-1
 
-    // Ray-cast the beam: clipped length + impact point/normal at the first solid wall/closed
-    // door (hitWall=false and point at the range end if nothing is hit). Exposed for testing.
-    static BeamHit castRay(b2WorldId world, Vector2 origin, float angle, float maxRange);
+    // Ray-cast the beam: clipped length + impact point/normal + the unit stopped on. Stops at
+    // the first wall, closed door, or unit other than `shooter` (pass nullptr for no shooter).
+    // hitWall=false / unit=nullptr with point at the range end if nothing is hit. For testing.
+    static BeamHit castRay(b2WorldId world, Vector2 origin, float angle, float maxRange,
+                           const UnitInstance* shooter = nullptr);
 
     // Distance-only convenience wrapper over castRay. Exposed for testing.
     static float castLength(b2WorldId world, Vector2 origin, float angle, float maxRange);
-
-    // Does the beam segment (origin, angle, length) pass through `unit`'s body
-    // (perpendicular distance within its collision radius + BEAM_HALF_WIDTH, and the
-    // closest point within [0, length])? Exposed for testing.
-    static bool hitsUnit(Vector2 origin, float angle, float length, const UnitInstance* unit);
 
 private:
     std::vector<Beam> beams_;

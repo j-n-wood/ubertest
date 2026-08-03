@@ -119,17 +119,18 @@ is the sim layer, mirroring the door/charger/projectile split — the game draws
   `fireOffset`, rotated and clamped like a projectile) and runs along the **firing section's
   facing** — the turret's `facingAngle` if the unit has a turret, else the body facing. Because
   the direction is recomputed each frame, the beam **sweeps** as the section turns to aim.
-- **Length / blocking.** `castLength` ray-casts from the muzzle out to `maxRange`, clipping to
-  the first solid object — walls and **closed** doors (`CATEGORY_STATIC | CATEGORY_DOOR`; an open
-  door clears its filter and doesn't block). The beam length is `min(maxRange, distance-to-wall)`.
-- **Damage.** Every unit whose body the segment passes through (perpendicular distance ≤ its
-  `collisionRadius + BEAM_HALF_WIDTH`, projection within `[0, length]`) takes damage — the beam
-  is **not** stopped by units, only walls. Damage is **continuous**: `damage` is treated as a
-  per-second rate and fed through the shared realtime-damage accumulator
-  (`accumulateRealtimeDamage`, flushed on the 0.1 s tick by `UnitManager::update`) — the **same
-  path explosions use**. So **`fireRate` is irrelevant** for beams; they damage continuously
-  while held, with no cooldown. The firing unit is excluded. Player beams damage enemy units; AI
-  beams damage the player unit.
+- **Length / blocking.** `castRay` casts from the muzzle out to `maxRange` and stops at the first
+  solid thing: a wall, a **closed** door (`CATEGORY_STATIC | CATEGORY_DOOR`; an open door clears
+  its filter), **or a unit** (`CATEGORY_UNIT`). The shooter's own body is skipped (the muzzle sits
+  on it) via a per-shape cast callback. Beam length is the distance to that first hit. A unit
+  **blocks** the beam, so anything behind it is shielded.
+- **Damage.** The beam damages the **single unit it stops on** (the first non-shooter unit the ray
+  reaches). Damage is **continuous**: `damage` is treated as a per-second rate and fed through the
+  shared realtime-damage accumulator (`accumulateRealtimeDamage`, flushed on the 0.1 s tick by
+  `UnitManager::update`) — the **same path explosions use**. So **`fireRate` is irrelevant** for
+  beams; they damage continuously while held, with no cooldown. Whatever unit the ray hits first
+  is damaged (normally the player for AI beams, the nearest enemy for the player's beam); the
+  shooter is never hit.
   > **Tuning note.** Because armour is a flat reduction applied *per 0.1 s flush*, a beam only
   > hurts a unit when `damage × 0.1 > armour` — i.e. armour behaves as a DPS threshold of
   > ~`armour × 10`. The shipped `damage` values (3.5 / 6.0) are low as DPS; tune them up via the
@@ -137,12 +138,13 @@ is the sim layer, mirroring the door/charger/projectile split — the game draws
 - **Lifetime.** Beams are transient: `beginFrame()` clears them at the top of the sim block,
   each active firer calls `fire()` that frame, `update(dt)` advances the shared animation cursor.
   A beam that isn't re-fired simply isn't drawn next frame.
-- **Impact sparks.** When a beam terminates on solid geometry, `fire()` records the impact
-  point and surface normal on the `Beam` (`castRay`). The game (sim block) emits a **directional
-  jet of sparks** from that point — the incident direction reflected across the normal
-  (`r = d − 2(d·n)n`) — via `ParticleManager::burst` with a small `spreadRad` cone. Colour is
-  per-weapon (plasma → green-white, lightning → blue-white). Emission is rate-limited to ~30
-  sparks/second per hitting beam through a fractional accumulator (`Game::beamSparkAccum`).
+- **Impact sparks.** When a beam terminates on **any** collision — wall, closed door, or unit —
+  `fire()` sets `Beam::hit` and records the impact point and surface normal (`castRay`). The game
+  (sim block) emits a **directional jet of sparks** from that point — the incident direction
+  reflected across the normal (`r = d − 2(d·n)n`) — via `ParticleManager::burst` with a small
+  `spreadRad` cone. Colour is per-weapon (plasma → green-white, lightning → blue-white). Emission
+  is rate-limited to ~30 sparks/second per hitting beam through a fractional accumulator
+  (`Game::beamSparkAccum`). A beam that reaches `maxRange` untouched has `hit=false` and no sparks.
 
 ## Rendering
 
@@ -195,9 +197,9 @@ Weapon-table parsing (types, twin, damage types, count, cooldown gating) plus a
 `WeaponFileTest.ShippedPlasmaBolt` that loads the real `weapons.json` and asserts weapon 0's
 stats. `ProjectileTestFixture` drives real Box2D: travel along heading, lifetime expiry, hit
 + damage, miss, and owner `groupIndex` pass-through (no self-hit). `tests/beam_test.cpp` drives
-real Box2D for beams: length reaches `maxRange`, truncates at a wall, on-line/off-line/behind/
-beyond hit tests, continuous damage accumulation, shooter exclusion + wall blocking, and the
-animation-frame cadence.
+real Box2D for beams: the ray reaches `maxRange`, stops at a wall or a unit, damages the first
+unit while shielding those behind it, never damages the shooter, a wall before a unit blocks both
+damage and (as sparks) records the impact, and the animation-frame cadence.
 
 ## Deferred (later phases)
 

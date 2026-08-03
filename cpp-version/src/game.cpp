@@ -834,9 +834,46 @@ static void game_deactivate_level(Game* game, int level) {
     game->collisionBodies.clear();
 }
 
-// Re-enter a level that was already populated: wake its droids (they are where they were
-// left), REPOSITION them to random waypoints (activation always re-scatters the roster),
-// heal them for the time away, and rebuild fresh patrol AI from the new positions.
+// Whether the active level has anything worth rolling forward during catch-up. Today that is
+// simply live enemy units; kept as an explicit predicate (tested in the roll-forward, not
+// assumed) so future off-screen sim sources — moving hazards, timed doors, spreading fire —
+// can extend the condition rather than the empty-unit check being baked in.
+static bool game_level_has_simulation(const Game* game) {
+    return !game->enemyUnits.empty();
+}
+
+// Roll the active level's simulation forward `seconds` of game-time so its droids are where
+// they would have wandered while the player was elsewhere — instead of teleporting them.
+// Headless: no input, no rendering, no model animation; patrol-only (a far-away synthetic
+// player keeps the AI in Patrol and nothing fires). Coarse fixed step + a cap keep it fast
+// (it runs in a single frame, i.e. faster than real time). Requires the level to be active
+// (physics.world_id/AI already repointed) — call it at the end of reactivation.
+static void game_simulate_level_catchup(Game* game, double seconds) {
+    if (seconds <= 0.0) return;
+    if (!game_level_has_simulation(game)) return;  // nothing to advance — skip
+
+    constexpr float CATCHUP_DT = 0.1f;            // 10 Hz: patrol movement is slow/smooth enough
+    constexpr double CATCHUP_MAX_SECONDS = 60.0;  // bound the modelled interval (and the cost)
+    double simSeconds = seconds < CATCHUP_MAX_SECONDS ? seconds : CATCHUP_MAX_SECONDS;
+    int steps = (int)(simSeconds / CATCHUP_DT);
+    if (steps <= 0) return;
+
+    const Vector2 noPlayer = {1.0e6f, 1.0e6f};  // out of every detection range → AI stays patrolling
+    for (int i = 0; i < steps; ++i) {
+        // No projectiles/beams/playerUnit → nothing fires; doors still open on proximity so
+        // patrol routes through them; unitManager.update is skipped (render/animation only —
+        // the AI reads body transforms straight from Box2D).
+        game->aiManager.update(CATCHUP_DT, noPlayer, game->physics.world_id,
+                               nullptr, nullptr, nullptr);
+        game->doorManager.update(CATCHUP_DT);
+        physics_world_step(&game->physics, CATCHUP_DT);
+        game->aiManager.processCollisions(game->physics.world_id);
+    }
+}
+
+// Re-enter a level that was already populated: wake its droids where they were left (NO
+// teleport — they persist in place), heal them for the time away, rebuild patrol AI resuming
+// from the waypoint nearest each droid, then roll the level forward by the time it was away.
 static void game_reactivate_current_level(Game* game) {
     const int L = game->currentLevel;
     if (L < 0 || L >= (int)game->levelUnits.size()) return;
@@ -844,17 +881,9 @@ static void game_reactivate_current_level(Game* game) {
 
     const double away = game->gameClock - game->levelLastActive[L];
 
-    // Random waypoint ASSIGNMENT: shuffle a local list of waypoint indices (the waypoints
-    // themselves are never modified) so each activation puts droids on different waypoints.
-    static std::mt19937 rng{std::random_device{}()};
-    std::vector<int> wpOrder(rd.waypointPositions.size());
-    for (int i = 0; i < (int)wpOrder.size(); ++i) wpOrder[i] = i;
-    std::shuffle(wpOrder.begin(), wpOrder.end(), rng);
-
     game->enemyUnits.clear();
     std::vector<SpawnEntry> spawns;
     std::vector<UnitInstance*> enemies;
-    int wi = 0;
     for (UnitInstance* u : game->levelUnits[L]) {
         if (!u || !u->definition || !b2Body_IsValid(u->bodyId)) continue;
         u->active = true;
@@ -864,27 +893,34 @@ static void game_reactivate_current_level(Game* game) {
             away, AWAY_HEAL_FRACTION_PER_SEC);
         game->enemyUnits.push_back(u);
 
-        // Reposition to the next assigned waypoint — random re-scatter on activation.
-        int wp = wpOrder.empty() ? -1 : wpOrder[wi++ % (int)wpOrder.size()];
-        if (wp >= 0) {
-            Vector3 wpPos = rd.waypointPositions[wp];
-            Vector2 pos = {wpPos.x, wpPos.z};
-            b2Rot rot = b2Body_GetRotation(u->bodyId);
-            b2Body_SetTransform(u->bodyId, (b2Vec2){pos.x, pos.y}, rot);
-            b2Body_SetLinearVelocity(u->bodyId, (b2Vec2){0, 0});
-            b2Body_SetAngularVelocity(u->bodyId, 0.0f);
-            unit_set_move_target(u, pos, b2Rot_GetAngle(rot));
+        // The droid stays exactly where it froze. Resume patrol from the waypoint nearest its
+        // current position, so it continues from where it is and never jumps across a
+        // disconnected part of the level. (Off-course/stuck recovery in the AI keeps it within
+        // its own reachable region if the nearest node isn't straight-line reachable.)
+        b2Vec2 p = b2Body_GetPosition(u->bodyId);
+        int nearest = rd.waypointPositions.empty() ? -1 : 0;
+        float best = 1.0e30f;
+        for (int i = 0; i < (int)rd.waypointPositions.size(); ++i) {
+            float dx = rd.waypointPositions[i].x - p.x;
+            float dz = rd.waypointPositions[i].z - p.y;
+            float d2 = dx * dx + dz * dz;
+            if (d2 < best) { best = d2; nearest = i; }
         }
 
         SpawnEntry e;
         e.classId = u->definition->properties.classId;
-        e.waypointIndex = (wp >= 0) ? wp : 0;
+        e.waypointIndex = nearest;
         e.angle = b2Rot_GetAngle(b2Body_GetRotation(u->bodyId));
         spawns.push_back(e);
         enemies.push_back(u);
     }
     game->aiManager.init(spawns, rd.waypointPositions, rd.waypointAdjacency, enemies);
-    TraceLog(LOG_INFO, "Reactivated + rescattered %zu droids on level %d", enemies.size(), L);
+
+    // Simulate the time the player was away so the roster is where it would have wandered.
+    game_simulate_level_catchup(game, away);
+
+    TraceLog(LOG_INFO, "Reactivated %zu droids on level %d (away %.1fs, caught up)",
+             enemies.size(), L, away);
 }
 
 // Remove droids that have been destroyed (health depleted) from the active roster. The
@@ -1030,8 +1066,7 @@ static void game_update_player_fire(Game* game, float dt) {
     // damage tick. Other weapons spawn a projectile gated by the cooldown.
     if (w.type == WeaponType::Beam) {
         game->beamManager.fire(game->physics.world_id, spawnFrom(off2d), a, w.maxRange,
-                               w.damage, dt, cu, game->enemyUnits.data(),
-                               game->enemyUnits.size(), w.id);
+                               w.damage, dt, cu, w.id);
         return;
     }
     if (w.type != WeaponType::Projectile) return;  // area/instant deferred
@@ -1385,12 +1420,13 @@ void game_update_gameplay(Game* game, float dt) {
         // Advance the shared beam animation cursor.
         game->beamManager.update(simDt);
 
-        // Beam impact sparks: where a beam terminates on solid geometry, emit a directional
-        // jet of sparks reflected across the surface normal, rate-limited to ~30/s per beam.
+        // Beam impact sparks: where a beam terminates on any collision (wall, door, or unit),
+        // emit a directional jet of sparks reflected across the surface normal, rate-limited to
+        // ~30/s per beam.
         {
             const auto& beams = game->beamManager.beams();
             int hitting = 0;
-            for (const Beam& b : beams) if (b.hitWall) ++hitting;
+            for (const Beam& b : beams) if (b.hit) ++hitting;
             if (hitting > 0) {
                 constexpr float SPARKS_PER_SEC = 30.0f;
                 game->beamSparkAccum += hitting * SPARKS_PER_SEC * simDt;
@@ -1401,7 +1437,7 @@ void game_update_gameplay(Game* game, float dt) {
                     int pick = GetRandomValue(0, hitting - 1);
                     const Beam* b = nullptr;
                     for (const Beam& cand : beams) {
-                        if (cand.hitWall && pick-- == 0) { b = &cand; break; }
+                        if (cand.hit && pick-- == 0) { b = &cand; break; }
                     }
                     if (!b) continue;
                     // Reflect the incident beam direction across the surface normal.
