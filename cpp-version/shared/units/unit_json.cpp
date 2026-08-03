@@ -107,6 +107,7 @@ DroidProperties parseDroidProperties(const json& j) {
     props.omnidirectional = j.value("omnidirectional", false);
     props.fireWhileMoving = j.value("fireWhileMoving", false);
     props.turretTurnSpeed = j.value("turretTurnSpeed", 0.0f);
+    props.headTurnSpeed   = j.value("headTurnSpeed", 0.0f);
     props.visualRadius    = j.value("visualRadius", 0.0f);
     if (j.contains("fireOffset")) {
         props.fireOffset = parseVector3(j["fireOffset"], {0, 0, 0});
@@ -129,6 +130,7 @@ json droidPropertiesToJson(const DroidProperties& props) {
     j["omnidirectional"] = props.omnidirectional;
     if (props.fireWhileMoving) j["fireWhileMoving"] = props.fireWhileMoving;
     if (props.turretTurnSpeed != 0.0f) j["turretTurnSpeed"] = props.turretTurnSpeed;
+    if (props.headTurnSpeed != 0.0f) j["headTurnSpeed"] = props.headTurnSpeed;
     j["visualRadius"]    = props.visualRadius;
     if (props.fireOffset.x != 0 || props.fireOffset.y != 0 || props.fireOffset.z != 0) {
         j["fireOffset"] = vector3ToJson(props.fireOffset);

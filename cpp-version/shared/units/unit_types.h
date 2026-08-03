@@ -83,7 +83,8 @@ struct DroidProperties {
     bool hasTurret = false;        // Has a turret-role section (may be authored or derived)
     bool omnidirectional = false;  // Never orient: body facing is held at angle 0
     bool fireWhileMoving = false;  // Body aims at target, unit doesn't halt to fire, no LOS facing gate
-    float turretTurnSpeed = 0.0f;  // Per-unit turret/head slew rate (rad/s); 0 = global default
+    float turretTurnSpeed = 0.0f;  // Per-unit TURRET section slew rate (rad/s); 0 = global default
+    float headTurnSpeed = 0.0f;    // Per-unit HEAD section slew rate (rad/s); 0 = global default
     float visualRadius = 0.0f;    // Visual detection / disengage range
     Vector3 fireOffset = {0, 0, 0}; // Projectile spawn offset from unit centre
     std::string description;

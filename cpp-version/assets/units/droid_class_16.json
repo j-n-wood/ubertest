@@ -1,81 +1,92 @@
 {
-  "name": "Class 16",
+  "acceleration": 400.0,
+  "coastDamping": -1.0,
+  "collisionRadius": 0.42500001192092896,
+  "deceleration": 600.0,
   "id": "droid_class_16",
-  "collisionRadius": 0.425,
-  "proximityRadius": 10.000000,
-  "maxSpeed": 80.000000,
-  "acceleration": 400.000000,
-  "deceleration": 600.000000,
+  "maxSpeed": 80.0,
+  "name": "Class 16",
   "properties": {
-    "classId": 16,
-    "typeCode": 629,
-    "energy": 100,
     "armour": 5.0,
-    "weapon": 3,
-    "droidType": 2,
-    "driveType": 5,
     "brainType": 2,
+    "classId": 16,
+    "description": "Simple sentinel droid used to patrol restricted areas.",
+    "driveType": 5,
+    "droidType": 2,
+    "energy": 100,
     "hasTurret": true,
-    "description": "Simple sentinel droid used to patrol restricted areas."
+    "omnidirectional": false,
+    "typeCode": 629,
+    "visualRadius": 0.0,
+    "weapon": 3
   },
+  "proximityRadius": 10.0,
   "rootSection": {
-    "name": "section_0",
-    "model": "models/tank_body.gltf",
-    "offset": [-0.000000, 0.000000, 0.304800],
-    "localRotation": 0.000000,
-    "scale": [1, 1, 1],
-    "physics": {
-      "shape": {
-        "type": "circle",
-        "radius": 0.625856
-      },
-      "density": 1.0,
-      "friction": 0.3,
-      "restitution": 0.0,
-      "linearDamping": 4.0,
-      "angularDamping": 8.0
-    },
     "children": [
       {
-        "name": "section_1",
         "model": "models/dischead_med.gltf",
-        "offset": [-0.000000, 0.000000, 0.304800],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
-        "role": "turret",
+        "name": "section_1",
+        "offset": [
+          -0.0,
+          0.0,
+          0.30480000376701355
+        ],
         "physics": {
-          "shape": {
-            "type": "circle",
-            "radius": 0.362353
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "radius": 0.36235299706459045,
+            "type": "circle"
+          }
         },
-        "children": []
+        "role": "turret"
       },
       {
-        "name": "section_2",
         "model": "models/tank_tracks.gltf",
-        "offset": [-0.000000, 0.000000, -0.254000],
-        "localRotation": 0.000000,
-        "scale": [1, 1, 1],
+        "name": "section_2",
+        "offset": [
+          -0.0,
+          0.0,
+          -0.2540000081062317
+        ],
         "physics": {
-          "shape": {
-            "type": "box",
-            "width": 0.362103,
-            "height": 1.193671
-          },
+          "angularDamping": 4.0,
           "density": 0.5,
-          "friction": 0.3,
-          "restitution": 0.1,
+          "friction": 0.30000001192092896,
+          "isSensor": false,
           "linearDamping": 2.0,
-          "angularDamping": 4.0
-        },
-        "children": []
+          "restitution": 0.10000000149011612,
+          "shape": {
+            "height": 1.1936709880828857,
+            "type": "box",
+            "width": 0.3621029853820801
+          }
+        }
       }
-    ]
-  }
+    ],
+    "model": "models/tank_body.gltf",
+    "name": "section_0",
+    "offset": [
+      -0.0,
+      0.0,
+      0.30480000376701355
+    ],
+    "physics": {
+      "angularDamping": 8.0,
+      "density": 1.0,
+      "friction": 0.30000001192092896,
+      "isSensor": false,
+      "linearDamping": 4.0,
+      "restitution": 0.0,
+      "shape": {
+        "radius": 0.6258559823036194,
+        "type": "circle"
+      }
+    }
+  },
+  "turnSpeed": 2.5238637924194336
 }

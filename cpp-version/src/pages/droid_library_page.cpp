@@ -4,6 +4,7 @@
 #include "units/unit_types.h"
 #include "units/weapon.h"
 #include "units/unit_instance.h"
+#include "units/movement_tuning.h"   // TURRET_SLEW_RATE, DEFAULT_TURN_SPEED, facing_angle_to
 #include "rendering/scene_renderer.h"
 #include "units/unit_json.h"
 #include "util/index_wrap.h"
@@ -17,6 +18,19 @@
 
 namespace {
 constexpr float LIB_SPIN_RATE = 0.9f;  // radians/second
+
+// Shortest-way angle slew (radians), matching gameplay (game_update_player_turret).
+float normalizeAngle(float a) {
+    while (a > PI) a -= 2.0f * PI;
+    while (a < -PI) a += 2.0f * PI;
+    return a;
+}
+float slewToward(float current, float target, float maxStep) {
+    float diff = normalizeAngle(target - current);
+    if (diff > maxStep) diff = maxStep;
+    if (diff < -maxStep) diff = -maxStep;
+    return normalizeAngle(current + diff);
+}
 
 int classNumOf(const std::string& id) {
     const char* prefix = "droid_class_";
@@ -74,15 +88,13 @@ void DroidLibraryPage::activate() {
     units_.init(world_, modelsPath.c_str());
     units_.setModelCache(&game_->modelCache);  // reuse the game's shared models
 
-    // 3/4 orbit camera (matches the unit_test display pedestal).
-    float dist = 3.0f, pitch = 45.0f * DEG2RAD, yaw = -45.0f * DEG2RAD;
-    camera_.position = {dist * std::cos(pitch) * std::sin(yaw),
-                        dist * std::sin(pitch),
-                        dist * std::cos(pitch) * std::cos(yaw)};
+    // 3/4 orbit camera (matches the unit_test display pedestal). Distance is zoomable.
     camera_.target = {0.0f, 0.3f, 0.0f};
     camera_.up = {0.0f, 1.0f, 0.0f};
     camera_.fovy = 45.0f;
     camera_.projection = CAMERA_PERSPECTIVE;
+    camDist_ = kCamDistDefault;
+    applyCameraDistance();
 
     // Open on the type the player currently controls (falls back to the first entry).
     index_ = 0;
@@ -114,11 +126,31 @@ void DroidLibraryPage::rebuildDisplay() {
     }
 }
 
+void DroidLibraryPage::applyCameraDistance() {
+    constexpr float pitch = 45.0f * DEG2RAD, yaw = -45.0f * DEG2RAD;
+    camera_.position = {camDist_ * std::cos(pitch) * std::sin(yaw),
+                        camDist_ * std::sin(pitch),
+                        camDist_ * std::cos(pitch) * std::cos(yaw)};
+}
+
 void DroidLibraryPage::handleInput() {
     if (IsKeyPressed(KEY_ESCAPE)) { pages_->pop(); return; }
     // Toggle the debug editor with the same key as the gameplay AI-debug overlay (V);
     // gameplay input doesn't run while this page is on top, so mirror the toggle here.
     if (IsKeyPressed(KEY_V)) game_->showAIDebug = !game_->showAIDebug;
+
+    // Facing test (SPACE): stop the auto-spin and aim the turret/head (and the body) at the
+    // mouse to see the independent heading + different rate. Toggle off to resume spinning.
+    if (IsKeyPressed(KEY_SPACE)) facingTest_ = !facingTest_;
+
+    // Zoom the orbit camera: '=' (plus) closer, '-' farther. Held for continuous zoom.
+    if (IsKeyDown(KEY_EQUAL) || IsKeyDown(KEY_MINUS)) {
+        if (IsKeyDown(KEY_EQUAL)) camDist_ -= kCamZoomStep;
+        if (IsKeyDown(KEY_MINUS)) camDist_ += kCamZoomStep;
+        camDist_ = std::clamp(camDist_, kCamDistMin, kCamDistMax);
+        applyCameraDistance();
+    }
+
     if (ids_.empty()) return;
     int n = (int)ids_.size();
     if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_W)) {
@@ -130,16 +162,52 @@ void DroidLibraryPage::handleInput() {
     }
 }
 
+bool DroidLibraryPage::mouseTargetHeading(float* outAngle) const {
+    Ray ray = GetScreenToWorldRay(GetMousePosition(), camera_);
+    if (std::fabs(ray.direction.y) < 1e-4f) return false;   // parallel to the ground
+    float t = -ray.position.y / ray.direction.y;
+    if (t <= 0.0f) return false;                            // ground is behind the camera
+    float hx = ray.position.x + ray.direction.x * t;
+    float hz = ray.position.z + ray.direction.z * t;
+    // Droid sits at the origin; facing convention matches the body/section angles.
+    *outAngle = facing_angle_to(hx, hz);
+    return true;
+}
+
 void DroidLibraryPage::update(float dt) {
     if (saveMsgTimer_ > 0.0f) saveMsgTimer_ -= dt;
-    spin_ += dt * LIB_SPIN_RATE;
-    if (display_ && b2Body_IsValid(display_->bodyId)) {
-        // Spin about the vertical axis. No physics step in this world, so set the
-        // transform directly and match the motor-joint target (as the unit_test does).
-        b2Body_SetTransform(display_->bodyId, (b2Vec2){0.0f, 0.0f}, b2MakeRot(spin_));
-        unit_set_move_target(display_, {0.0f, 0.0f}, spin_);
-        units_.update(dt);  // sync render transform + advance model animation
+    if (!display_ || !b2Body_IsValid(display_->bodyId)) return;
+
+    if (facingTest_) {
+        // Aim the body (main section) and the turret/head at the mouse, each at its own rate,
+        // so the different heading + different slew rate are both visible.
+        float target;
+        if (mouseTargetHeading(&target)) facingTarget_ = target;
+        const UnitDefinition* def = display_->definition;
+        float bodyRate = (def && def->turnSpeed > 0.0f) ? def->turnSpeed : DEFAULT_TURN_SPEED;
+        float turretRate = (def && def->properties.turretTurnSpeed > 0.0f)
+                               ? def->properties.turretTurnSpeed : TURRET_SLEW_RATE;
+        float headRate = (def && def->properties.headTurnSpeed > 0.0f)
+                             ? def->properties.headTurnSpeed : TURRET_SLEW_RATE;
+        spin_ = slewToward(spin_, facingTarget_, bodyRate * dt);
+        if (SectionInstance* t = unit_find_section_by_role(display_, SectionRole::Turret))
+            t->facingAngle = slewToward(t->facingAngle, facingTarget_, turretRate * dt);
+        if (SectionInstance* hd = unit_find_section_by_role(display_, SectionRole::Head))
+            hd->facingAngle = slewToward(hd->facingAngle, facingTarget_, headRate * dt);
+    } else {
+        spin_ += dt * LIB_SPIN_RATE;  // idle auto-spin about the vertical axis
+        // Turret/head are FollowFacing (absolute world angle), so pin them to the body angle
+        // here — otherwise they'd stay fixed in world space while the body spins under them.
+        if (SectionInstance* t = unit_find_section_by_role(display_, SectionRole::Turret))
+            t->facingAngle = spin_;
+        if (SectionInstance* hd = unit_find_section_by_role(display_, SectionRole::Head))
+            hd->facingAngle = spin_;
     }
+
+    // No physics step in this world, so set the body transform directly (as the unit_test does).
+    b2Body_SetTransform(display_->bodyId, (b2Vec2){0.0f, 0.0f}, b2MakeRot(spin_));
+    unit_set_move_target(display_, {0.0f, 0.0f}, spin_);
+    units_.update(dt);  // sync render transforms (incl. FollowFacing sections) + animation
 }
 
 void DroidLibraryPage::render() {
@@ -177,6 +245,30 @@ void DroidLibraryPage::render() {
             rlDrawRenderBatchActive();
             rlEnableDepthTest();
         }
+    }
+    // Facing test: the mouse target marker + body/turret/head facing lines, so the independent
+    // heading and different slew rate are visible. Depth test off (same pattern as the rings).
+    if (facingTest_ && display_) {
+        rlDrawRenderBatchActive();
+        rlDisableDepthTest();
+        const float h = kFacingLineHeight;
+        Vector3 origin = {0.0f, h, 0.0f};
+        auto lineTo = [&](float ang, float len, Color col) {   // forward = {-sin a, cos a}
+            DrawLine3D(origin, {-std::sin(ang) * len, h, std::cos(ang) * len}, col);
+        };
+        // Target (orbiting widget) marker + a faint line to it.
+        Vector3 marker = {-std::sin(facingTarget_) * kFacingMarkerRadius, h,
+                          std::cos(facingTarget_) * kFacingMarkerRadius};
+        DrawSphere(marker, 0.08f, YELLOW);
+        lineTo(facingTarget_, kFacingMarkerRadius, (Color){255, 255, 0, 110});
+        // Body forward (main section), then turret/head current facing if present.
+        lineTo(spin_, kFacingLineLen, SKYBLUE);
+        if (SectionInstance* t = unit_find_section_by_role(display_, SectionRole::Turret))
+            lineTo(t->facingAngle, kFacingLineLen, ORANGE);
+        if (SectionInstance* hd = unit_find_section_by_role(display_, SectionRole::Head))
+            lineTo(hd->facingAngle, kFacingLineLen, LIME);
+        rlDrawRenderBatchActive();
+        rlEnableDepthTest();
     }
     EndMode3D();
 
@@ -250,7 +342,9 @@ void DroidLibraryPage::render() {
             slider("maxSpeed", &mdef->maxSpeed, 0.0f, 500.0f);
             slider("accel", &mdef->acceleration, 0.0f, 1500.0f);
             slider("decel", &mdef->deceleration, 0.0f, 1500.0f);
-            slider("turn (rad/s)", &mdef->turnSpeed, 0.0f, 15.0f);
+            slider("turn (rad/s)", &mdef->turnSpeed, 0.0f, 15.0f);      // body turn rate (0 = default)
+            slider("turret rate", &mdef->properties.turretTurnSpeed, 0.0f, 15.0f);  // 0 = TURRET_SLEW_RATE
+            slider("head rate", &mdef->properties.headTurnSpeed, 0.0f, 15.0f);      // 0 = TURRET_SLEW_RATE
             slider("coastDamp", &mdef->coastDamping, -1.0f, 8.0f);  // <0 = off (crisp stop)
             slider("armour", &mdef->properties.armour, 0.0f, 1000.0f);
             // Collision radius: fine format, capped at the tile-fit limit (0.425) so the
@@ -279,8 +373,11 @@ void DroidLibraryPage::render() {
         }
     }
 
-    DrawText(game_->showAIDebug ? "W/S or UP/DOWN: browse   V: debug edit (on)   ESC: back"
-                                : "W/S or UP/DOWN: browse   V: debug edit   ESC: back",
-             30, sh - 30, 16, GRAY);
+    const char* hint = facingTest_
+        ? "FACING TEST: move mouse to aim   SPACE: resume spin   -/=: zoom   V: debug edit   ESC: back"
+        : (game_->showAIDebug
+               ? "W/S or UP/DOWN: browse   SPACE: facing test   -/=: zoom   V: debug edit (on)   ESC: back"
+               : "W/S or UP/DOWN: browse   SPACE: facing test   -/=: zoom   V: debug edit   ESC: back");
+    DrawText(hint, 30, sh - 30, 16, GRAY);
     EndDrawing();
 }

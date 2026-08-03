@@ -1,5 +1,6 @@
 {
   "acceleration": 271.1817626953125,
+  "coastDamping": -1.0,
   "collisionRadius": 0.4000000059604645,
   "deceleration": 189.5012664794922,
   "id": "droid_class_9",
@@ -30,7 +31,6 @@
           0.0,
           0.1777999997138977
         ],
-        "role": "turret",
         "physics": {
           "angularDamping": 4.0,
           "density": 0.5,
@@ -42,7 +42,8 @@
             "radius": 0.23050500452518463,
             "type": "circle"
           }
-        }
+        },
+        "role": "turret"
       }
     ],
     "model": "models/476.gltf",
@@ -65,5 +66,5 @@
       }
     }
   },
-  "turnSpeed": 0.0
+  "turnSpeed": 1.456797480583191
 }

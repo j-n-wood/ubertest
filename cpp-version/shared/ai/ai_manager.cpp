@@ -93,6 +93,7 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
         ai.omnidirectional = props.omnidirectional;
         ai.fireWhileMoving = props.fireWhileMoving;
         ai.turretTurnSpeed = props.turretTurnSpeed;
+        ai.headTurnSpeed = props.headTurnSpeed;
         auto dwell = dwellRangeForType(props.typeCode);
         ai.dwellMin = dwell.first;
         ai.dwellMax = dwell.second;
@@ -735,11 +736,15 @@ bool AIManager::headSeesTarget(const AIComponent& ai, Vector2 targetPos) const {
 
 void AIManager::updateAimingSections(AIComponent& ai, float aimAngle, float dt) const {
     if (!ai.turretSection && !ai.headSection) return;
-    float rate = (ai.turretTurnSpeed > 0.0f ? ai.turretTurnSpeed : TURRET_SLEW_RATE) * dt;
-    if (ai.turretSection)
+    // Turret and head slew at independent per-unit rates (each 0 = global TURRET_SLEW_RATE).
+    if (ai.turretSection) {
+        float rate = (ai.turretTurnSpeed > 0.0f ? ai.turretTurnSpeed : TURRET_SLEW_RATE) * dt;
         ai.turretSection->facingAngle = slewToward(ai.turretSection->facingAngle, aimAngle, rate);
-    if (ai.headSection)
+    }
+    if (ai.headSection) {
+        float rate = (ai.headTurnSpeed > 0.0f ? ai.headTurnSpeed : TURRET_SLEW_RATE) * dt;
         ai.headSection->facingAngle = slewToward(ai.headSection->facingAngle, aimAngle, rate);
+    }
 }
 
 Vector2 AIManager::getUnitPosition(const AIComponent& ai) const {

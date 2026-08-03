@@ -16,7 +16,8 @@ static const char* MARKED_UNIT_JSON = R"({
     "hasTurret": true,
     "omnidirectional": true,
     "fireWhileMoving": true,
-    "turretTurnSpeed": 12.5
+    "turretTurnSpeed": 12.5,
+    "headTurnSpeed": 4.0
   },
   "rootSection": {
     "name": "body",
@@ -37,6 +38,7 @@ TEST(UnitAnimationMarkers, ParsesRoleAndFlags) {
     EXPECT_TRUE(def.properties.omnidirectional);
     EXPECT_TRUE(def.properties.fireWhileMoving);
     EXPECT_FLOAT_EQ(def.properties.turretTurnSpeed, 12.5f);
+    EXPECT_FLOAT_EQ(def.properties.headTurnSpeed, 4.0f);
 
     // Root section is animMoving and follows the unit.
     EXPECT_TRUE(def.rootSection.animMoving);
@@ -63,6 +65,7 @@ TEST(UnitAnimationMarkers, RoundTripsThroughSerialization) {
     EXPECT_NE(out.find("\"animMoving\": true"), std::string::npos);
     EXPECT_NE(out.find("\"fireWhileMoving\": true"), std::string::npos);
     EXPECT_NE(out.find("\"turretTurnSpeed\""), std::string::npos);
+    EXPECT_NE(out.find("\"headTurnSpeed\""), std::string::npos);
 
     // Reparsing yields the same marker set.
     UnitDefinition def2;
@@ -74,6 +77,7 @@ TEST(UnitAnimationMarkers, RoundTripsThroughSerialization) {
     EXPECT_TRUE(def2.properties.fireWhileMoving);
     EXPECT_TRUE(def2.properties.omnidirectional);
     EXPECT_FLOAT_EQ(def2.properties.turretTurnSpeed, 12.5f);
+    EXPECT_FLOAT_EQ(def2.properties.headTurnSpeed, 4.0f);
 }
 
 TEST(UnitAnimationMarkers, DefaultsWhenUnmarked) {
@@ -88,4 +92,5 @@ TEST(UnitAnimationMarkers, DefaultsWhenUnmarked) {
     EXPECT_FALSE(def.properties.fireWhileMoving);
     EXPECT_FALSE(def.properties.omnidirectional);
     EXPECT_FLOAT_EQ(def.properties.turretTurnSpeed, 0.0f);
+    EXPECT_FLOAT_EQ(def.properties.headTurnSpeed, 0.0f);
 }

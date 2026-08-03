@@ -64,9 +64,17 @@ There is always a **desired angle** a turret/head slews toward:
 
 The turret **slew rate** is independent of and generally **faster** than the body's turn rate.
 The body turns at the per-unit `turnSpeed` (rad/s, baked into motor torque — see
-`movement_tuning.h`); the turret slews at the per-unit `turretTurnSpeed` if set, else the global
+`movement_tuning.h`); the turret slews at the per-unit `turretTurnSpeed`, and the head at its own
+`headTurnSpeed` (each independent), if set, else the global
 `TURRET_SLEW_RATE` (8 rad/s). For AI this happens in `AIManager::updateAimingSections`; for the
 player-controlled unit, `game_update_player_turret` slews the same sections toward the cursor.
+
+> **Inspecting it.** The Droid Library (F3 in debug mode) has a **facing test**: press SPACE to
+> stop the pedestal spin and aim with the mouse — the body slews toward the cursor at `turnSpeed`
+> while the turret slews at `turretTurnSpeed` and the head at `headTurnSpeed`, with facing lines
+> (body / turret / head) and a target marker drawn so the different heading + rate are visible. The
+> debug-edit panel (V) has live `turn (rad/s)`, `turret rate`, and `head rate` sliders. See
+> `src/pages/droid_library_page.cpp`.
 
 ## Unit-level facing behaviours
 
@@ -132,7 +140,8 @@ The smallest set of hand-added JSON markers that unlocks every behaviour above:
 | `animMoving` | section | bool | this section's GLTF clip 1 plays while moving, clip 0 while idle. |
 | `fireWhileMoving` | unit (`properties`) | bool | body aims at target, unit does not halt to fire, no LOS facing gate. |
 | `omnidirectional` | unit (`properties`) | bool | never orient; hold body angle 0. (Existing field, redefined.) |
-| `turretTurnSpeed` | unit (`properties`) | float, optional | per-unit turret slew rate (rad/s); absent → global `TURRET_SLEW_RATE`. |
+| `turretTurnSpeed` | unit (`properties`) | float, optional | per-unit **turret** slew rate (rad/s); absent → global `TURRET_SLEW_RATE`. |
+| `headTurnSpeed` | unit (`properties`) | float, optional | per-unit **head** slew rate (rad/s), independent of the turret; absent → global `TURRET_SLEW_RATE`. |
 
 `hasTurret` / `hasHead` on the unit are **derived** from the presence of a `role` section (kept as
 a cached capability flag the AI reads); they need not be hand-authored alongside the section role.

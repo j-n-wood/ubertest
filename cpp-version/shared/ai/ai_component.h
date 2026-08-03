@@ -43,7 +43,8 @@ struct AIComponent {
     bool hasHead = false;         // has a head-role section (derived at spawn)
     bool omnidirectional = false; // never orient: hold body angle 0
     bool fireWhileMoving = false; // aim body at target, don't halt to fire, no LOS facing gate
-    float turretTurnSpeed = 0.0f; // per-unit turret/head slew rate (rad/s); 0 = global default
+    float turretTurnSpeed = 0.0f; // per-unit turret-section slew rate (rad/s); 0 = global default
+    float headTurnSpeed = 0.0f;   // per-unit head-section slew rate (rad/s); 0 = global default
 
     // Per-unit patrol dwell range (s) at a waypoint, derived from typeCode at init (see
     // dwellRangeForType). Defaults to the global AI_DWELL_MIN/MAX; typeCode 300-399 → 0/0

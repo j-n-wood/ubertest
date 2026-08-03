@@ -1289,17 +1289,17 @@ static void game_update_player_turret(Game* game, float dt) {
     SectionInstance* head = unit_find_section_by_role(cu, SectionRole::Head);
     if (!turret && !head) return;
 
-    float perUnit = cu->definition->properties.turretTurnSpeed;
-    float maxStep = (perUnit > 0.0f ? perUnit : TURRET_SLEW_RATE) * dt;
-    auto slew = [&](SectionInstance* sec) {
+    // Turret and head slew at independent per-unit rates (each 0 = global TURRET_SLEW_RATE).
+    auto slew = [&](SectionInstance* sec, float rate) {
         if (!sec) return;
+        float maxStep = (rate > 0.0f ? rate : TURRET_SLEW_RATE) * dt;
         float diff = normalize_angle(game->playerDesiredRotation - sec->facingAngle);
         if (diff > maxStep) diff = maxStep;
         if (diff < -maxStep) diff = -maxStep;
         sec->facingAngle = normalize_angle(sec->facingAngle + diff);
     };
-    slew(turret);
-    slew(head);
+    slew(turret, cu->definition->properties.turretTurnSpeed);
+    slew(head, cu->definition->properties.headTurnSpeed);
 }
 
 //------------------------------------------------------------------------------
