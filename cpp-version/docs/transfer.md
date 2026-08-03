@@ -50,9 +50,9 @@ interpolation, during which the device is invulnerable (collision disabled).
 
 While Controlling, if the captured unit's health reaches 0 (`combatState`) or its body
 becomes invalid, the device **detaches**: it is placed at the captured unit's last position,
-its collision is re-enabled (vulnerable again), the captured unit is destroyed, and the mode
-returns to Free. (This is the one place unit death is currently wired — general enemy death
-by player weapons comes with the weapon task.)
+its collision is re-enabled (vulnerable again), the captured unit is destroyed (with its death
+explosion), and the mode returns to Free. **Gameplay rule:** losing your captured droid this way
+**restores the device to full health** (`playerUnit->combatState.currentHealth = maxHealth`).
 
 ## Device overlay (weld + render lift)
 
@@ -87,7 +87,9 @@ captured unit's class **and current health** are recorded (`transfer_captured_cl
 `transfer_captured_health`) before transfer control is released; after the player device is
 migrated into the new level's world, a unit of that class is re-piloted at the device and
 its carried health restored (`transfer_recapture_class(class, health)`), so a damaged droid
-stays damaged. The captured unit is created in the **active level's world** (units live in
+stays damaged. `transfer_reset` **destroys the old captured instance** on the departed level
+(silently — no explosion/score) so it isn't left behind as a duplicate that reappears on
+re-entry. The captured unit is created in the **active level's world** (units live in
 per-level worlds — see [levels.md](levels.md)); it is a respawn keyed by class+health, not a
 physical body move. The device itself migrates worlds via `unit_rebind_world`.
 

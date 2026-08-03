@@ -829,7 +829,11 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
         off2d.x *= maxOff / offLen;
         off2d.y *= maxOff / offLen;
     }
-    float angle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
+    // Rotate the (body-relative) offset by the TURRET facing if the unit has one — that's the
+    // muzzle it fires from — else the body angle. Matches the player fire path so the spawn
+    // point tracks the turret, not the (possibly opposite-facing) chassis.
+    float angle = ai.turretSection ? ai.turretSection->facingAngle
+                                   : b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
     float cosA = cosf(angle);
     float sinA = sinf(angle);
     auto spawnFrom = [&](Vector2 o) {
@@ -871,8 +875,9 @@ void AIManager::fireBeamAtPlayer(AIComponent& ai, float dt, Vector2 playerPos,
     // Fire along the turret's facing if it has one, else the body's.
     float angle = ai.turretSection ? ai.turretSection->facingAngle : bodyAngle;
 
-    // Muzzle = unit centre + fire offset (facing-relative, rotated by the body), clamped to
-    // the collision radius so it can't originate inside a wall — same rule as projectiles.
+    // Muzzle = unit centre + fire offset (facing-relative), rotated by the SAME `angle` the beam
+    // fires along (turret facing if present, else body) — so the origin tracks the turret, not
+    // the chassis. Clamped to the collision radius so it can't originate inside a wall.
     Vector2 off2d = {0.0f, 0.0f};
     if (ai.unit->definition) {
         off2d = {ai.unit->definition->properties.fireOffset.x,
@@ -881,9 +886,9 @@ void AIManager::fireBeamAtPlayer(AIComponent& ai, float dt, Vector2 playerPos,
         float maxOff = ai.unit->definition->collisionRadius;
         if (offLen > maxOff && offLen > 1e-5f) { off2d.x *= maxOff / offLen; off2d.y *= maxOff / offLen; }
     }
-    float cosB = cosf(bodyAngle), sinB = sinf(bodyAngle);
-    Vector2 origin = {unitPos.x + off2d.x * cosB - off2d.y * sinB,
-                      unitPos.y + off2d.x * sinB + off2d.y * cosB};
+    float cosA = cosf(angle), sinA = sinf(angle);
+    Vector2 origin = {unitPos.x + off2d.x * cosA - off2d.y * sinA,
+                      unitPos.y + off2d.x * sinA + off2d.y * cosA};
 
     // The beam ray hits (and damages) whatever unit it reaches first — normally the player,
     // which the unit is aiming at; anything between shields it. No target list needed.

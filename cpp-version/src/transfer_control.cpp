@@ -106,14 +106,15 @@ void createWeld(Game* g) {
 }
 
 // Remove a unit: release any weld, detach its AI component, drop it from the enemy list,
-// destroy it.
-void destroyUnit(Game* g, UnitInstance* u) {
+// destroy it. `explode` spawns the death explosion (gameplay death); pass false for a silent
+// removal (e.g. carrying a captured droid across a level change — it's re-created on arrival).
+void destroyUnit(Game* g, UnitInstance* u, bool explode = true) {
     if (!u) return;
     // A destroyed captured/created unit leaves an explosion + sparks at its position (owner =
     // its own group, so it doesn't self-damage; the overlay device is non-colliding hence
     // unaffected). See docs/effects.md. Only gameplay death routes here — teardown uses other
     // paths.
-    if (b2Body_IsValid(u->bodyId)) {
+    if (explode && b2Body_IsValid(u->bodyId)) {
         game_spawn_explosion(g, bodyPos(u), u->collisionGroupId);
     }
     if (u == g->transfer.captured) destroyWeld(g);
@@ -214,11 +215,14 @@ void transfer_update(Game* game, float dt) {
         Vector2 last = (st.captured && b2Body_IsValid(st.captured->bodyId))
                            ? bodyPos(st.captured)
                            : bodyPos(dev);
-        destroyUnit(game, st.captured);  // releases the weld
+        destroyUnit(game, st.captured);  // releases the weld (gameplay death → explosion)
         st.captured = nullptr;
         st.mode = ControlMode::Free;
         deviceExitOverlay(game);
         teleportDevice(game, last);
+        // Gameplay rule: losing your captured droid restores the device to full health.
+        dev->combatState.currentHealth = dev->combatState.maxHealth;
+        dev->combatState.alive = true;
     }
 
     UnitInstance* ctl = controlledUnit(game);
@@ -247,6 +251,13 @@ void transfer_reset(Game* game) {
     TransferState& st = game->transfer;
     if (st.mode != ControlMode::Free) {
         deviceExitOverlay(game);
+    }
+    // Called on a level change while carrying a captured droid: remove that droid from the
+    // level being left (silently — no explosion/score; a fresh copy is re-created on arrival by
+    // transfer_recapture_class). Without this the captured droid is left behind and reappears
+    // on re-entry — a duplicate.
+    if (st.captured) {
+        destroyUnit(game, st.captured, /*explode=*/false);
     }
     st.mode = ControlMode::Free;
     st.captured = nullptr;

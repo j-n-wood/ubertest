@@ -70,6 +70,10 @@ Hostile armed droids fire at the player from the Chase state (`tryFireAtPlayer`)
 requires: armed, cooldown ready, within `maxRange`, **line of sight** (a wall cast via
 `pathClear` — so they hold fire around corners), and facing alignment (body or turret head;
 area weapons ignore facing). Same projectile-type gate and owner `groupIndex` as the player.
+The bolt flies straight at the player, but the **spawn position** rotates the `fireOffset` by
+the **turret facing** when the unit has a turret (else the body angle) — matching the player fire
+path (and the droid-library marker), so the muzzle tracks the turret rather than the chassis,
+which may be pointing elsewhere. The AI beam origin (`fireBeamAtPlayer`) uses the same rule.
 
 ## Projectiles (`shared/combat/projectile_manager.h`)
 
