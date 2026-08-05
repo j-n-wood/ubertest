@@ -228,6 +228,14 @@ See [tools/model_tool/PROJECT_PROMPT_TEMPLATE.md](tools/model_tool/PROJECT_PROMP
 - **Output**: Prefer `std::print`/`std::println` over `printf`
 - **Error handling**: Consider `std::expected<T, E>` for fallible operations
 - **Initialization**: Use `{}` not `{0}` for aggregates with non-POD members
+- **Resource & state control (RAII)**: prefer a scoped guard object that restores in its destructor
+  over manual paired calls, for **any** acquire/release or set/restore pair — GL/render state
+  (blend mode, depth mask/test), locks, temporary flag toggles, `Begin*`/`End*` regions, etc. It is
+  less code and robust against early returns and exceptions. Example: `DisableDepthMaskScope`
+  (`shared/rendering/render_scope.h`) wraps `rlDisableDepthMask`/`rlEnableDepthMask`. Make guards
+  non-copyable/non-movable, name them for exactly what they do (e.g. depth *mask* vs *test*), and
+  scope them to precisely the region they protect (use a nested `{ }` block when other code in the
+  same scope must not be covered).
 
 ### Style
 

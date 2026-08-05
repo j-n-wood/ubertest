@@ -62,3 +62,7 @@ on top and freeze gameplay while open. See `docs/pages.md`.
   freed before `CloseWindow`.
 - Subsystems (doors, chargers, effects, ...) follow the manager pattern: `init/update/destroy`
   with an idempotent `destroy()`, torn down before the Box2D worlds in `game_destroy`.
+- Prefer **RAII scope guards** over manual paired set/restore or acquire/release calls — for
+  GL/render state (blend mode, depth mask/test), locks, flag toggles, `Begin*`/`End*` regions.
+  Example: `DisableDepthMaskScope` (`shared/rendering/render_scope.h`). See AGENTS.md → C++ Coding
+  Guidelines → Key Conventions for details.

@@ -1,5 +1,6 @@
 #include "lift_manager.h"
 #include "raymath.h"
+#include "world_scale.h"  // lift physicsCenter is a tile position → metric
 
 #include <algorithm>
 
@@ -22,7 +23,7 @@ void LiftManager::build(const std::vector<TmxLevel>& levels) {
             s.row = lift.row;
             s.elevator = lift.elevator;
             s.stopIndex = lift.stopIndex;
-            s.physicsCenter = {lift.col + 0.5f - halfW, lift.row + 0.5f - halfH};
+            s.physicsCenter = {(lift.col + 0.5f - halfW) * WORLD_SCALE, (lift.row + 0.5f - halfH) * WORLD_SCALE};
             stops_.push_back(s);
         }
     }

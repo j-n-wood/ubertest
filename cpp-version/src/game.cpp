@@ -1,6 +1,8 @@
 #include "game.h"
+#include "world_scale.h"
 #include "transfer_control.h"
 #include "rendering/texture_manager.h"
+#include "rendering/render_scope.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
 #include "units/heal.h"
@@ -86,8 +88,8 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         (Vector3){0, 0, 0},    // Target below
         WHITE);
 
-    // Set effective eye height for specular calculations
-    game->effectiveEyeHeight = 1.0f;
+    // Set effective eye height for specular calculations (world-space height → metric)
+    game->effectiveEyeHeight = 1.0f * WORLD_SCALE;
     sceneRendererSetEffectiveEyeHeight(&game->sceneRenderer, game->effectiveEyeHeight);
 
     // Set ambient light
@@ -143,7 +145,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game->particleManager.clear();                      // render-only; no world binding
 
     // Setup camera (top-down view)
-    game->cameraHeight = 10.0f;  // May change based on unit type
+    game->cameraHeight = 10.0f * WORLD_SCALE;  // metric; may change based on unit type
     game->camera.position = (Vector3){0, game->cameraHeight, 0};
     game->camera.target = (Vector3){0, 0, 0};
     game->camera.up = (Vector3){0, 0, -1};  // -Z up for top-down view
@@ -367,7 +369,7 @@ static bool game_build_level_render_data(Game* game) {
     freeLevelCollisionData(&collision);
 
     // Generate collision data
-    collision = generateLevelCollision(level, game->tileset, 1.0f);
+    collision = generateLevelCollision(level, game->tileset, WORLD_SCALE);
     TraceLog(LOG_INFO, "Generated %zu collision rects for level %d",
              collision.rects.size(), game->currentLevel);
 
@@ -385,7 +387,7 @@ static bool game_build_level_render_data(Game* game) {
     }
 
     // Create render data structure
-    data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, 1.0f);
+    data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, WORLD_SCALE);
 
     // Effective tileset colour row (base row, or the darkened last row when cleared).
     int effectiveRow = game_effective_tile_row(game);
@@ -395,12 +397,12 @@ static bool game_build_level_render_data(Game* game) {
         // CustomTiles mode with bump mapping
         data.tileMesh = createLevelTileMeshCustom(
             meshLevel, game->tileset, game->tileProperties,
-            gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, 1.0f,
+            gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, WORLD_SCALE,
             effectiveRow);
         TraceLog(LOG_INFO, "Created CustomTiles mesh (row %d)", effectiveRow);
     } else {
         // Fallback to standard Tilemap mode
-        data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, 1.0f, effectiveRow);
+        data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, WORLD_SCALE, effectiveRow);
         TraceLog(LOG_INFO, "Created Tilemap mesh (fallback, row %d)", effectiveRow);
     }
 
@@ -488,11 +490,12 @@ static std::vector<DoorSpec> game_detect_doors(const Game* game) {
             s.row = row;
             s.orientation = (tp.orientation == "vertical") ? DoorOrientation::Vertical
                                                            : DoorOrientation::Horizontal;
-            s.size = (s.orientation == DoorOrientation::Horizontal) ? Vector2{1.0f, 0.5f}
-                                                                    : Vector2{0.5f, 1.0f};
+            s.size = (s.orientation == DoorOrientation::Horizontal)
+                         ? Vector2{1.0f * WORLD_SCALE, 0.5f * WORLD_SCALE}
+                         : Vector2{0.5f * WORLD_SCALE, 1.0f * WORLD_SCALE};
             s.initialClosed = tp.closed;
             // Tile centre in physics/world coords (centred on origin, matching walls).
-            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            s.physicsCenter = {(col + 0.5f - halfW) * WORLD_SCALE, (row + 0.5f - halfH) * WORLD_SCALE};
             specs.push_back(s);
         }
     }
@@ -539,7 +542,8 @@ static std::vector<ChargerSpec> game_detect_chargers(const Game* game) {
             ChargerSpec s;
             s.col = col;
             s.row = row;
-            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            s.size = {1.0f * WORLD_SCALE, 1.0f * WORLD_SCALE};  // one tile footprint (metric)
+            s.physicsCenter = {(col + 0.5f - halfW) * WORLD_SCALE, (row + 0.5f - halfH) * WORLD_SCALE};
             specs.push_back(s);
         }
     }
@@ -585,7 +589,7 @@ static std::vector<ConsoleSpec> game_detect_consoles(const Game* game) {
             ConsoleSpec s;
             s.col = col;
             s.row = row;
-            s.physicsCenter = {col + 0.5f - halfW, row + 0.5f - halfH};
+            s.physicsCenter = {(col + 0.5f - halfW) * WORLD_SCALE, (row + 0.5f - halfH) * WORLD_SCALE};
             specs.push_back(s);
         }
     }
@@ -635,16 +639,16 @@ static void game_spawn_player(Game* game) {
         const TmxLevel& lvl = game->levels[game->currentLevel];
         if (!lvl.lifts.empty()) {
             const TmxLift& lift = lvl.lifts[0];
-            spawnPos = {lift.col + 0.5f - lvl.width * 0.5f,
-                        lift.row + 0.5f - lvl.height * 0.5f};
+            spawnPos = {(lift.col + 0.5f - lvl.width * 0.5f) * WORLD_SCALE,
+                        (lift.row + 0.5f - lvl.height * 0.5f) * WORLD_SCALE};
             TraceLog(LOG_INFO, "Spawning player on lift tile: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
         }
     }
 
     // In test mode, offset spawn position to avoid nearby geometry
     if (game->testConfig.enabled) {
-        spawnPos.x += -1.0f;  // Offset in physics X (world X)
-        spawnPos.y += 1.0f;   // Offset in physics Y (world Z)
+        spawnPos.x += -1.0f * WORLD_SCALE;  // Offset in physics X (world X)
+        spawnPos.y += 1.0f * WORLD_SCALE;   // Offset in physics Y (world Z)
         TraceLog(LOG_INFO, "Test mode: offset spawn to (%.2f, %.2f)", spawnPos.x, spawnPos.y);
     }
 
@@ -1802,6 +1806,8 @@ void game_render_gameplay(Game* game) {
         if (!beams.empty()) {
             int frame = game->beamManager.animFrame();
             BeginBlendMode(BLEND_ADDITIVE);
+            DisableDepthMaskScope depthGuard;  // additive: test depth vs opaque geometry but don't
+                                               // write it, so overlapping effects blend, not occlude
             rlDisableBackfaceCulling();  // ground-plane quad — visible from the top-down camera
             for (const Beam& b : beams) {
                 if (b.length <= 0.0f) continue;
@@ -1827,7 +1833,7 @@ void game_render_gameplay(Game* game) {
             }
             rlEnableBackfaceCulling();
             EndBlendMode();
-        }
+        }  // depthGuard restores depth writes here
     }
 
     // Projectiles: additive glow billboards, drawn above the sim (render-only, like
@@ -1855,41 +1861,44 @@ void game_render_gameplay(Game* game) {
         // on world +X; DrawBillboardPro spins the quad about the view axis (+Y for this
         // camera), and rotating +X about +Y by angle a gives (cos a, 0, -sin a), so
         // a = atan2(-vz, vx) aligns it with the velocity (vx, vz).
-        BeginBlendMode(BLEND_ADDITIVE);
-        for (const Projectile& p : game->projectileManager.getProjectiles()) {
-            if (!p.active) continue;
-            Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
+        {
+            BeginBlendMode(BLEND_ADDITIVE);
+            DisableDepthMaskScope depthGuard;  // additive: don't write depth (see beam pass)
+            for (const Projectile& p : game->projectileManager.getProjectiles()) {
+                if (!p.active) continue;
+                Vector3 pos = {p.position.x, PROJECTILE_HEIGHT, p.position.y};
 
-            // Per-weapon look. Weapon 3 (Plasma Cannon) → animated ASMD blast, a sprite sheet
-            // whose source rect is chosen from the projectile's own age (bolts animate
-            // independently, one texture bind). Laser (2,4) → rotated blaster_blob streak.
-            // Everything else (0,5,7,…) → round flare glow. `src` is the drawn region and drives
-            // the aspect (frame region for the sheet, full texture otherwise).
-            Texture2D tex;
-            Rectangle src;
-            float len;
-            float rotation = 0.0f;
-            if (p.weaponId == WEAPON_PLASMA_CANNON) {
-                tex = gTextures().get(game->asmdAnim.sheet);
-                src = game->asmdAnim.sourceRect(p.age, tex.width, tex.height);
-                len = ASMD_VISUAL_SIZE;
-            } else if (getWeaponDefinition(p.weaponId).damageType == DamageType::Laser) {
-                tex = gTextures().get(TEX_BLASTER_BLOB);
-                src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
-                len = LASER_VISUAL_LEN;
-                rotation = atan2f(-p.velocity.y, p.velocity.x) * RAD2DEG;  // streak along travel
-            } else {
-                tex = gTextures().get(TEX_FLARE);
-                src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
-                len = PLASMA_VISUAL_SIZE;
+                // Per-weapon look. Weapon 3 (Plasma Cannon) → animated ASMD blast, a sprite sheet
+                // whose source rect is chosen from the projectile's own age (bolts animate
+                // independently, one texture bind). Laser (2,4) → rotated blaster_blob streak.
+                // Everything else (0,5,7,…) → round flare glow. `src` is the drawn region and drives
+                // the aspect (frame region for the sheet, full texture otherwise).
+                Texture2D tex;
+                Rectangle src;
+                float len;
+                float rotation = 0.0f;
+                if (p.weaponId == WEAPON_PLASMA_CANNON) {
+                    tex = gTextures().get(game->asmdAnim.sheet);
+                    src = game->asmdAnim.sourceRect(p.age, tex.width, tex.height);
+                    len = ASMD_VISUAL_SIZE;
+                } else if (getWeaponDefinition(p.weaponId).damageType == DamageType::Laser) {
+                    tex = gTextures().get(TEX_BLASTER_BLOB);
+                    src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+                    len = LASER_VISUAL_LEN;
+                    rotation = atan2f(-p.velocity.y, p.velocity.x) * RAD2DEG;  // streak along travel
+                } else {
+                    tex = gTextures().get(TEX_FLARE);
+                    src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
+                    len = PLASMA_VISUAL_SIZE;
+                }
+                float aspect = (src.width > 0.0f) ? src.height / src.width : 1.0f;
+                Vector2 size = {len, len * aspect};  // preserve the drawn region's proportions
+                Vector2 origin = {size.x * 0.5f, size.y * 0.5f};
+                DrawBillboardPro(game->camera, tex, src, pos,
+                                 game->camera.up, size, origin, rotation, WHITE);
             }
-            float aspect = (src.width > 0.0f) ? src.height / src.width : 1.0f;
-            Vector2 size = {len, len * aspect};  // preserve the drawn region's proportions
-            Vector2 origin = {size.x * 0.5f, size.y * 0.5f};
-            DrawBillboardPro(game->camera, tex, src, pos,
-                             game->camera.up, size, origin, rotation, WHITE);
-        }
-        EndBlendMode();
+            EndBlendMode();
+        }  // depthGuard restores depth writes before the opaque V-mode markers below
 
         // V-mode: opaque marker ring at each projectile's render position, so a missing
         // or washed-out additive sprite can be told apart from a bad position/render path.
@@ -1913,6 +1922,7 @@ void game_render_gameplay(Game* game) {
             Vector2 size = {diameter, diameter};
             Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
             BeginBlendMode(BLEND_ADDITIVE);
+            DisableDepthMaskScope depthGuard;  // additive: don't write depth (see beam pass)
             for (const Effect& e : effects) {
                 if (!e.active) continue;
                 Vector3 pos = {e.pos.x, EFFECT_HEIGHT, e.pos.y};
@@ -1921,7 +1931,7 @@ void game_render_gameplay(Game* game) {
                                  game->camera.up, size, origin, e.rotationDeg, WHITE);
             }
             EndBlendMode();
-        }
+        }  // depthGuard restores depth writes here
     }
 
     // Particles: additive billboards, one texture per system → rlgl batches them into ~1 draw
@@ -1930,6 +1940,7 @@ void game_render_gameplay(Game* game) {
         ParticleSpan ps = game->particleManager.renderData();
         if (ps.n > 0) {
             BeginBlendMode(BLEND_ADDITIVE);
+            DisableDepthMaskScope depthGuard;  // additive: don't write depth (see beam pass)
             for (std::size_t i = 0; i < ps.n; ++i) {
                 float t = (ps.lifetime[i] > 0.0f) ? (ps.age[i] / ps.lifetime[i]) : 1.0f;
                 if (t > 1.0f) t = 1.0f;
@@ -1950,7 +1961,7 @@ void game_render_gameplay(Game* game) {
                                  game->camera.up, size, origin, ps.rot[i], col);
             }
             EndBlendMode();
-        }
+        }  // depthGuard restores depth writes here
     }
 
     // Debug: collision shapes (press C)

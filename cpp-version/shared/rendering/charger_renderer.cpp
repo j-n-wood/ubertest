@@ -1,5 +1,6 @@
 #include "rendering/charger_renderer.h"
 #include "level/level_renderer.h"  // createLevelTileMeshCustom / createLevelTileModel / freeLevelRenderData
+#include "world_scale.h"
 
 #include <algorithm>
 
@@ -69,7 +70,7 @@ void ChargerRenderer::rebuildModel() {
     freeLevelRenderData(&data_);  // UnloadModel keeps shared atlas/bump/shader alive
     int bumpW = bump_.id > 0 ? bump_.width : 0;
     int bumpH = bump_.id > 0 ? bump_.height : 0;
-    data_.tileMesh = createLevelTileMeshCustom(chargerLevel_, tileset_, props_, bumpW, bumpH, 1.0f,
+    data_.tileMesh = createLevelTileMeshCustom(chargerLevel_, tileset_, props_, bumpW, bumpH, WORLD_SCALE,
                                                rowOffset_);
     if (data_.tileMesh.vertexCount > 0) {
         data_.tileModel = createLevelTileModel(data_.tileMesh, atlas_, bump_, renderer_);

@@ -3,6 +3,7 @@
 #include <string>
 
 #include "level/level_types.h"
+#include "world_scale.h"
 #include "level/lift_manager.h"
 #include "level/ship_map.h"
 #include "level/tmx_loader.h"
@@ -76,14 +77,14 @@ TEST(LiftManagerTest, SeparateElevatorsDoNotChain) {
 }
 
 TEST(LiftManagerTest, ProximityOnCurrentLevelOnly) {
-    // Lift at tile (5,5) on a 10x10 level -> physics centre (0.5, 0.5).
+    // Lift at tile (5,5) on a 10x10 level -> physics centre (0.5, 0.5) tiles, metric = *WORLD_SCALE.
     std::vector<TmxLevel> levels = { makeLevel(0, 10, 10, {{5, 5, 0, 0}}) };
     LiftManager lm;
     lm.build(levels);
     ASSERT_EQ(lm.stops().size(), 1u);
     Vector2 centre = lm.stops()[0].physicsCenter;
-    EXPECT_NEAR(centre.x, 0.5f, 1e-4f);
-    EXPECT_NEAR(centre.y, 0.5f, 1e-4f);
+    EXPECT_NEAR(centre.x, 0.5f * WORLD_SCALE, 1e-4f);
+    EXPECT_NEAR(centre.y, 0.5f * WORLD_SCALE, 1e-4f);
 
     lm.update(centre, 0);
     EXPECT_TRUE(lm.onLift());
