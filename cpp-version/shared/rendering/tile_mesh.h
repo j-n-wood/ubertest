@@ -96,7 +96,7 @@ inline Vector3 gameToRenderCoords(float gameX, float gameY, float gameZ, float s
     return {
         gameX * scale,      // X unchanged
         gameZ * scale,      // Game Z (height) -> Render Y (up)
-        gameY * scale       // Game Y (forward) -> Render Z (depth)
+        -gameY * scale      // Game Y (forward, inverted in the source data) -> Render Z (depth)
     };
 }
 

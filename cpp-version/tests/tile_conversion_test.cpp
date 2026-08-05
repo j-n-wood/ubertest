@@ -236,17 +236,18 @@ TEST_F(JsonSerializationTest, TileVerticesTransformed) {
     // Verify coordinate transformation was applied correctly
     // Game coords: X horizontal, Y horizontal (forward), Z vertical (height)
     // Render coords: X horizontal, Y vertical (up), Z horizontal (depth)
-    // Transformation: renderX = gameX * scale, renderY = gameZ * scale, renderZ = gameY * scale
+    // Transformation: renderX = gameX * scale, renderY = gameZ * scale, renderZ = -gameY * scale
+    // (game Y is inverted in the source data, so it is negated on the way to render space).
     constexpr float SCALE = 0.0254f;
 
     for (size_t i = 0; i < originalTile.vertices.size() && i < reloadedTile.vertices.size(); ++i) {
         const auto& orig = originalTile.vertices[i].position;
         const auto& reloaded_pos = reloadedTile.vertices[i].position;
 
-        // Check transformation: X stays, Y<->Z swap, scale applied
+        // Check transformation: X stays, Z->Y (up), Y negated -> Z (depth), scale applied
         EXPECT_NEAR(reloaded_pos.x, orig.x * SCALE, 0.001f) << "X coordinate transform failed";
         EXPECT_NEAR(reloaded_pos.y, orig.z * SCALE, 0.001f) << "Z->Y coordinate transform failed";
-        EXPECT_NEAR(reloaded_pos.z, orig.y * SCALE, 0.001f) << "Y->Z coordinate transform failed";
+        EXPECT_NEAR(reloaded_pos.z, -orig.y * SCALE, 0.001f) << "Y->Z coordinate transform failed";
     }
 }
 

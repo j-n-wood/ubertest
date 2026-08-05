@@ -182,6 +182,15 @@ static Mesh createMeshFromTiles(const std::vector<const Tile*>& tiles) {
         }
     }
 
+    // The source Y-axis is negated in gameToRenderCoords (reflection), which flips triangle
+    // handedness; reverse each triangle's winding so tiles keep facing up (undoes the source-data
+    // CW->CCW reversal above under the reflected coordinates).
+    for (int t = 0; t + 2 < indexCount; t += 3) {
+        unsigned short tmp = mesh.indices[t + 1];
+        mesh.indices[t + 1] = mesh.indices[t + 2];
+        mesh.indices[t + 2] = tmp;
+    }
+
     // Upload to GPU
     UploadMesh(&mesh, false);
 

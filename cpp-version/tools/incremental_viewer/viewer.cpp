@@ -75,6 +75,9 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->toggles.showHelp = false;
     viewer->toggles.showTileIndices = false;  // Debug tile index overlay
     viewer->toggles.backfaceCulling = true;   // Start with culling enabled
+    viewer->toggles.enableCaps = true;        // Wall end caps
+    viewer->toggles.enableMiter = true;       // Wall corner miter joins
+    viewer->toggles.showNodes = false;        // Path-node markers + labels (diagnosis)
     viewer->cameraPreset = CameraPreset::TopDown;  // Default to game mode
 
     // Initialize geometry mesh state
@@ -211,10 +214,10 @@ bool viewerConvertAndLoad(Viewer* viewer, const char* sourcePath,
 //------------------------------------------------------------------------------
 // Reload domain from JSON
 //------------------------------------------------------------------------------
-bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
-    if (!viewer || !viewer->initialized) return false;
-
-    TraceLog(LOG_INFO, "Loading domain from: %s", jsonPath);
+// Rebuild all render meshes (tiles + floor geometry + walls) from viewer->loadedDomain. Used after
+// a JSON reload and after live edits in the link inspector. Does not touch the camera.
+void viewerRebuildMeshes(Viewer* viewer) {
+    if (!viewer || !viewer->initialized || !viewer->domainLoaded) return;
 
     // Unload previous tile meshes
     if (viewer->tileMesh.loaded) {
@@ -242,15 +245,7 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
         viewer->geometryMesh = {};
     }
 
-    // Load from JSON using shared loader
-    if (!loadDomainFromFile(jsonPath, viewer->loadedDomain)) {
-        TraceLog(LOG_ERROR, "VIEWER: Failed to load domain from JSON: %s", jsonPath);
-        return false;
-    }
-
-    viewer->domainLoaded = true;
-
-    // Count tiles after reload
+    // Count tiles
     int totalTiles = 0;
     for (const auto& area : viewer->loadedDomain.areas) {
         totalTiles += static_cast<int>(area.tiles.size());
@@ -265,7 +260,7 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
     if (!batchCollection.success) {
         TraceLog(LOG_ERROR, "VIEWER: Failed to create batched tile meshes: %s",
                  batchCollection.error ? batchCollection.error : "unknown error");
-        return false;
+        return;
     }
 
     // Collect unique texture indices for loading
@@ -396,7 +391,62 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
 
     freeGeometryMeshCollection(&geoCollection);
 
-    // Position camera to view the mesh
+    // =========================================
+    // Walls: sweep each link's profile (materials.xml). Appended to the geometry batches so
+    // they render under the F4 (geometry) toggle.
+    // =========================================
+    if (viewer->wallProfiles.loaded) {
+        GeometryMeshCollection wallCol = createDomainWallMeshes(viewer->loadedDomain, viewer->scale,
+                                                                viewer->wallProfiles,
+                                                                viewer->toggles.enableCaps,
+                                                                viewer->toggles.enableMiter);
+        int wallTris = 0;
+        size_t wallCount = wallCol.meshes.size();
+        for (const auto& wm : wallCol.meshes) {
+            if (wm.vertices.empty()) continue;
+            GeometryBatchState state = {};
+            Mesh rm = geometryMeshToRaylibMesh(wm);
+            if (rm.vertexCount == 0) continue;
+
+            state.model = LoadModelFromMesh(rm);
+            state.materialId = wm.materialId;  // diffuse texture index
+            state.triangleCount = rm.triangleCount;
+            state.valid = true;
+
+            sceneRendererApplyShader(&viewer->renderer, &state.model);
+            state.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+
+            if (viewer->texturesLoaded && wm.materialId > 0) {
+                textureCacheLoad(viewer->textureCache, viewer->textureLookup, wm.materialId);
+                Texture2D diffuse = textureCacheGetDiffuse(viewer->textureCache, wm.materialId);
+                if (diffuse.id > 0) state.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = diffuse;
+            }
+
+            viewer->geometryMesh.batches.push_back(state);
+            wallTris += state.triangleCount;
+        }
+        viewer->geometryMesh.totalTriangles += wallTris;
+        viewer->geometryMesh.loaded = viewer->geometryMesh.loaded || !viewer->geometryMesh.batches.empty();
+        freeGeometryMeshCollection(&wallCol);
+        TraceLog(LOG_INFO, "Created %zu wall meshes (%d tris)", wallCount, wallTris);
+    }
+
+    TraceLog(LOG_INFO, "=== MESHES REBUILT ===");
+}
+
+bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
+    if (!viewer || !viewer->initialized) return false;
+
+    TraceLog(LOG_INFO, "Loading domain from: %s", jsonPath);
+    if (!loadDomainFromFile(jsonPath, viewer->loadedDomain)) {
+        TraceLog(LOG_ERROR, "VIEWER: Failed to load domain from JSON: %s", jsonPath);
+        return false;
+    }
+    viewer->domainLoaded = true;
+
+    viewerRebuildMeshes(viewer);
+
+    // Position camera to frame the mesh (only on a fresh load, not on live edits).
     if (viewer->tileMesh.loaded) {
         Vector3 center = {
             (viewer->tileMesh.boundsMin.x + viewer->tileMesh.boundsMax.x) / 2.0f,
@@ -414,11 +464,7 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
         TraceLog(LOG_WARNING, "VIEWER: No triangles generated from tiles");
     }
 
-    TraceLog(LOG_INFO, "=== READY FOR VIEWING ===");
-
-    // Apply default camera preset
     viewerSetCameraPreset(viewer, viewer->cameraPreset);
-
     return true;
 }
 
@@ -624,6 +670,64 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         viewer->toggles.showHelp = !viewer->toggles.showHelp;
     }
 
+    // Level cycling across decks (xmapfile{N}.txt).
+    if (IsKeyPressed(KEY_RIGHT_BRACKET)) viewerCycleLevel(viewer, +1);
+    if (IsKeyPressed(KEY_LEFT_BRACKET))  viewerCycleLevel(viewer, -1);
+
+    // Validity report panel.
+    if (IsKeyPressed(KEY_V)) {
+        viewer->toggles.showValidation = !viewer->toggles.showValidation;
+        if (viewer->toggles.showValidation && !viewer->validation.run) viewerValidate(viewer);
+    }
+
+    // Class-14 reference unit (size reference).
+    if (IsKeyPressed(KEY_U)) viewerToggleUnitRef(viewer);
+
+    // Node markers + id labels (diagnosis).
+    if (IsKeyPressed(KEY_N)) {
+        viewer->toggles.showNodes = !viewer->toggles.showNodes;
+        TraceLog(LOG_INFO, "VIEWER: node markers %s", viewer->toggles.showNodes ? "ON" : "OFF");
+    }
+
+    // Reload the current deck from source (re-parses the geometry XML — edit it, then press F9).
+    if (IsKeyPressed(KEY_F9) && viewer->currentLevelIdx >= 0) {
+        TraceLog(LOG_INFO, "VIEWER: reloading deck from source XML...");
+        viewerLoadLevel(viewer, viewer->levelNumbers[viewer->currentLevelIdx]);
+    }
+
+    // Dump per-link profile assignment (which profiles each wall link gets, and the trim side).
+    if (IsKeyPressed(KEY_J)) viewerDumpProfiles(viewer);
+
+    // Link inspector panel (live-edit profiles / direction).
+    if (IsKeyPressed(KEY_L)) {
+        viewer->showInspector = !viewer->showInspector;
+        TraceLog(LOG_INFO, "VIEWER: link inspector %s", viewer->showInspector ? "ON" : "OFF");
+    }
+
+    // Save the edited deck to JSON (saveDir/level_<n>.json; originals untouched).
+    if (IsKeyPressed(KEY_F10)) viewerSaveEdited(viewer);
+
+    // Wall caps / miter toggles (rebuild the current deck to apply).
+    if (IsKeyPressed(KEY_K) || IsKeyPressed(KEY_M)) {
+        if (IsKeyPressed(KEY_K)) viewer->toggles.enableCaps = !viewer->toggles.enableCaps;
+        if (IsKeyPressed(KEY_M)) viewer->toggles.enableMiter = !viewer->toggles.enableMiter;
+        TraceLog(LOG_INFO, "VIEWER: caps %s, miter %s",
+                 viewer->toggles.enableCaps ? "ON" : "OFF", viewer->toggles.enableMiter ? "ON" : "OFF");
+        if (viewer->currentLevelIdx >= 0) {
+            viewerLoadLevel(viewer, viewer->levelNumbers[viewer->currentLevelIdx]);
+        }
+    }
+
+    // Export the current level: X = combined GLTF; Shift+X = split (one file per shape).
+    if (IsKeyPressed(KEY_X)) {
+        const std::string dir = (fs::path(viewer->outputDir) / "export").string();
+        bool split = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        bool ok = split ? viewerExportLevelSplit(viewer, dir.c_str())
+                        : viewerExportLevel(viewer, dir.c_str());
+        TraceLog(ok ? LOG_INFO : LOG_ERROR, "VIEWER: %s export %s",
+                 split ? "split" : "combined", ok ? "done" : "failed");
+    }
+
     // Update camera position for specular calculations
     sceneRendererUpdateCamera(&viewer->renderer, viewer->camera.position);
 }
@@ -691,6 +795,27 @@ void viewerRender(Viewer* viewer) {
         }
     }
 
+    // Class-14 reference unit (drawn in the same 3D pass, with the lighting/env shader).
+    if (viewer->toggles.showUnitRef) {
+        viewerRenderUnitRef(viewer);
+    }
+
+    // Path-node markers (diagnosis): a sphere at each node position, drawn with depth test off so
+    // they are never hidden behind walls/floors.
+    if (viewer->toggles.showNodes && viewer->domainLoaded) {
+        rlDrawRenderBatchActive();
+        rlDisableDepthTest();
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& geom : area.geometry) {
+                for (const auto& node : geom.nodes) {
+                    DrawSphere(node.position, 0.25f, (Color){255, 60, 60, 255});
+                }
+            }
+        }
+        rlDrawRenderBatchActive();
+        rlEnableDepthTest();
+    }
+
     EndMode3D();
 }
 
@@ -730,6 +855,48 @@ void viewerDrawOverlay(Viewer* viewer) {
              viewer->camera.position.x, viewer->camera.position.y, viewer->camera.position.z),
              10, y, 16, LIGHTGRAY);
     y += 20;
+
+    // Current deck + cycling hint.
+    if (!viewer->levelNumbers.empty()) {
+        int levelNum = (viewer->currentLevelIdx >= 0)
+                           ? viewer->levelNumbers[viewer->currentLevelIdx] : -1;
+        DrawText(TextFormat("Deck: %d  (%d/%zu)  [ ] cycle   U unit-ref   V validate   X export",
+                 levelNum, viewer->currentLevelIdx + 1, viewer->levelNumbers.size()),
+                 10, y, 16, SKYBLUE);
+        y += 20;
+
+        // Source geometry XML + diagnosis hints.
+        if (!viewer->loadedDomain.areas.empty() && !viewer->loadedDomain.areas[0].geometry.empty()) {
+            DrawText(TextFormat("XML: %s   [F9 reload]  [N nodes]  [J dump]  [M miter]  [L inspect]",
+                     viewer->loadedDomain.areas[0].geometry[0].sourceFile.c_str()),
+                     10, y, 14, LIGHTGRAY);
+            y += 18;
+        }
+        DrawText(TextFormat("Source: %s   Save-dir: %s   [F10 save]",
+                 viewer->loadedFromEdited ? "EDITED json" : "original XML",
+                 viewer->saveDir.c_str()),
+                 10, y, 14, viewer->loadedFromEdited ? GREEN : LIGHTGRAY);
+        y += 18;
+    }
+
+    // Validity report panel.
+    if (viewer->toggles.showValidation && viewer->validation.run) {
+        const ValidationReport& v = viewer->validation;
+        y += 6;
+        DrawText(v.ok() ? "VALIDITY: OK" : "VALIDITY: ISSUES", 10, y, 18,
+                 v.ok() ? GREEN : ORANGE);
+        y += 22;
+        DrawText(TextFormat("areas=%d  floorMeshes=%d  tileBatches=%d  tris=%d",
+                 v.areas, v.floorMeshes, v.tileBatches, v.triangles), 10, y, 15, LIGHTGRAY);
+        y += 18;
+        DrawText(TextFormat("collision: polys=%d  chains=%d", v.collisionPolys, v.collisionChains),
+                 10, y, 15, LIGHTGRAY);
+        y += 18;
+        for (const auto& w : v.warnings) {
+            DrawText(TextFormat("- %s", w.c_str()), 14, y, 15, ORANGE);
+            y += 17;
+        }
+    }
 
     // Tile info
     if (viewer->tileMesh.loaded) {
@@ -877,6 +1044,23 @@ void viewerDrawOverlay(Viewer* viewer) {
             }
         }
     }
+
+    // Node id labels (diagnosis): project each unique node to screen and draw its id.
+    if (viewer->toggles.showNodes && viewer->domainLoaded) {
+        std::set<int> drawn;
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& geom : area.geometry) {
+                for (const auto& node : geom.nodes) {
+                    if (!drawn.insert(node.id).second) continue;
+                    Vector2 sp = GetWorldToScreen(node.position, viewer->camera);
+                    if (sp.x < -20 || sp.y < -20 || sp.x > GetScreenWidth() + 20 ||
+                        sp.y > GetScreenHeight() + 20) continue;
+                    const char* txt = TextFormat("%d", node.id);
+                    DrawText(txt, static_cast<int>(sp.x) + 5, static_cast<int>(sp.y) - 6, 14, YELLOW);
+                }
+            }
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -884,6 +1068,9 @@ void viewerDrawOverlay(Viewer* viewer) {
 //------------------------------------------------------------------------------
 void viewerCleanup(Viewer* viewer) {
     if (!viewer) return;
+
+    // Tear down the reference unit first (frees its bodies/models before the GL context closes).
+    viewerDestroyUnitRef(viewer);
 
     // Cleanup tile meshes
     if (viewer->tileMesh.loaded) {

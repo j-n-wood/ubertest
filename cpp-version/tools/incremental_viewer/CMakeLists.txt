@@ -3,6 +3,11 @@ project(incremental_viewer CXX)
 set(TOOL_SOURCES
     main.cpp
     viewer.cpp
+    level_manager.cpp
+    level_export.cpp
+    unit_ref.cpp
+    inspector.cpp
+    ${CMAKE_SOURCE_DIR}/src/pages/raygui_impl.cpp
 )
 
 # Shared sources needed for rendering
@@ -11,8 +16,19 @@ set(VIEWER_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/rendering/scene_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/tile_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/wall_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/env_map.cpp
     ${CMAKE_SOURCE_DIR}/shared/utils/string_utils.cpp
+    ${CMAKE_SOURCE_DIR}/shared/model_convert/gltf_export.cpp
+    ${CMAKE_SOURCE_DIR}/shared/model_convert/gltf_bounds.cpp
+    # Unit spawning (class-14 reference) via the real UnitManager
+    ${CMAKE_SOURCE_DIR}/shared/units/unit_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/unit_json.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/model_cache.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/combat_state.cpp
+    ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
 )
 
 # Scene conversion sources (parsing and JSON)
@@ -33,9 +49,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${SHARED_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/shared
+    ${RAYGUI_INCLUDE_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib nlohmann_json::nlohmann_json tinyxml2)
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib box2d nlohmann_json::nlohmann_json tinyxml2)
 add_platform_libraries(${PROJECT_NAME})
 
 # Copy shaders, textures, and models from shared assets

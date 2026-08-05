@@ -57,6 +57,8 @@ bool parseGeometryXml(std::string_view path, PathGeometry& outGeometry) {
             link.id = linkElem->IntAttribute("id", 0);
             link.start = linkElem->IntAttribute("start", 0);
             link.finish = linkElem->IntAttribute("finish", 0);
+            // defaultProfiles="0" opts a profile-less link out of the default wall set.
+            link.useDefaultProfiles = (linkElem->IntAttribute("defaultProfiles", 1) != 0);
 
             // Parse optional Control point
             XMLElement* controlElem = linkElem->FirstChildElement("Control");

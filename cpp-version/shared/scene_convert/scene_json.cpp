@@ -353,10 +353,17 @@ static json pathLinkToJson(const PathLink& l) {
         {"finish", l.finish}
     };
     if (l.control) {
-        result["control"] = {{"position", vector3ToJson(l.control->position)}};
+        // Transform the Bézier control point to render space, same as the nodes (pathNodeToJson).
+        // Without this the control stays in raw game units while endpoints are render-space, which
+        // balloons curved-link floor/wall geometry to huge coordinates.
+        Vector3 renderControl = gameToRenderCoords(l.control->position, SCALE_UNITS_TO_METERS);
+        result["control"] = {{"position", vector3ToJson(renderControl)}};
     }
     if (!l.profiles.empty()) {
         result["profiles"] = l.profiles;
+    }
+    if (!l.useDefaultProfiles) {
+        result["useDefaultProfiles"] = false;  // only emit when opted out (default is true)
     }
     return result;
 }
@@ -374,6 +381,7 @@ static PathLink jsonToPathLink(const json& j) {
     if (j.contains("profiles")) {
         l.profiles = j["profiles"].get<std::vector<int>>();
     }
+    l.useDefaultProfiles = j.value("useDefaultProfiles", true);
     return l;
 }
 

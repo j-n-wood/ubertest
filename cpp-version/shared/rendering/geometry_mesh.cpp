@@ -197,9 +197,12 @@ static bool isEar(const std::vector<Vector3>& polygon, const std::vector<int>& i
     const Vector3& b = polygon[indices[i]];
     const Vector3& c = polygon[indices[next]];
 
-    // Check if this is a convex vertex (using XZ plane = render space floor plane)
+    // Convex vertex test. The polygon is normalized to positive shoelace area (see
+    // triangulatePolygon), and triangleArea2D shares that sign convention, so a convex vertex has
+    // area > 0. (The previous `>= 0 -> reject` inverted this, so no ear was ever found and every
+    // polygon fell back to a fan — which is wrong for concave areas.)
     float area = triangleArea2D(a.x, a.z, b.x, b.z, c.x, c.z);
-    if (area >= 0) return false;  // Concave or degenerate
+    if (area <= 0) return false;  // reflex or degenerate
 
     // Check if any other vertex is inside this triangle
     for (int j = 0; j < n; ++j) {
@@ -265,12 +268,12 @@ static std::vector<std::array<int, 3>> triangulatePolygon(const std::vector<Vect
         }
 
         if (!earFound) {
-            // Fall back to fan triangulation if ear clipping fails
-            TraceLog(LOG_WARNING, "GEOMETRY: Ear clipping failed, using fan triangulation");
-            triangles.clear();
-            for (size_t i = 1; i + 1 < polygon.size(); ++i) {
-                triangles.push_back({0, static_cast<int>(i), static_cast<int>(i + 1)});
+            // Rare (numerical/degenerate) fallback: fan the REMAINING indices, which are already
+            // CCW-normalized, so the winding stays consistent — and keep the ears clipped so far.
+            for (size_t k = 1; k + 1 < indices.size(); ++k) {
+                triangles.push_back({indices[0], indices[static_cast<int>(k)], indices[static_cast<int>(k + 1)]});
             }
+            indices.clear();
             break;
         }
 
@@ -391,12 +394,22 @@ GeometryMeshCollection createGeometryMeshes(const PathGeometry& geometry, float 
                 }
             }
 
-            // Add triangle indices
+            // Emit each triangle with the winding that makes it face up (+Y), matching the hardcoded
+            // UP_NORMAL. This is robust to the triangulator's winding and the source Y reflection: a
+            // triangle's normal.y = -triangleArea2D, so area < 0 means it already faces up.
             for (const auto& tri : triangles) {
-                // Reverse winding for correct face culling (floor faces up)
+                const Vector3& p0 = boundary[tri[0]];
+                const Vector3& p1 = boundary[tri[1]];
+                const Vector3& p2 = boundary[tri[2]];
+                float a2 = triangleArea2D(p0.x, p0.z, p1.x, p1.z, p2.x, p2.z);
                 geoMesh.indices.push_back(baseIndex + tri[0]);
-                geoMesh.indices.push_back(baseIndex + tri[2]);
-                geoMesh.indices.push_back(baseIndex + tri[1]);
+                if (a2 < 0.0f) {
+                    geoMesh.indices.push_back(baseIndex + tri[1]);
+                    geoMesh.indices.push_back(baseIndex + tri[2]);
+                } else {
+                    geoMesh.indices.push_back(baseIndex + tri[2]);
+                    geoMesh.indices.push_back(baseIndex + tri[1]);
+                }
             }
         }
 

@@ -36,6 +36,12 @@ static void printHelp() {
     printf("  -s, --scale <factor>   Scale factor override (default: 0.0254)\n");
     printf("  --no-reference         Don't load reference model\n");
     printf("  --no-textures          Don't load textures\n");
+    printf("  --export-all <dir>     Headless: load + export every deck to <dir>, then exit\n");
+    printf("  --export-split <dir>   Headless: split export (one file per shape) every deck\n");
+    printf("  --materials <path>     materials.xml for wall profiles (default: <srcDir>/../data)\n");
+    printf("  --no-caps              Disable wall end caps\n");
+    printf("  --no-miter             Disable wall corner miter joins\n");
+    printf("  --save-dir <dir>       Edited-deck JSON output folder (default <output>/edited)\n");
     printf("  --help                 Show this help\n\n");
     printf("Controls:\n");
     printf("  WASD          Move camera\n");
@@ -52,6 +58,16 @@ static void printHelp() {
     printf("  F3            Toggle tiles\n");
     printf("  F4            Toggle geometry\n");
     printf("  F5            Toggle wireframe\n");
+    printf("  [ / ]         Previous / next deck (level)\n");
+    printf("  U             Toggle class-14 reference unit (size reference)\n");
+    printf("  K / M         Toggle wall caps / miter joins (rebuilds the deck)\n");
+    printf("  N             Toggle path-node markers + id labels (diagnosis)\n");
+    printf("  F9            Reload the current deck from source XML (after editing it)\n");
+    printf("  J             Dump per-link profile assignment + trim side to console\n");
+    printf("  L             Toggle link inspector: edit/add/remove/reverse links; Save / Save All / Revert\n");
+    printf("  F10           Save edited deck to JSON (--save-dir, default <output>/edited)\n");
+    printf("  V             Toggle validity report panel\n");
+    printf("  X             Export current deck (GLTF + manifest + collision) to <output>/export/\n");
     printf("  H             Toggle help overlay\n");
     printf("  ESC           Quit\n\n");
     printf("Examples:\n");
@@ -74,6 +90,12 @@ int main(int argc, char* argv[]) {
     float scale = 0.0254f;  // inches to meters
     bool loadReference = true;
     bool loadTextures = true;
+    const char* exportAllDir = nullptr;    // --export-all <dir>: headless export every deck, then exit
+    const char* exportSplitDir = nullptr;  // --export-split <dir>: headless split export every deck
+    const char* materialsPath = nullptr; // --materials <path>: materials.xml (for wall profiles)
+    bool noCaps = false;                 // --no-caps: disable wall end caps
+    bool noMiter = false;                // --no-miter: disable wall corner miter joins
+    const char* saveDir = nullptr;       // --save-dir <dir>: edited-deck JSON output (default <output>/edited)
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -97,6 +119,18 @@ int main(int argc, char* argv[]) {
             loadReference = false;
         } else if (strcmp(argv[i], "--no-textures") == 0) {
             loadTextures = false;
+        } else if (strcmp(argv[i], "--export-all") == 0 && i + 1 < argc) {
+            exportAllDir = argv[++i];
+        } else if (strcmp(argv[i], "--export-split") == 0 && i + 1 < argc) {
+            exportSplitDir = argv[++i];
+        } else if (strcmp(argv[i], "--materials") == 0 && i + 1 < argc) {
+            materialsPath = argv[++i];
+        } else if (strcmp(argv[i], "--no-caps") == 0) {
+            noCaps = true;
+        } else if (strcmp(argv[i], "--no-miter") == 0) {
+            noMiter = true;
+        } else if (strcmp(argv[i], "--save-dir") == 0 && i + 1 < argc) {
+            saveDir = argv[++i];
         } else if (argv[i][0] != '-') {
             sourcePath = argv[i];
         }
@@ -138,11 +172,56 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // If source path provided, convert and load
-    if (sourcePath) {
-        if (!viewerConvertAndLoad(&viewer, sourcePath, tilesPath, outputDir, scale)) {
-            fprintf(stderr, "Warning: Failed to convert source file\n");
+    // Wall build options (default on; CLI can disable for A/B comparison).
+    viewer.toggles.enableCaps = !noCaps;
+    viewer.toggles.enableMiter = !noMiter;
+
+    // Set up in-app deck cycling: scan the directory that holds xmapfile{N}.txt.
+    viewer.outputDir = outputDir;
+    viewer.scale = scale;
+    // Edited-deck JSON output folder (originals untouched). Default: <output>/edited.
+    viewer.saveDir = saveDir ? saveDir : (fs::path(outputDir) / "edited").string();
+    {
+        fs::path src(sourcePath ? sourcePath : DEFAULT_SOURCE_PATH);
+        std::string srcDir = src.parent_path().string();
+        viewerScanLevels(&viewer, srcDir.c_str(), tilesPath);
+
+        // Wall profiles from materials.xml (data/ is a sibling of ship1/).
+        std::string mpath = materialsPath
+            ? materialsPath
+            : (fs::path(srcDir).parent_path() / "data" / "materials.xml").string();
+        viewer.materialsPath = mpath;
+        loadWallProfiles(mpath.c_str(), viewer.wallProfiles);
+    }
+
+    // Headless batch export: load + export every deck, then exit.
+    if (exportAllDir || exportSplitDir) {
+        for (int level : viewer.levelNumbers) {
+            if (!viewerLoadLevel(&viewer, level)) continue;
+            if (exportAllDir) viewerExportLevel(&viewer, exportAllDir);
+            if (exportSplitDir) viewerExportLevelSplit(&viewer, exportSplitDir);
         }
+        viewerCleanup(&viewer);
+        CloseWindow();
+        return 0;
+    }
+
+    // Load the requested deck (or the first available) via viewerLoadLevel so it sets currentLevelIdx
+    // and prefers an edited JSON copy if one exists. Derive the deck number from xmapfile{N}.txt.
+    int startLevel = -1;
+    if (sourcePath) {
+        std::string stem = fs::path(sourcePath).stem().string();  // e.g. "xmapfile7"
+        const std::string pre = "xmapfile";
+        if (stem.compare(0, pre.size(), pre) == 0) {
+            try { startLevel = std::stoi(stem.substr(pre.size())); } catch (...) { startLevel = -1; }
+        }
+    }
+    if (startLevel < 0 && !viewer.levelNumbers.empty()) startLevel = viewer.levelNumbers.front();
+    if (startLevel >= 0) {
+        viewerLoadLevel(&viewer, startLevel);
+    } else if (sourcePath) {
+        // Non-standard source name: fall back to a direct convert.
+        if (viewerConvertAndLoad(&viewer, sourcePath, tilesPath, outputDir, scale)) viewerValidate(&viewer);
     }
 
     // Main loop
@@ -154,6 +233,7 @@ int main(int argc, char* argv[]) {
 
         viewerRender(&viewer);
         viewerDrawOverlay(&viewer);
+        viewerDrawInspector(&viewer);
 
         EndDrawing();
     }

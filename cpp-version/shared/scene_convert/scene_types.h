@@ -150,6 +150,10 @@ struct PathLink {
     int finish = 0;
     std::optional<ControlPoint> control;
     std::vector<int> profiles;
+    // When `profiles` is empty: if true (default), the link uses the geometry's default profile set
+    // (the ids in <Profiles>) — this is how interior walls are declared. XML `defaultProfiles="0"`
+    // sets this false (a wall-less structural link).
+    bool useDefaultProfiles = true;
 };
 
 struct PathProfile {
