@@ -104,7 +104,9 @@ bool viewerSaveEdited(Viewer* viewer) {
     std::error_code ec;
     fs::create_directories(viewer->saveDir, ec);
     const std::string out = editedDeckPath(viewer, level);
-    if (saveDomainToFile(out, viewer->loadedDomain)) {
+    // loadedDomain is already render space (loaded from JSON), so do NOT re-apply the game->render
+    // transform, or the reloaded file would be double-transformed (tiny / wrong geometry).
+    if (saveDomainToFile(out, viewer->loadedDomain, /*pretty=*/true, /*transformToRender=*/false)) {
         viewer->loadedFromEdited = true;
         TraceLog(LOG_INFO, "VIEWER: saved edited deck -> %s", out.c_str());
         return true;

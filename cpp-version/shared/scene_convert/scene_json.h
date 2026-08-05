@@ -28,8 +28,12 @@
 // Save ship to JSON file
 [[nodiscard]] bool saveShipToFile(std::string_view path, const Ship& ship, bool pretty = true);
 
-// Save domain to JSON file
-[[nodiscard]] bool saveDomainToFile(std::string_view path, const Domain& domain, bool pretty = true);
+// Save domain to JSON file. `transformToRender` applies the game->render coordinate transform to
+// positions (default true, for the convert path whose input is game space). Pass false when the
+// domain is ALREADY in render space (e.g. re-saving a domain that was loaded from JSON) — otherwise
+// the transform is applied twice and the reloaded file is corrupt.
+[[nodiscard]] bool saveDomainToFile(std::string_view path, const Domain& domain, bool pretty = true,
+                                    bool transformToRender = true);
 
 // Load ship from JSON file
 [[nodiscard]] bool loadShipFromFile(std::string_view path, Ship& outShip);

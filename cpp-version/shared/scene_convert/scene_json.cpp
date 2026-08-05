@@ -28,14 +28,24 @@ static Vector3 jsonToVector3(const json& j) {
     return {j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
 }
 
+// Coordinate transform applied to positions on save. The JSON stores render space, and the loader
+// reads it verbatim (no transform). The convert path feeds game-space data, so it must transform
+// (game -> render). But re-saving an already-render-space domain (e.g. the viewer's loadedDomain)
+// must NOT transform again — otherwise coordinates are scaled/permuted twice and reload is garbage.
+// saveDomainToFile sets this per call; default true preserves the original convert behaviour.
+static bool g_saveTransformCoords = true;
+static Vector3 saveCoords(const Vector3& p) {
+    return g_saveTransformCoords ? gameToRenderCoords(p, SCALE_UNITS_TO_METERS) : p;
+}
+
 //------------------------------------------------------------------------------
 // JSON Conversion - Bounds and Rect
 //------------------------------------------------------------------------------
 
 // Transform bounds from game space to render space during serialization
 static json boundsToJson(const Bounds& b) {
-    Vector3 renderMin = gameToRenderCoords(b.min, SCALE_UNITS_TO_METERS);
-    Vector3 renderMax = gameToRenderCoords(b.max, SCALE_UNITS_TO_METERS);
+    Vector3 renderMin = saveCoords(b.min);
+    Vector3 renderMax = saveCoords(b.max);
     // After axis swap, min/max may need recalculation
     return {
         {"min", vector3ToJson({
@@ -173,7 +183,7 @@ static FeatureCollision jsonToFeatureCollision(const json& j) {
 // Render: X horizontal, Y vertical (up), Z horizontal (depth)
 static json tileVertexToJson(const TileVertex& v) {
     // Transform position to render space (Y-up) with scaling
-    Vector3 renderPos = gameToRenderCoords(v.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(v.position);
     return {
         {"position", vector3ToJson(renderPos)},
         {"uv1", vector2ToJson(v.uv1)},
@@ -303,7 +313,7 @@ static FeatureFlags jsonToFeatureFlags(const json& j) {
 
 static json featureToJson(const Feature& f) {
     // Transform position to render space
-    Vector3 renderPos = gameToRenderCoords(f.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(f.position);
     json result = {
         {"position", vector3ToJson(renderPos)},
         {"rotation", vector3ToJson(f.rotation)},  // Rotation angles preserved as-is
@@ -335,7 +345,7 @@ static Feature jsonToFeature(const json& j) {
 //------------------------------------------------------------------------------
 
 static json pathNodeToJson(const PathNode& n) {
-    Vector3 renderPos = gameToRenderCoords(n.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(n.position);
     return {{"id", n.id}, {"position", vector3ToJson(renderPos)}};
 }
 
@@ -356,7 +366,7 @@ static json pathLinkToJson(const PathLink& l) {
         // Transform the Bézier control point to render space, same as the nodes (pathNodeToJson).
         // Without this the control stays in raw game units while endpoints are render-space, which
         // balloons curved-link floor/wall geometry to huge coordinates.
-        Vector3 renderControl = gameToRenderCoords(l.control->position, SCALE_UNITS_TO_METERS);
+        Vector3 renderControl = saveCoords(l.control->position);
         result["control"] = {{"position", vector3ToJson(renderControl)}};
     }
     if (!l.profiles.empty()) {
@@ -491,7 +501,7 @@ static WaypointFlags jsonToWaypointFlags(const json& j) {
 }
 
 static json waypointToJson(const Waypoint& w) {
-    Vector3 renderPos = gameToRenderCoords(w.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(w.position);
     json result = {
         {"id", w.id},
         {"position", vector3ToJson(renderPos)},
@@ -519,7 +529,7 @@ static Waypoint jsonToWaypoint(const json& j) {
 //------------------------------------------------------------------------------
 
 static json doorToJson(const Door& d) {
-    Vector3 renderPos = gameToRenderCoords(d.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(d.position);
     json result = {
         {"id", d.id},
         {"position", vector3ToJson(renderPos)},
@@ -558,7 +568,7 @@ static Door jsonToDoor(const json& j) {
 }
 
 static json consoleToJson(const Console& c) {
-    Vector3 renderPos = gameToRenderCoords(c.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(c.position);
     return {
         {"id", c.id},
         {"position", vector3ToJson(renderPos)},
@@ -579,7 +589,7 @@ static Console jsonToConsole(const json& j) {
 }
 
 static json chargerToJson(const Charger& c) {
-    Vector3 renderPos = gameToRenderCoords(c.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(c.position);
     return {
         {"id", c.id},
         {"position", vector3ToJson(renderPos)},
@@ -596,7 +606,7 @@ static Charger jsonToCharger(const json& j) {
 }
 
 static json destructibleToJson(const Destructible& d) {
-    Vector3 renderPos = gameToRenderCoords(d.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(d.position);
     json result = {
         {"id", d.id},
         {"position", vector3ToJson(renderPos)},
@@ -847,7 +857,7 @@ bool jsonToDomain(std::string_view jsonStr, Domain& outDomain) {
 //------------------------------------------------------------------------------
 
 static json transporterToJson(const Transporter& t) {
-    Vector3 renderPos = gameToRenderCoords(t.position, SCALE_UNITS_TO_METERS);
+    Vector3 renderPos = saveCoords(t.position);
     return {
         {"id", t.id},
         {"domainIndex", t.domainIndex},
@@ -1017,13 +1027,16 @@ bool saveShipToFile(std::string_view path, const Ship& ship, bool pretty) {
     return file.good();
 }
 
-bool saveDomainToFile(std::string_view path, const Domain& domain, bool pretty) {
+bool saveDomainToFile(std::string_view path, const Domain& domain, bool pretty,
+                      bool transformToRender) {
     std::ofstream file{std::string{path}};
     if (!file.is_open()) {
         std::cerr << "Failed to open file for writing: " << path << std::endl;
         return false;
     }
+    g_saveTransformCoords = transformToRender;
     file << domainToJson(domain, pretty);
+    g_saveTransformCoords = true;  // restore default (convert path relies on it)
     return file.good();
 }
 

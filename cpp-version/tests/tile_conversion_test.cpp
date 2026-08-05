@@ -251,6 +251,31 @@ TEST_F(JsonSerializationTest, TileVerticesTransformed) {
     }
 }
 
+TEST_F(JsonSerializationTest, SaveNoTransformIsIdentityRoundTrip) {
+    // Re-saving an already-render-space domain (e.g. the viewer's loadedDomain, loaded from JSON)
+    // must NOT re-apply the game->render transform. With transformToRender=false, a save->load
+    // round-trip leaves coordinates unchanged (identity) — the guard against the double-transform
+    // that produced tiny/garbled geometry on reload.
+    const std::string tempPath = "test_notransform_roundtrip.json";
+    ASSERT_TRUE(saveDomainToFile(tempPath, testDomain, /*pretty=*/true, /*transformToRender=*/false));
+    Domain reloaded;
+    ASSERT_TRUE(loadDomainFromFile(tempPath, reloaded));
+    std::remove(tempPath.c_str());
+
+    ASSERT_GT(testDomain.areas.size(), 0u);
+    ASSERT_GT(reloaded.areas.size(), 0u);
+    ASSERT_GT(testDomain.areas[0].tiles.size(), 0u);
+    ASSERT_GT(reloaded.areas[0].tiles.size(), 0u);
+    const auto& o = testDomain.areas[0].tiles[0].vertices;
+    const auto& r = reloaded.areas[0].tiles[0].vertices;
+    ASSERT_EQ(o.size(), r.size());
+    for (size_t i = 0; i < o.size(); ++i) {
+        EXPECT_NEAR(r[i].position.x, o[i].position.x, 0.001f) << "X not identity";
+        EXPECT_NEAR(r[i].position.y, o[i].position.y, 0.001f) << "Y not identity";
+        EXPECT_NEAR(r[i].position.z, o[i].position.z, 0.001f) << "Z not identity";
+    }
+}
+
 TEST_F(JsonSerializationTest, FileWriteAndLoad) {
     // Write to temp file
     std::string tempPath = "test_domain_output.json";

@@ -37,10 +37,13 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
         return false;
     }
 
-    // Add directional light from above
+    // Add directional light from above. The shader computes lightDir = normalize(position - target)
+    // (direction TOWARD the light), so the light source must be ABOVE (position +Y) and the target
+    // below — otherwise lightDir points down and up-facing floors/tiles get zero diffuse (dark).
+    // (This matches the game's setup in game.cpp; previously these were swapped.)
     sceneRendererAddDirectionalLight(&viewer->renderer,
-        (Vector3){0, 0, 0},    // Position (reference point)
-        (Vector3){0, 50, 0},   // Target (light direction = UP)
+        (Vector3){0, 50, 0},   // Position: light source above
+        (Vector3){0, 0, 0},    // Target: below
         WHITE);
 
     // Set ambient light
