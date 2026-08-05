@@ -355,6 +355,16 @@ static int game_effective_tile_row(const Game* game) {
     return row;
 }
 
+// Human-readable name for the active level renderer (HUD + logs).
+static const char* game_level_render_mode_name(LevelRenderMode m) {
+    switch (m) {
+        case LevelRenderMode::Tilemap:     return "Tilemap (flat)";
+        case LevelRenderMode::CustomTiles: return "CustomTiles (bump)";
+        case LevelRenderMode::Objects3D:   return "Objects3D (3D - placeholder)";
+    }
+    return "?";
+}
+
 static bool game_build_level_render_data(Game* game) {
     if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) {
         return false;
@@ -386,24 +396,37 @@ static bool game_build_level_render_data(Game* game) {
         if (idx >= 0 && idx < (int)meshLevel.tiles.size()) meshLevel.tiles[idx] = 0;
     }
 
+    // Select the active level renderer. This is the swap seam (see Game::levelRenderMode):
+    //   Tilemap     — flat tileset-atlas mesh
+    //   CustomTiles — per-tile bump-mapped mesh
+    //   Objects3D   — converted 3D geometry (GLTF bundle) — roadmap Phase 6/7, not yet wired,
+    //                 so it falls back to CustomTiles for now (keeps the game playable).
+    LevelRenderMode mode = game->levelRenderMode;
+    if (mode == LevelRenderMode::Objects3D) {
+        TraceLog(LOG_WARNING, "Level renderer 'Objects3D' not yet implemented "
+                 "(needs the exported 3D bundle — roadmap Phase 6/7); using CustomTiles.");
+        mode = LevelRenderMode::CustomTiles;
+    }
+
     // Create render data structure
-    data = createLevelRenderData(meshLevel, game->tileset, LevelRenderMode::CustomTiles, WORLD_SCALE);
+    data = createLevelRenderData(meshLevel, game->tileset, mode, WORLD_SCALE);
 
     // Effective tileset colour row (base row, or the darkened last row when cleared).
     int effectiveRow = game_effective_tile_row(game);
 
-    // Generate mesh based on available resources
-    if (game->tileProperties.valid && gTextures().loaded(TEX_TILE_BUMP)) {
-        // CustomTiles mode with bump mapping
+    // Build the tile mesh for the selected mode. CustomTiles needs tile properties + a bump
+    // texture; without them (or in Tilemap mode) fall back to the flat atlas mesh.
+    bool useBump = (mode == LevelRenderMode::CustomTiles) &&
+                   game->tileProperties.valid && gTextures().loaded(TEX_TILE_BUMP);
+    if (useBump) {
         data.tileMesh = createLevelTileMeshCustom(
             meshLevel, game->tileset, game->tileProperties,
             gTextures().get(TEX_TILE_BUMP).width, gTextures().get(TEX_TILE_BUMP).height, WORLD_SCALE,
             effectiveRow);
-        TraceLog(LOG_INFO, "Created CustomTiles mesh (row %d)", effectiveRow);
+        TraceLog(LOG_INFO, "Level renderer: CustomTiles (bump) mesh (row %d)", effectiveRow);
     } else {
-        // Fallback to standard Tilemap mode
         data.tileMesh = createLevelTileMesh(meshLevel, game->tileset, WORLD_SCALE, effectiveRow);
-        TraceLog(LOG_INFO, "Created Tilemap mesh (fallback, row %d)", effectiveRow);
+        TraceLog(LOG_INFO, "Level renderer: Tilemap (flat) mesh (row %d)", effectiveRow);
     }
 
     if (data.tileMesh.vertexCount > 0) {
@@ -1427,6 +1450,18 @@ void game_update_gameplay(Game* game, float dt) {
         game->showAIDebug = !game->showAIDebug;
     }
 
+    // Cycle the level renderer (G): Tilemap -> CustomTiles -> Objects3D -> …, rebuilding the level.
+    // This is the swap seam — the sim is untouched; only the level's draw resources are rebuilt.
+    if (IsKeyPressed(KEY_G)) {
+        switch (game->levelRenderMode) {
+            case LevelRenderMode::Tilemap:     game->levelRenderMode = LevelRenderMode::CustomTiles; break;
+            case LevelRenderMode::CustomTiles: game->levelRenderMode = LevelRenderMode::Objects3D;   break;
+            case LevelRenderMode::Objects3D:   game->levelRenderMode = LevelRenderMode::Tilemap;     break;
+        }
+        game_build_level_render_data(game);
+        TraceLog(LOG_INFO, "Level renderer: %s", game_level_render_mode_name(game->levelRenderMode));
+    }
+
     // Pause (P) and debug slow-motion (O). These toggles run even while paused so
     // the game can be resumed; they are disabled in the rotation test harness.
     if (!game->testConfig.enabled) {
@@ -2006,6 +2041,10 @@ void game_render_gameplay(Game* game) {
     DrawText(TextFormat("Debug: %s (C=collision, U=units, B=all-bodies, N=normalmap)",
              debugModes[game->debugMode]), 10, 30, 16, WHITE);
 
+    // Active level renderer (G to cycle)
+    DrawText(TextFormat("Renderer[G]: %s", game_level_render_mode_name(game->levelRenderMode)),
+             10, 50, 16, WHITE);
+
     // Level info
     if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
         DrawText(TextFormat("Level %d: %s",
@@ -2072,7 +2111,7 @@ void game_render_gameplay(Game* game) {
     }
 
     // Controls help
-    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints/doors | P: Pause | O: Slow | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
+    DrawText("WASD: Move | Mouse: Aim | F1/F2: Unit type | V: AI/waypoints/doors | G: Renderer | P: Pause | O: Slow | PgUp/PgDn: Level | 0-6: Debug | ESC: Quit",
              10, GetScreenHeight() - 25, 14, GRAY);
 
     // Pause / slow-motion state indicator (centred, top).

@@ -26,6 +26,7 @@ void printUsage(const char* programName) {
     printf("  --asset-path <dir>  Base path for assets (conventional structure)\n");
     printf("                      Default: ./assets\n");
     printf("  --unit <id>         Unit ID for player (default: droid_class_0)\n");
+    printf("  --renderer <mode>   Level renderer: tilemap | custom | 3d (default: custom; toggle in-game with G)\n");
     printf("  --help, -h          Show this help\n");
     printf("\n");
     printf("Rotation Test Mode:\n");
@@ -62,6 +63,7 @@ int main(int argc, char* argv[]) {
 #endif
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
+    LevelRenderMode renderMode = LevelRenderMode::CustomTiles;  // --renderer; runtime-toggle with G
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -79,6 +81,12 @@ int main(int argc, char* argv[]) {
             testConfig.testFrames = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--sample-interval") == 0 && i + 1 < argc) {
             testConfig.sampleInterval = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--renderer") == 0 && i + 1 < argc) {
+            const char* r = argv[++i];
+            if (strcmp(r, "tilemap") == 0)      renderMode = LevelRenderMode::Tilemap;
+            else if (strcmp(r, "custom") == 0)  renderMode = LevelRenderMode::CustomTiles;
+            else if (strcmp(r, "3d") == 0)      renderMode = LevelRenderMode::Objects3D;
+            else fprintf(stderr, "Unknown --renderer '%s' (use tilemap|custom|3d)\n", r);
         } else if (strcmp(argv[i], "--unit") == 0 && i + 1 < argc) {
             unitId = argv[++i];
             testConfig.unitId = unitId;  // Also set in test config for compatibility
@@ -119,6 +127,7 @@ int main(int argc, char* argv[]) {
     auto textures = std::make_unique<TextureManager>();
 
     Game game{};
+    game.levelRenderMode = renderMode;  // startup renderer selection (before the first build in game_init)
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
 
     // View-states are pages on a stack; gameplay is the base GamePage. Other pages

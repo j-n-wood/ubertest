@@ -74,6 +74,11 @@ struct Game {
     std::vector<LevelCollisionData> levelCollisionData;
     int currentLevel;
 
+    // Active level renderer (swappable at startup via --renderer and at runtime via G).
+    // Tilemap = flat atlas, CustomTiles = per-tile bump, Objects3D = converted-geometry path
+    // (roadmap Phase 6/7 — not yet wired; currently falls back to CustomTiles). See docs/levels.md.
+    LevelRenderMode levelRenderMode = LevelRenderMode::CustomTiles;
+
     // Per-level runtime state (world, roster, flags), parallel to `levels`. See LevelRuntime
     // above and docs/levels.md. The GPU/build artifacts (levelRenderData, levelCollisionData)
     // stay in their own vectors above.
