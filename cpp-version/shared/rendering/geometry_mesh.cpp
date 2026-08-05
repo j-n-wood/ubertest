@@ -323,9 +323,14 @@ GeometryMeshCollection createGeometryMeshes(const PathGeometry& geometry, float 
 
         bool meshFirstVertex = true;
 
-        // Get material texgen scales (use default floor material for now)
-        float scaleS = DEFAULT_FLOOR_MATERIAL.texgenScaleS;
-        float scaleT = DEFAULT_FLOOR_MATERIAL.texgenScaleT;
+        // Get material texgen scales (use default floor material for now).
+        // texgenScale is defined per *game unit* (e.g. 1/64 = one repeat per 64 units), but the
+        // boundary positions are already in render space (metres = game units * scale). Divide by
+        // scale so the texture still repeats every N game units — otherwise it repeats every N
+        // metres, magnifying the texture ~1/scale (~40x) across the floor and flattening the bump.
+        const float uvScale = (scale > 0.0f) ? scale : 1.0f;
+        float scaleS = DEFAULT_FLOOR_MATERIAL.texgenScaleS / uvScale;
+        float scaleT = DEFAULT_FLOOR_MATERIAL.texgenScaleT / uvScale;
 
         for (const PathArea* area : areas) {
             // Collect boundary vertices

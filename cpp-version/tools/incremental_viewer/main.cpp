@@ -158,11 +158,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load reference model (Suzanne)
+    // Reference model: an instance of unit type 14 (class-14 droid), assembled by the real
+    // UnitManager (multi-section body + env/lighting shader) — a true in-game scale reference.
+    // Shown by default; toggle with F2 or U. (Same path as viewerToggleUnitRef's lazy build.)
     if (loadReference) {
-        if (!viewerLoadReference(&viewer, "assets/models/Suzanne.glb")) {
-            fprintf(stderr, "Warning: Failed to load reference model\n");
-        }
+        viewerToggleUnitRef(&viewer);
     }
 
     // Load texture lookup

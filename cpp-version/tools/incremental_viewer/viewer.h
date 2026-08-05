@@ -25,7 +25,6 @@ enum class CameraPreset {
 // Display toggles
 struct ViewerToggles {
     bool showGrid;
-    bool showReference;
     bool showTiles;
     bool showGeometry;
     bool showWireframe;
@@ -87,11 +86,6 @@ struct Viewer {
     SceneRenderer renderer;
     Camera3D camera;
 
-    // Reference model (Suzanne at -1, 0, -1)
-    Model referenceModel;
-    bool referenceLoaded;
-    Vector3 referencePosition;
-
     // Tile mesh from converted data
     TileMeshState tileMesh;
 
@@ -101,6 +95,12 @@ struct Viewer {
     // Loaded domain data (after JSON reload)
     Domain loadedDomain;
     bool domainLoaded;
+
+    // Ground grid extent (render space), fit to the loaded level footprint on each rebuild.
+    // Level geometry sits in render +X / -Z (game +x/+y), so a symmetric origin grid misses it.
+    Vector3 gridMin = {0, 0, 0};
+    Vector3 gridMax = {0, 0, 0};
+    bool gridFit = false;
 
     // Texture system
     TextureLookup textureLookup;
@@ -161,11 +161,6 @@ struct Viewer {
 // Returns true on success
 bool viewerInit(Viewer* viewer, const char* shaderPath);
 
-// Load the reference model (Suzanne.glb)
-// modelPath: path to the reference model file
-// Returns true on success
-bool viewerLoadReference(Viewer* viewer, const char* modelPath);
-
 // Load textures.txt for texture lookup
 // texturesPath: path to textures.txt
 // basePath: base directory for resolving texture paths
@@ -224,6 +219,9 @@ int viewerSaveAll(Viewer* viewer);
 
 // Toggle the class-14 reference unit (created lazily). No-op if unit assets missing.
 void viewerToggleUnitRef(Viewer* viewer);
+
+// Recentre the class-14 reference droid on the current (fitted) grid midpoint. No-op if not built.
+void viewerUpdateUnitRefPosition(Viewer* viewer);
 
 // Draw the class-14 reference unit; call inside BeginMode3D. No-op if not created/visible.
 void viewerRenderUnitRef(Viewer* viewer);

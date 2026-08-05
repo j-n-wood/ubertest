@@ -67,7 +67,7 @@ cd build/tools/incremental_viewer      # run here: build copies assets/{shaders,
 | `--save-dir <dir>` | Edited-deck JSON folder. Default `<output>/edited` |
 | `-s, --scale <f>` | Scale override (default 0.0254) |
 | `--no-caps` / `--no-miter` | Disable wall end caps / corner miters |
-| `--no-reference` / `--no-textures` | Skip the reference model / textures |
+| `--no-reference` / `--no-textures` | Skip the reference droid / textures |
 | `--export-all <dir>` | Headless: load + validate + export every deck, then exit |
 | `--export-split <dir>` | Headless: split export (one file per shape) every deck |
 
@@ -78,7 +78,7 @@ cd build/tools/incremental_viewer      # run here: build copies assets/{shaders,
 **Camera:** `WASD`+`QE` move · `Shift` faster · wheel zoom · `T`/`I`/`P` top-down/iso/perspective ·
 `R` reset · `0`–`5` debug shader modes.
 
-**Display:** `F1` grid · `F2` reference model · `F3` tiles · `F4` geometry (floors+walls) ·
+**Display:** `F1` grid · `F2` reference droid (class-14, = `U`) · `F3` tiles · `F4` geometry (floors+walls) ·
 `F5` wireframe · `F6` tile indices · `F7` backface culling (default **on**) · `H` help.
 
 **Decks & diagnosis:**
@@ -89,7 +89,7 @@ cd build/tools/incremental_viewer      # run here: build copies assets/{shaders,
 | `N` | Node markers (spheres, depth-test off) + id labels — identify the failing path |
 | `J` | Dump per-link profile assignment + trim side to the console |
 | `V` | Validity report panel |
-| `U` | Class-14 reference droid (real `UnitManager`, at origin) |
+| `U` / `F2` | Class-14 reference droid (real `UnitManager`, at the grid/level midpoint) — the on-screen scale reference, shown by default; recentres per deck |
 | `K` / `M` | Toggle wall **caps** / **miter** (rebuilds the deck) |
 | `F9` | Reload the current deck **from source XML** (after editing the XML) |
 

@@ -55,7 +55,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib box2d nlohmann_json::nlohmann_json tinyxml2)
 add_platform_libraries(${PROJECT_NAME})
 
-# Copy shaders, textures, and models from shared assets
+# Copy shaders, textures, models, and unit definitions from shared assets
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CPP_VERSION_ASSETS_DIR}/shaders
@@ -65,4 +65,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/textures
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CPP_VERSION_ASSETS_DIR}/models
-    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/models)
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/models
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CPP_VERSION_ASSETS_DIR}/units
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets/units)

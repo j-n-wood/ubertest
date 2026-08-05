@@ -6,6 +6,7 @@
 #include "rendering/tile_mesh.h"
 #include "rendering/geometry_mesh.h"
 #include "rendering/texture_loader.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -21,9 +22,6 @@ static constexpr float DEFAULT_ZOOM_SPEED = 20.0f;
 static constexpr float FAST_MULTIPLIER = 3.0f;
 static constexpr float MIN_CAMERA_DISTANCE = 1.0f;
 static constexpr float MAX_CAMERA_DISTANCE = 100.0f;
-
-// Reference model position (outside expected data range)
-static constexpr Vector3 REFERENCE_POSITION = {-1.0f, 0.0f, -1.0f};
 
 //------------------------------------------------------------------------------
 // Initialize viewer
@@ -56,10 +54,6 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->camera.fovy = 45.0f;
     viewer->camera.projection = CAMERA_PERSPECTIVE;
 
-    // Initialize reference model state
-    viewer->referenceLoaded = false;
-    viewer->referencePosition = REFERENCE_POSITION;
-
     // Initialize tile mesh state
     viewer->tileMesh = {};
     viewer->domainLoaded = false;
@@ -71,7 +65,6 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
 
     // Initialize toggles
     viewer->toggles.showGrid = true;
-    viewer->toggles.showReference = true;
     viewer->toggles.showTiles = true;
     viewer->toggles.showGeometry = true;
     viewer->toggles.showWireframe = false;
@@ -92,27 +85,6 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
 
     viewer->initialized = true;
     TraceLog(LOG_INFO, "VIEWER: Initialized successfully");
-    return true;
-}
-
-//------------------------------------------------------------------------------
-// Load reference model
-//------------------------------------------------------------------------------
-bool viewerLoadReference(Viewer* viewer, const char* modelPath) {
-    if (!viewer || !viewer->initialized) return false;
-
-    viewer->referenceModel = LoadModel(modelPath);
-    if (viewer->referenceModel.meshCount == 0) {
-        TraceLog(LOG_ERROR, "VIEWER: Failed to load reference model: %s", modelPath);
-        return false;
-    }
-
-    // Apply lighting shader to reference model
-    sceneRendererApplyShader(&viewer->renderer, &viewer->referenceModel);
-
-    viewer->referenceLoaded = true;
-    TraceLog(LOG_INFO, "VIEWER: Loaded reference model: %s (%d meshes)",
-             modelPath, viewer->referenceModel.meshCount);
     return true;
 }
 
@@ -221,6 +193,33 @@ bool viewerConvertAndLoad(Viewer* viewer, const char* sourcePath,
 // a JSON reload and after live edits in the link inspector. Does not touch the camera.
 void viewerRebuildMeshes(Viewer* viewer) {
     if (!viewer || !viewer->initialized || !viewer->domainLoaded) return;
+
+    // Fit the ground grid to this level's footprint (render space). Walk every path node
+    // (the wall network spans the level) to get X/Z extents; geometry lives in +X / -Z.
+    {
+        float minX = 1e30f, maxX = -1e30f, minZ = 1e30f, maxZ = -1e30f;
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& geo : area.geometry) {
+                for (const auto& node : geo.nodes) {
+                    minX = std::min(minX, node.position.x);
+                    maxX = std::max(maxX, node.position.x);
+                    minZ = std::min(minZ, node.position.z);
+                    maxZ = std::max(maxZ, node.position.z);
+                }
+            }
+        }
+        if (maxX >= minX) {  // found at least one node
+            const float pad = 4.0f;  // metres of margin around the footprint (wall thickness + air)
+            viewer->gridMin = {std::floor(minX - pad), 0.0f, std::floor(minZ - pad)};
+            viewer->gridMax = {std::ceil(maxX + pad),  0.0f, std::ceil(maxZ + pad)};
+            viewer->gridFit = true;
+        } else {
+            viewer->gridFit = false;
+        }
+    }
+
+    // Recentre the reference droid on the (re)fitted grid midpoint (no-op until it's built).
+    viewerUpdateUnitRefPosition(viewer);
 
     // Unload previous tile meshes
     if (viewer->tileMesh.loaded) {
@@ -646,8 +645,8 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         TraceLog(LOG_INFO, "VIEWER: Grid %s", viewer->toggles.showGrid ? "ON" : "OFF");
     }
     if (IsKeyPressed(KEY_F2)) {
-        viewer->toggles.showReference = !viewer->toggles.showReference;
-        TraceLog(LOG_INFO, "VIEWER: Reference %s", viewer->toggles.showReference ? "ON" : "OFF");
+        // Reference is a class-14 droid (real UnitManager), same toggle as U.
+        viewerToggleUnitRef(viewer);
     }
     if (IsKeyPressed(KEY_F3)) {
         viewer->toggles.showTiles = !viewer->toggles.showTiles;
@@ -750,9 +749,24 @@ void viewerRender(Viewer* viewer) {
 
     BeginMode3D(viewer->camera);
 
-    // Draw grid for spatial reference
+    // Draw grid for spatial reference. Fitted to the level footprint (render +X / -Z) when a deck
+    // is loaded; otherwise a default region biased into that quadrant where geometry lives.
     if (viewer->toggles.showGrid) {
-        DrawGrid(20, 1.0f);
+        float minX = -10.0f, maxX = 40.0f, minZ = -40.0f, maxZ = 10.0f;  // default (no deck)
+        if (viewer->gridFit) {
+            minX = viewer->gridMin.x; maxX = viewer->gridMax.x;
+            minZ = viewer->gridMin.z; maxZ = viewer->gridMax.z;
+        }
+        const Color line = {110, 110, 110, 255};      // lighter than the DARKGRAY background
+        const Color axisLine = {160, 160, 160, 255};   // emphasise the X=0 / Z=0 lines
+        for (float x = std::ceil(minX); x <= maxX; x += 1.0f) {
+            DrawLine3D((Vector3){x, 0, minZ}, (Vector3){x, 0, maxZ},
+                       (x == 0.0f) ? axisLine : line);
+        }
+        for (float z = std::ceil(minZ); z <= maxZ; z += 1.0f) {
+            DrawLine3D((Vector3){minX, 0, z}, (Vector3){maxX, 0, z},
+                       (z == 0.0f) ? axisLine : line);
+        }
 
         // Draw axis markers at origin
         DrawLine3D((Vector3){0, 0, 0}, (Vector3){2, 0, 0}, RED);    // X axis
@@ -760,15 +774,6 @@ void viewerRender(Viewer* viewer) {
         DrawLine3D((Vector3){0, 0, 0}, (Vector3){0, 0, 2}, BLUE);   // Z axis
     }
 
-    // Draw reference model (Suzanne)
-    if (viewer->toggles.showReference && viewer->referenceLoaded) {
-        DrawModel(viewer->referenceModel, viewer->referencePosition, 1.0f, WHITE);
-
-        // Draw wireframe overlay if enabled
-        if (viewer->toggles.showWireframe) {
-            DrawModelWires(viewer->referenceModel, viewer->referencePosition, 1.0f, YELLOW);
-        }
-    }
 
     // Draw tile meshes (batched by texture)
     if (viewer->toggles.showTiles && viewer->tileMesh.loaded) {
@@ -942,7 +947,7 @@ void viewerDrawOverlay(Viewer* viewer) {
     // Toggle states
     DrawText(TextFormat("Grid[F1]:%s Ref[F2]:%s Tiles[F3]:%s Geo[F4]:%s Wire[F5]:%s Idx[F6]:%s Cull[F7]:%s",
              viewer->toggles.showGrid ? "ON" : "OFF",
-             viewer->toggles.showReference ? "ON" : "OFF",
+             viewer->toggles.showUnitRef ? "ON" : "OFF",
              viewer->toggles.showTiles ? "ON" : "OFF",
              viewer->toggles.showGeometry ? "ON" : "OFF",
              viewer->toggles.showWireframe ? "ON" : "OFF",
@@ -1107,10 +1112,6 @@ void viewerCleanup(Viewer* viewer) {
         viewer->texturesLoaded = false;
     }
 
-    if (viewer->referenceLoaded) {
-        UnloadModel(viewer->referenceModel);
-        viewer->referenceLoaded = false;
-    }
 
     if (viewer->initialized) {
         sceneRendererDestroy(&viewer->renderer);
