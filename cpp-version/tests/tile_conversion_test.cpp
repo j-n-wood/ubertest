@@ -160,6 +160,39 @@ TEST_F(DomainParserTest, ParsedDataStructures) {
     EXPECT_GT(domain.areas.size(), 0) << "No areas loaded";
 }
 
+// A waypoint is a 4-line record; the parser must read the position/flags/neighbors lines that
+// follow the "Waypoint <id>" line — otherwise every waypoint collapses to the origin with no
+// flags/neighbors (regression: parseWaypoint used to read only the first line).
+TEST_F(DomainParserTest, WaypointsParseMultiLineRecord) {
+    Domain domain;
+    const char* xmapPath = XMAPFILE_PATH.c_str();
+    fs::path basePath = fs::path(xmapPath).parent_path();
+
+    bool result = parseDomainFile(xmapPath, domain, basePath, TILES_PATH.c_str());
+    ASSERT_TRUE(result);
+    ASSERT_GT(domain.waypoints.size(), 0u) << "No waypoints loaded";
+
+    // Not all waypoints collapsed to the origin (the old single-line-parse bug).
+    int nonOrigin = 0;
+    for (const auto& wp : domain.waypoints) {
+        if (wp.position.x != 0.0f || wp.position.y != 0.0f) ++nonOrigin;
+    }
+    EXPECT_GT(nonOrigin, 0) << "All waypoints at the origin — position line not consumed";
+
+    // xmapfile0.txt has the record:
+    //   Waypoint 18 / 2336.00 288.00 0.00 / 1 0 0 0 0 / 17 0 0 0 0 0
+    const Waypoint* wp18 = nullptr;
+    for (const auto& wp : domain.waypoints) {
+        if (wp.id == 18) { wp18 = &wp; break; }
+    }
+    ASSERT_NE(wp18, nullptr) << "Waypoint 18 not found";
+    EXPECT_FLOAT_EQ(wp18->position.x, 2336.0f);
+    EXPECT_FLOAT_EQ(wp18->position.y, 288.0f);
+    EXPECT_TRUE(wp18->flags.start) << "start flag not parsed";
+    EXPECT_FALSE(wp18->flags.console);
+    EXPECT_EQ(wp18->neighbors[0], 17) << "first neighbor not parsed";
+}
+
 //------------------------------------------------------------------------------
 // JSON Serialization Tests
 //------------------------------------------------------------------------------

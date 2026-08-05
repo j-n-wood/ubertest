@@ -79,7 +79,7 @@ cd build/tools/incremental_viewer      # run here: build copies assets/{shaders,
 `R` reset · `0`–`5` debug shader modes.
 
 **Display:** `F1` grid · `F2` reference droid (class-14, = `U`) · `F3` tiles · `F4` geometry (floors+walls) ·
-`F5` wireframe · `F6` tile indices · `F7` backface culling (default **on**) · `H` help.
+`F5` wireframe · `F6` tile indices · `F7` backface culling (default **on**) · `F8` waypoint graph · `H` help.
 
 **Decks & diagnosis:**
 
@@ -87,6 +87,7 @@ cd build/tools/incremental_viewer      # run here: build copies assets/{shaders,
 |-----|--------|
 | `[` / `]` | Previous / next deck |
 | `N` | Node markers (spheres, depth-test off) + id labels — identify the failing path |
+| `F8` | AI waypoint graph: neighbour edges + a colour-coded sphere per waypoint (start=green, console=orange, charger=gold, lift=violet, transmat=pink) + id labels. Same render space as the geometry — confirms waypoints and walls share one scale |
 | `J` | Dump per-link profile assignment + trim side to the console |
 | `V` | Validity report panel |
 | `U` / `F2` | Class-14 reference droid (real `UnitManager`, at the grid/level midpoint) — the on-screen scale reference, shown by default; recentres per deck |

@@ -208,24 +208,41 @@ static bool parseFeature(std::istream& stream, Feature& outFeature) {
 // Waypoint Parser
 //------------------------------------------------------------------------------
 
-static bool parseWaypoint(const std::string& line, Waypoint& outWaypoint) {
-    std::istringstream iss(line);
+// A waypoint is a 4-line record; `firstLine` is the "Waypoint <id>" line already read by the
+// dispatch loop, and the position/flags/neighbors follow on the next three lines of `stream`:
+//   Waypoint <id>
+//   <x> <y> <z>
+//   <start> <console> <recharge> <lift> <transmat>
+//   <n0> <n1> <n2> <n3> <n4> <n5>
+static bool parseWaypoint(std::istream& stream, const std::string& firstLine, Waypoint& outWaypoint) {
+    std::istringstream idss(firstLine);
     std::string keyword;
-    iss >> keyword;  // "Waypoint"
+    idss >> keyword;  // "Waypoint"
+    idss >> outWaypoint.id;
 
-    iss >> outWaypoint.id
-        >> outWaypoint.position.x >> outWaypoint.position.y >> outWaypoint.position.z;
+    std::string line;
 
-    int start, console, recharge, lift, transmat;
-    iss >> start >> console >> recharge >> lift >> transmat;
+    // Position line
+    if (!std::getline(stream, line)) return false;
+    std::istringstream pss(trim(line));
+    pss >> outWaypoint.position.x >> outWaypoint.position.y >> outWaypoint.position.z;
+
+    // Flags line: start console recharge lift transmat
+    if (!std::getline(stream, line)) return false;
+    std::istringstream fss(trim(line));
+    int start = 0, console = 0, recharge = 0, lift = 0, transmat = 0;
+    fss >> start >> console >> recharge >> lift >> transmat;
     outWaypoint.flags.start = (start != 0);
     outWaypoint.flags.console = (console != 0);
     outWaypoint.flags.recharge = (recharge != 0);
     outWaypoint.flags.lift = (lift != 0);
     outWaypoint.flags.transmat = (transmat != 0);
 
+    // Neighbors line: up to 6 ids, 0-padded (0 = no neighbor)
+    if (!std::getline(stream, line)) return false;
+    std::istringstream nss(trim(line));
     for (int i = 0; i < 6; ++i) {
-        iss >> outWaypoint.neighbors[i];
+        nss >> outWaypoint.neighbors[i];
     }
 
     return true;
@@ -596,7 +613,7 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
         }
         else if (keyword == "Waypoint") {
             Waypoint wp;
-            if (parseWaypoint(line, wp)) {
+            if (parseWaypoint(file, line, wp)) {
                 outDomain.waypoints.push_back(wp);
             }
         }

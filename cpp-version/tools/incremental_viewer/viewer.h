@@ -36,6 +36,7 @@ struct ViewerToggles {
     bool enableCaps;       // Generate wall end caps (rebuild on change)
     bool enableMiter;      // Generate wall corner miter joins (rebuild on change)
     bool showNodes;        // Draw path-node markers (spheres) + id labels for diagnosis
+    bool showWaypoints;    // Draw AI waypoint graph (spheres + neighbor edges) + id labels
 };
 
 // Validity report for the currently loaded level (geometry + collision + textures).

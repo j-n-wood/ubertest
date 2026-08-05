@@ -74,6 +74,7 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->toggles.enableCaps = true;        // Wall end caps
     viewer->toggles.enableMiter = true;       // Wall corner miter joins
     viewer->toggles.showNodes = false;        // Path-node markers + labels (diagnosis)
+    viewer->toggles.showWaypoints = false;    // AI waypoint graph overlay
     viewer->cameraPreset = CameraPreset::TopDown;  // Default to game mode
 
     // Initialize geometry mesh state
@@ -668,6 +669,11 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         viewer->toggles.backfaceCulling = !viewer->toggles.backfaceCulling;
         TraceLog(LOG_INFO, "VIEWER: Backface culling %s", viewer->toggles.backfaceCulling ? "ON" : "OFF");
     }
+    if (IsKeyPressed(KEY_F8)) {
+        viewer->toggles.showWaypoints = !viewer->toggles.showWaypoints;
+        TraceLog(LOG_INFO, "VIEWER: Waypoints %s (%zu)", viewer->toggles.showWaypoints ? "ON" : "OFF",
+                 viewer->loadedDomain.waypoints.size());
+    }
     if (IsKeyPressed(KEY_H)) {
         viewer->toggles.showHelp = !viewer->toggles.showHelp;
     }
@@ -732,6 +738,17 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
 
     // Update camera position for specular calculations
     sceneRendererUpdateCamera(&viewer->renderer, viewer->camera.position);
+}
+
+// Colour-code a waypoint by its most significant flag (spawn/console/charger/lift/transmat),
+// else plain SKYBLUE — matches the game's SKYBLUE waypoint spheres for un-flagged nodes.
+static Color waypointColor(const WaypointFlags& f) {
+    if (f.start)    return GREEN;   // valid droid spawn point
+    if (f.console)  return ORANGE;  // near a console
+    if (f.recharge) return GOLD;    // near a charger
+    if (f.lift)     return VIOLET;  // near a lift/transporter
+    if (f.transmat) return PINK;    // transmat beam destination
+    return SKYBLUE;
 }
 
 //------------------------------------------------------------------------------
@@ -819,6 +836,36 @@ void viewerRender(Viewer* viewer) {
                     DrawSphere(node.position, 0.25f, (Color){255, 60, 60, 255});
                 }
             }
+        }
+        rlDrawRenderBatchActive();
+        rlEnableDepthTest();
+    }
+
+    // AI waypoint graph overlay: neighbour edges + a colour-coded sphere per waypoint, drawn
+    // depth-test-off so they're never hidden. Waypoints share the geometry's render space (same
+    // gameToRenderCoords transform on serialize), so no extra scaling is needed here.
+    if (viewer->toggles.showWaypoints && viewer->domainLoaded) {
+        const auto& wps = viewer->loadedDomain.waypoints;
+        const Vector3 lift = {0.0f, 0.15f, 0.0f};  // sit above the floor like the game (y=0.15)
+        auto findPos = [&](int id, Vector3& out) -> bool {
+            for (const auto& w : wps) { if (w.id == id) { out = w.position; return true; } }
+            return false;
+        };
+        rlDrawRenderBatchActive();
+        rlDisableDepthTest();
+        // Edges (drawn first so nodes sit on top). 0 is padding = "no neighbour".
+        for (const auto& w : wps) {
+            Vector3 a = Vector3Add(w.position, lift);
+            for (int k = 0; k < 6; ++k) {
+                int nid = w.neighbors[k];
+                if (nid == 0 || nid == w.id) continue;
+                Vector3 b;
+                if (findPos(nid, b)) DrawLine3D(a, Vector3Add(b, lift), DARKBLUE);
+            }
+        }
+        // Nodes
+        for (const auto& w : wps) {
+            DrawSphere(Vector3Add(w.position, lift), 0.12f, waypointColor(w.flags));
         }
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
@@ -945,14 +992,15 @@ void viewerDrawOverlay(Viewer* viewer) {
     }
 
     // Toggle states
-    DrawText(TextFormat("Grid[F1]:%s Ref[F2]:%s Tiles[F3]:%s Geo[F4]:%s Wire[F5]:%s Idx[F6]:%s Cull[F7]:%s",
+    DrawText(TextFormat("Grid[F1]:%s Ref[F2]:%s Tiles[F3]:%s Geo[F4]:%s Wire[F5]:%s Idx[F6]:%s Cull[F7]:%s WP[F8]:%s",
              viewer->toggles.showGrid ? "ON" : "OFF",
              viewer->toggles.showUnitRef ? "ON" : "OFF",
              viewer->toggles.showTiles ? "ON" : "OFF",
              viewer->toggles.showGeometry ? "ON" : "OFF",
              viewer->toggles.showWireframe ? "ON" : "OFF",
              viewer->toggles.showTileIndices ? "ON" : "OFF",
-             viewer->toggles.backfaceCulling ? "ON" : "OFF"),
+             viewer->toggles.backfaceCulling ? "ON" : "OFF",
+             viewer->toggles.showWaypoints ? "ON" : "OFF"),
              10, y, 14, GRAY);
     y += 20;
 
@@ -991,6 +1039,7 @@ void viewerDrawOverlay(Viewer* viewer) {
         DrawText("F5          Toggle wireframe", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("F6          Toggle tile indices", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("F7          Toggle backface cull", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
+        DrawText("F8          Toggle waypoint graph", helpX + 10, ty, 14, LIGHTGRAY); ty += 18;
         DrawText("H           Toggle this help", helpX + 10, ty, 14, LIGHTGRAY); ty += 28;
 
         DrawText("ESC         Quit", helpX + 10, ty, 14, LIGHTGRAY);
@@ -1068,6 +1117,26 @@ void viewerDrawOverlay(Viewer* viewer) {
                 }
             }
         }
+    }
+
+    // Waypoint id labels + flag legend.
+    if (viewer->toggles.showWaypoints && viewer->domainLoaded) {
+        for (const auto& w : viewer->loadedDomain.waypoints) {
+            Vector2 sp = GetWorldToScreen(Vector3Add(w.position, (Vector3){0, 0.15f, 0}),
+                                          viewer->camera);
+            if (sp.x < -20 || sp.y < -20 || sp.x > GetScreenWidth() + 20 ||
+                sp.y > GetScreenHeight() + 20) continue;
+            DrawText(TextFormat("%d", w.id), static_cast<int>(sp.x) + 5,
+                     static_cast<int>(sp.y) - 6, 14, SKYBLUE);
+        }
+        // Legend for the flag colour-coding (bottom-left, above the help hint).
+        int lx = 10, ly = GetScreenHeight() - 130;
+        DrawText("Waypoints [F8]:", lx, ly, 12, RAYWHITE);
+        DrawText("start", lx, ly + 14, 12, GREEN);
+        DrawText("console", lx + 44, ly + 14, 12, ORANGE);
+        DrawText("charger", lx + 104, ly + 14, 12, GOLD);
+        DrawText("lift", lx + 164, ly + 14, 12, VIOLET);
+        DrawText("transmat", lx + 196, ly + 14, 12, PINK);
     }
 }
 
