@@ -72,6 +72,11 @@ struct AppState {
     std::string convert_output;
     std::string texture_source_path;  // Override path for texture source files
 
+    // Per-material texture overrides (e.g. from renderobjects.txt). Diffuse replaces the ASC's
+    // material texture; normal adds a tangent-space bump map (DRAWTYPE BUMP / EFFECTTEXTURE).
+    std::string diffuse_override[GLTF_MAX_TEXTURES];
+    std::string normal_override[GLTF_MAX_TEXTURES];
+
     // Asset path mode (conventional directory structure)
     std::string asset_path;  // Base path for assets (contains models/, textures/, etc.)
     std::string shaders_path;  // Resolved shaders path (with trailing slash)
@@ -648,6 +653,14 @@ static void parse_args(int argc, char** argv, AppState* app) {
         } else if (arg == "--texture-path" && i + 1 < argc) {
             app->texture_source_path = argv[i + 1];
             i++;
+        } else if (arg == "--diffuse" && i + 2 < argc) {
+            int idx = std::atoi(argv[i + 1]);
+            if (idx >= 0 && idx < GLTF_MAX_TEXTURES) app->diffuse_override[idx] = argv[i + 2];
+            i += 2;
+        } else if (arg == "--normal" && i + 2 < argc) {
+            int idx = std::atoi(argv[i + 1]);
+            if (idx >= 0 && idx < GLTF_MAX_TEXTURES) app->normal_override[idx] = argv[i + 2];
+            i += 2;
         } else if (arg == "--asset-path" && i + 1 < argc) {
             app->asset_path = argv[i + 1];
             i++;
@@ -684,7 +697,10 @@ static void parse_args(int argc, char** argv, AppState* app) {
             printf("                       Output extensions set automatically per input type\n\n");
             printf("Conversion Options:\n");
             printf("  --texture-path <dir> Override source path for texture files\n");
-            printf("                       (used if textures not found relative to input)\n\n");
+            printf("                       (used if textures not found relative to input)\n");
+            printf("  --diffuse <i> <path> Override material i's diffuse (baseColor) texture\n");
+            printf("  --normal  <i> <path> Set material i's tangent-space normal/bump map\n");
+            printf("                       (emits glTF normalTexture + TANGENT; BMP->PNG lossless)\n\n");
             printf("ASC Loader Options (MDL uses fixed defaults):\n");
             printf("  --scale <factor>   Scale factor (default: 0.0254 for inches to meters)\n");
             printf("  --swap-yz          Enable Y/Z axis swap (Z-up to Y-up conversion)\n");
@@ -854,6 +870,21 @@ static int convert_single_file(const std::string& input_path, const std::string&
         if (load_result.texture_paths[i][0] != '\0') {
             export_opts.texture_paths[i] = load_result.texture_paths[i];
             printf("  Material %d texture: %s\n", i, load_result.texture_paths[i]);
+        }
+    }
+
+    // Apply per-material overrides (e.g. renderobjects.txt): diffuse replaces the ASC texture;
+    // normal adds a tangent-space bump map, emitted as a standard glTF material.normalTexture.
+    for (int i = 0; i < GLTF_MAX_TEXTURES; i++) {
+        if (!app->diffuse_override[i].empty()) {
+            export_opts.texture_paths[i] = app->diffuse_override[i].c_str();
+            if (i + 1 > export_opts.texture_count) export_opts.texture_count = i + 1;
+            printf("  Material %d diffuse override: %s\n", i, app->diffuse_override[i].c_str());
+        }
+        if (!app->normal_override[i].empty()) {
+            export_opts.normal_texture_paths[i] = app->normal_override[i].c_str();
+            if (i + 1 > export_opts.normal_texture_count) export_opts.normal_texture_count = i + 1;
+            printf("  Material %d normal(bump): %s\n", i, app->normal_override[i].c_str());
         }
     }
 

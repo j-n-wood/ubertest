@@ -256,8 +256,10 @@ GLTFExportOptions GLTFDefaultOptions(void) {
     opts.copy_textures = true;
     opts.include_physics_shape = true;
     opts.texture_count = 0;
+    opts.normal_texture_count = 0;
     for (int i = 0; i < GLTF_MAX_TEXTURES; i++) {
         opts.texture_paths[i] = NULL;
+        opts.normal_texture_paths[i] = NULL;
     }
     return opts;
 }
@@ -546,15 +548,26 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         return result;
     }
 
+    // Ensure every mesh has tangents so the glTF TANGENT attribute (needed for tangent-space normal
+    // maps) is uniform across meshes. CPU-only when the mesh isn't GPU-uploaded (headless convert).
+    for (int m = 0; m < model.meshCount; m++) {
+        Mesh* mesh = &model.meshes[m];
+        if (!mesh->tangents && mesh->vertices && mesh->normals && mesh->texcoords) {
+            GenMeshTangents(mesh);
+        }
+    }
+
     // Build binary buffer with all mesh data
     BinaryBuffer bin;
     std::vector<size_t> mesh_position_offsets(model.meshCount);
     std::vector<size_t> mesh_normal_offsets(model.meshCount);
     std::vector<size_t> mesh_texcoord_offsets(model.meshCount);
+    std::vector<size_t> mesh_tangent_offsets(model.meshCount);
     std::vector<size_t> mesh_index_offsets(model.meshCount);
     std::vector<int> mesh_position_sizes(model.meshCount);
     std::vector<int> mesh_normal_sizes(model.meshCount);
     std::vector<int> mesh_texcoord_sizes(model.meshCount);
+    std::vector<int> mesh_tangent_sizes(model.meshCount);
     std::vector<int> mesh_index_sizes(model.meshCount);
 
     for (int m = 0; m < model.meshCount; m++) {
@@ -579,6 +592,20 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
             mesh_texcoord_offsets[m] = bin.write_floats(mesh->texcoords, mesh->vertexCount * 2);
             mesh_texcoord_sizes[m] = mesh->vertexCount * 2 * sizeof(float);
         }
+        bin.align4();
+
+        // Tangents (VEC4: xyz + handedness). Always written so the per-mesh accessor layout is
+        // uniform; falls back to a default tangent (unused unless the material has a normal map).
+        if (mesh->tangents) {
+            mesh_tangent_offsets[m] = bin.write_floats(mesh->tangents, mesh->vertexCount * 4);
+        } else {
+            std::vector<float> def((size_t)mesh->vertexCount * 4);
+            for (int v = 0; v < mesh->vertexCount; v++) {
+                def[v*4+0] = 1.0f; def[v*4+1] = 0.0f; def[v*4+2] = 0.0f; def[v*4+3] = 1.0f;
+            }
+            mesh_tangent_offsets[m] = bin.write_floats(def.data(), mesh->vertexCount * 4);
+        }
+        mesh_tangent_sizes[m] = mesh->vertexCount * 4 * sizeof(float);
         bin.align4();
 
         // Indices (optional but common)
@@ -676,7 +703,7 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
     json.key_array("meshes");
     for (int m = 0; m < model.meshCount; m++) {
         Mesh* mesh = &model.meshes[m];
-        int base_accessor = m * 4;  // position, normal, texcoord, indices
+        int base_accessor = m * 5;  // position, normal, texcoord, tangent, indices
 
         json.begin_array_object();
 
@@ -695,10 +722,11 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         if (mesh->texcoords) {
             json.key("TEXCOORD_0"); json.value_int(base_accessor + 2);
         }
+        json.key("TANGENT"); json.value_int(base_accessor + 3);
         json.end_object();
 
         if (mesh->indices && mesh->triangleCount > 0) {
-            json.key("indices"); json.value_int(base_accessor + 3);
+            json.key("indices"); json.value_int(base_accessor + 4);
         }
 
         // Material assignment
@@ -754,6 +782,14 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         json.key("type"); json.value_string("VEC2");
         json.end_object();
 
+        // Tangent accessor (VEC4)
+        json.begin_array_object();
+        json.key("bufferView"); json.value_int(buffer_view_idx++);
+        json.key("componentType"); json.value_int(5126);  // FLOAT
+        json.key("count"); json.value_int(mesh->vertexCount);
+        json.key("type"); json.value_string("VEC4");
+        json.end_object();
+
         // Index accessor
         json.begin_array_object();
         json.key("bufferView"); json.value_int(buffer_view_idx++);
@@ -791,6 +827,14 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         json.key("byteOffset"); json.value_int((int)mesh_texcoord_offsets[m]);
         json.key("byteLength"); json.value_int(mesh_texcoord_sizes[m]);
         json.key("target"); json.value_int(34962);
+        json.end_object();
+
+        // Tangent buffer view
+        json.begin_array_object();
+        json.key("buffer"); json.value_int(0);
+        json.key("byteOffset"); json.value_int((int)mesh_tangent_offsets[m]);
+        json.key("byteLength"); json.value_int(mesh_tangent_sizes[m]);
+        json.key("target"); json.value_int(34962);  // ARRAY_BUFFER
         json.end_object();
 
         // Index buffer view
@@ -848,6 +892,35 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         }
     }
 
+    // Build normal (bump) textures the same way, into the shared texture list. Normal maps must
+    // stay lossless, so BMP is converted to PNG (not JPG like diffuse).
+    std::vector<int> material_to_normal(model.materialCount, -1);
+    for (int m = 0; m < model.materialCount && m < options.normal_texture_count; m++) {
+        const char* np = options.normal_texture_paths[m];
+        if (np && *np) {
+            const char* filename = get_filename(np);
+            if (filename && *filename) {
+                std::string uri = options.texture_dir;
+                uri += "/";
+                uri += filename;
+                if (has_extension(uri, ".bmp")) {
+                    uri = uri.substr(0, uri.size() - 4) + ".png";
+                }
+                int tex_idx = -1;
+                for (int i = 0; i < (int)unique_textures.size(); i++) {
+                    if (unique_textures[i] == uri) { tex_idx = i; break; }
+                }
+                if (tex_idx < 0) {
+                    tex_idx = (int)unique_textures.size();
+                    unique_textures.push_back(uri);
+                    std::string src_path = resolve_texture_path(np, options.source_dir, options.texture_fallback_dir, options.model_hint);
+                    unique_src_paths.push_back(src_path);
+                }
+                material_to_normal[m] = tex_idx;
+            }
+        }
+    }
+
     // Materials array
     json.key_array("materials");
     for (int m = 0; m < model.materialCount; m++) {
@@ -896,6 +969,13 @@ GLTFExportResult ExportGLTFEx(Model model, const char* output_path, GLTFExportOp
         json.key("metallicFactor"); json.value_float(metallic);
         json.key("roughnessFactor"); json.value_float(roughness);
         json.end_object();
+
+        // Normal (bump) map — standard glTF, so the engine needs no special handling.
+        if (material_to_normal[m] >= 0) {
+            json.key_object("normalTexture");
+            json.key("index"); json.value_int(material_to_normal[m]);
+            json.end_object();
+        }
 
         // Emissive
         Color emissive = mat->maps[MATERIAL_MAP_EMISSION].color;

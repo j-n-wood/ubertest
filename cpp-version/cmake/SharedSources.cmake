@@ -9,6 +9,7 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/door_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/door3d_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/charger_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/utils/string_utils.cpp
     ${CMAKE_SOURCE_DIR}/shared/units/unit_instance.cpp

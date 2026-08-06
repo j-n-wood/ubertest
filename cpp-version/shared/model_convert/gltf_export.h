@@ -21,6 +21,14 @@ typedef struct GLTFExportOptions {
     // They will be converted to relative paths like "../textures/filename.ext"
     const char* texture_paths[GLTF_MAX_TEXTURES];
     int texture_count;
+
+    // Optional tangent-space normal (bump) map per material (index matches material index).
+    // When set, the exporter emits a glTF material.normalTexture and always writes a TANGENT
+    // vertex attribute (generating tangents if absent). Normal maps are kept lossless (BMP->PNG),
+    // unlike diffuse (BMP->JPG). This makes bump a standard part of the glTF — no game-side special
+    // handling. Leave NULL for materials without a bump map.
+    const char* normal_texture_paths[GLTF_MAX_TEXTURES];
+    int normal_texture_count;
 } GLTFExportOptions;
 
 // Result structure for export operation

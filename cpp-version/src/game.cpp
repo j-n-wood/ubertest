@@ -355,6 +355,14 @@ static int game_effective_tile_row(const Game* game) {
     return row;
 }
 
+// Objects3D is the "3D" path: 3D block doors (and, once wired, converted 3D geometry). The 2D tile
+// modes (Tilemap/CustomTiles) keep the animated tile doors. Both use the same top-down perspective
+// camera looking straight down the Y axis — the perspective projection itself gives off-axis
+// doors/walls (and unit shadows) their apparent height; there is no camera tilt.
+static bool game_mode_is_3d(const Game* game) {
+    return game->levelRenderMode == LevelRenderMode::Objects3D;
+}
+
 // Human-readable name for the active level renderer (HUD + logs).
 static const char* game_level_render_mode_name(LevelRenderMode m) {
     switch (m) {
@@ -529,7 +537,8 @@ static void game_create_doors(Game* game) {
     std::vector<DoorSpec> specs = game_detect_doors(game);
     game->doorManager.init(game->physics.world_id, specs);
 
-    // Build the interim 2D door renderer from the current door set.
+    // Build both presentations; the active level-render mode picks which one draws each frame.
+    // 2D animated-tile doors (Tilemap/CustomTiles):
     if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
         Texture2D bumpTex = gTextures().loaded(TEX_TILE_BUMP) ? gTextures().get(TEX_TILE_BUMP) : Texture2D{0};
         game->doorRenderer.build(game->levels[game->currentLevel], game->tileset,
@@ -537,6 +546,9 @@ static void game_create_doors(Game* game) {
                                  &game->sceneRenderer, game->doorManager.views(),
                                  game_effective_tile_row(game));
     }
+    // 3D block doors (Objects3D): a shared, level-independent model (idempotent build).
+    game->door3DRenderer.build(&game->sceneRenderer,
+                               (game->assetPath + "/models/scenery/door.gltf").c_str());
     TraceLog(LOG_INFO, "Created %zu doors from level data", specs.size());
 }
 
@@ -1550,9 +1562,12 @@ void game_update_gameplay(Game* game, float dt) {
         // Collision response: non-hostile units pause/retreat after bumping obstacles.
         game->aiManager.processCollisions(game->physics.world_id);
 
-        // Doors: advance open/close state + collision toggle, then refresh the visual.
+        // Doors: advance open/close state + collision toggle, then refresh the 2D animated-tile
+        // visual (only when a 2D mode is active; the 3D block renderer reads views live).
         game->doorManager.update(simDt);
-        game->doorRenderer.update(game->doorManager.views());
+        if (!game_mode_is_3d(game)) {
+            game->doorRenderer.update(game->doorManager.views());
+        }
 
         // Chargers: update IDLE/CHARGING proximity state + free-running tile animation.
         game->chargerManager.update(simDt);
@@ -1596,8 +1611,8 @@ void game_update_gameplay(Game* game, float dt) {
                 lr.cleared = true;
                 game_build_level_render_data(game);   // relight the floor → lights-out row
                 int row = game_effective_tile_row(game);
-                game->doorRenderer.setRowOffset(row);     // animated door/charger tiles too
-                game->chargerRenderer.setRowOffset(row);
+                game->doorRenderer.setRowOffset(row);      // 2D animated door tiles
+                game->chargerRenderer.setRowOffset(row);   // (3D block doors are unaffected)
                 TraceLog(LOG_INFO, "Level %d cleared — lights out", game->currentLevel);
             }
         }
@@ -1823,8 +1838,13 @@ void game_render_gameplay(Game* game) {
         }
     }
 
-    // Draw animated doors + chargers (excluded from the baked tile mesh above)
-    game->doorRenderer.render();
+    // Draw doors + chargers (excluded from the baked tile mesh above). Doors: 3D blocks in the
+    // Objects3D mode, animated tiles in the 2D modes — a 2D/3D mix would read as jarring.
+    if (game_mode_is_3d(game)) {
+        game->door3DRenderer.render(game->doorManager.views());
+    } else {
+        game->doorRenderer.render();
+    }
     game->chargerRenderer.render();
 
     // Draw all units (player, enemies, etc.)
@@ -2183,6 +2203,7 @@ void game_destroy(Game* game) {
     // Destroy door bodies before the physics worlds go away, and the door mesh
     game->doorManager.destroy();
     game->doorRenderer.destroy();
+    game->door3DRenderer.destroy();
     game->chargerManager.destroy();
     game->chargerRenderer.destroy();
     game->consoleManager.destroy();

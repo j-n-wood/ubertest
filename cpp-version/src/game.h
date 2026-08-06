@@ -17,7 +17,8 @@
 #include "level/ship_map.h"
 #include "score/scoring.h"
 #include "rendering/scene_renderer.h"
-#include "rendering/door_renderer.h"
+#include "rendering/door_renderer.h"      // 2D animated-tile doors (Tilemap/CustomTiles modes)
+#include "rendering/door3d_renderer.h"    // 3D block doors (Objects3D mode)
 #include "rendering/charger_renderer.h"
 #include "units/unit_manager.h"
 #include "units/weapon.h"
@@ -132,7 +133,8 @@ struct Game {
 
     // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;
-    DoorRenderer doorRenderer;
+    DoorRenderer doorRenderer;        // 2D animated tile doors (used in Tilemap/CustomTiles modes)
+    Door3DRenderer door3DRenderer;    // 3D block doors (used in Objects3D mode)
 
     // Chargers: animated walkable objects (proximity IDLE/CHARGING + free-run anim)
     ChargerManager chargerManager;
