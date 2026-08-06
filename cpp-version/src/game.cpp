@@ -1569,9 +1569,14 @@ void game_update_gameplay(Game* game, float dt) {
             game->doorRenderer.update(game->doorManager.views());
         }
 
-        // Chargers: update IDLE/CHARGING proximity state + free-running tile animation.
+        // Chargers: update IDLE/CHARGING proximity state, then the active renderer's animation
+        // (3D particles in Objects3D, free-running tile frames in the 2D modes).
         game->chargerManager.update(simDt);
-        game->chargerRenderer.update(simDt, game->chargerManager.views());
+        if (game_mode_is_3d(game)) {
+            game->charger3DRenderer.update(simDt, game->chargerManager.views());
+        } else {
+            game->chargerRenderer.update(simDt, game->chargerManager.views());
+        }
 
         // Line-of-sight: only units the player can see are rendered (render flag only).
         game_update_unit_visibility(game);
@@ -1842,10 +1847,11 @@ void game_render_gameplay(Game* game) {
     // Objects3D mode, animated tiles in the 2D modes — a 2D/3D mix would read as jarring.
     if (game_mode_is_3d(game)) {
         game->door3DRenderer.render(game->doorManager.views());
+        game->charger3DRenderer.render(game->camera, gTextures().get(TEX_FLARE));
     } else {
         game->doorRenderer.render();
+        game->chargerRenderer.render();
     }
-    game->chargerRenderer.render();
 
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
@@ -2206,6 +2212,7 @@ void game_destroy(Game* game) {
     game->door3DRenderer.destroy();
     game->chargerManager.destroy();
     game->chargerRenderer.destroy();
+    game->charger3DRenderer.destroy();
     game->consoleManager.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
     game->particleManager.clear();  // render-only; just drop the buffers

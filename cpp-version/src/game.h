@@ -19,7 +19,8 @@
 #include "rendering/scene_renderer.h"
 #include "rendering/door_renderer.h"      // 2D animated-tile doors (Tilemap/CustomTiles modes)
 #include "rendering/door3d_renderer.h"    // 3D block doors (Objects3D mode)
-#include "rendering/charger_renderer.h"
+#include "rendering/charger_renderer.h"    // 2D animated-tile chargers (Tilemap/CustomTiles)
+#include "rendering/charger3d_renderer.h"  // 3D particle chargers (Objects3D mode)
 #include "units/unit_manager.h"
 #include "units/weapon.h"
 #include "rendering/sprite_animation.h"
@@ -138,7 +139,8 @@ struct Game {
 
     // Chargers: animated walkable objects (proximity IDLE/CHARGING + free-run anim)
     ChargerManager chargerManager;
-    ChargerRenderer chargerRenderer;
+    ChargerRenderer chargerRenderer;        // 2D animated tile chargers (Tilemap/CustomTiles)
+    Charger3DRenderer charger3DRenderer;    // 3D particle chargers (Objects3D mode)
 
     // Consoles: static usable tiles (player-near-centre -> SPACE opens console page)
     ConsoleManager consoleManager;
