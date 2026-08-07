@@ -179,10 +179,11 @@ bool parseTransportFile(std::string_view path, std::vector<Transporter>& outTran
             }
         }
 
-        // Convert grid position to world coordinates
-        // World position = (PosX * 64 + 32, PosY * 64 + 32, 20)
+        // Convert grid position to world coordinates (tile centre). The Y half-tile offset is
+        // SUBTRACTED, not added: game Y is negated by gameToRenderCoords (Y-axis inversion), so a
+        // +32 centre offset would land the stop one tile off in render Z. X is not inverted (+32).
         t.position.x = static_cast<float>(gridX * 64 + 32);
-        t.position.y = static_cast<float>(gridY * 64 + 32);
+        t.position.y = static_cast<float>(gridY * 64 - 32);
         t.position.z = 20.0f;
 
         outTransporters.push_back(t);

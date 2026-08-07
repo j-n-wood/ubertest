@@ -226,7 +226,7 @@ void generateCollisionFromGeometry(const PathGeometry& geometry, CollisionData& 
             if (visitedNodes.find(link->start) == visitedNodes.end()) {
                 auto nodeIt = nodeMap.find(link->start);
                 if (nodeIt != nodeMap.end()) {
-                    vertices.push_back({nodeIt->second->position.x, nodeIt->second->position.y});
+                    vertices.push_back({nodeIt->second->position.x, nodeIt->second->position.z});
                     visitedNodes.insert(link->start);
                 }
             }
@@ -238,7 +238,7 @@ void generateCollisionFromGeometry(const PathGeometry& geometry, CollisionData& 
             if (visitedNodes.find(link->finish) == visitedNodes.end()) {
                 auto nodeIt = nodeMap.find(link->finish);
                 if (nodeIt != nodeMap.end()) {
-                    vertices.push_back({nodeIt->second->position.x, nodeIt->second->position.y});
+                    vertices.push_back({nodeIt->second->position.x, nodeIt->second->position.z});
                     visitedNodes.insert(link->finish);
                 }
             }
@@ -267,12 +267,18 @@ void generateCollisionFromGeometry(const PathGeometry& geometry, CollisionData& 
         }
     }
 
-    // Create edge chains for wall segments (links that form walls)
-    // Links not used as area boundaries are treated as wall segments
+    // Create edge chains for wall segments. A wall is any link that carries a profile (it gets
+    // extruded into a wall mesh) — INCLUDING links that also bound a floor area (the shared edge
+    // between a room and the outside/next room is still a wall units must collide with). The floor
+    // polygons above describe walkable rooms, so they are not solid collision; the walls are.
+    (void)areaBoundaryLinks;
+    // A link is a wall if it carries an explicit profile OR uses the geometry's default profile set
+    // — this must match the wall-MESH selection (createDomainWallMeshes), otherwise interior walls
+    // (which rely on the default profiles) render but get no collision.
+    const bool hasDefaultProfiles = !geometry.profiles.empty();
     for (const auto& link : geometry.links) {
-        // Skip links that are area boundaries (they form floor polygons)
-        // Wall links are those with profiles (extrusion for walls)
-        if (!link.profiles.empty() && areaBoundaryLinks.find(link.id) == areaBoundaryLinks.end()) {
+        const bool isWall = !link.profiles.empty() || (link.useDefaultProfiles && hasDefaultProfiles);
+        if (isWall) {
             auto startIt = nodeMap.find(link.start);
             auto finishIt = nodeMap.find(link.finish);
 
@@ -280,14 +286,14 @@ void generateCollisionFromGeometry(const PathGeometry& geometry, CollisionData& 
                 CollisionChain chain;
                 chain.loop = false;
 
-                chain.vertices.push_back({startIt->second->position.x, startIt->second->position.y});
+                chain.vertices.push_back({startIt->second->position.x, startIt->second->position.z});
 
                 // If there's a control point, add it as an intermediate vertex
                 if (link.control) {
-                    chain.vertices.push_back({link.control->position.x, link.control->position.y});
+                    chain.vertices.push_back({link.control->position.x, link.control->position.z});
                 }
 
-                chain.vertices.push_back({finishIt->second->position.x, finishIt->second->position.y});
+                chain.vertices.push_back({finishIt->second->position.x, finishIt->second->position.z});
 
                 outCollision.chains.push_back(chain);
             }

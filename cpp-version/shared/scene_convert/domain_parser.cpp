@@ -372,6 +372,31 @@ static bool parseConsole(std::istream& stream, Console& outConsole) {
     return true;
 }
 
+// Charger blocks have the same layout as Console (id / position / rotation / size / index /
+// properties-until-END); the Charger struct only needs id + position + rotation.
+static bool parseCharger(std::istream& stream, Charger& outCharger) {
+    std::string line;
+
+    if (!std::getline(stream, line)) return false;
+    outCharger.id = std::stoi(trim(line));
+
+    if (!std::getline(stream, line)) return false;
+    { std::istringstream iss(trim(line)); iss >> outCharger.position.x >> outCharger.position.y >> outCharger.position.z; }
+
+    if (!std::getline(stream, line)) return false;
+    { std::istringstream iss(trim(line)); iss >> outCharger.rotation.x >> outCharger.rotation.y >> outCharger.rotation.z; }
+
+    // Size + render-index lines (unused for chargers).
+    if (!std::getline(stream, line)) return false;
+    if (!std::getline(stream, line)) return false;
+
+    // Properties until END (MASS, SPIN, … — unused).
+    while (std::getline(stream, line)) {
+        if (trim(line) == "END") break;
+    }
+    return true;
+}
+
 static bool parseGenericObject(std::istream& stream, GenericObject& outObject) {
     std::string line;
 
@@ -627,6 +652,12 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
             Console console;
             if (parseConsole(file, console)) {
                 outDomain.objects.consoles.push_back(std::move(console));
+            }
+        }
+        else if (keyword == "Charger") {
+            Charger charger;
+            if (parseCharger(file, charger)) {
+                outDomain.objects.chargers.push_back(std::move(charger));
             }
         }
         else if (keyword == "Object") {

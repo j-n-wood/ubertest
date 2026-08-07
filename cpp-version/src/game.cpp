@@ -3,6 +3,7 @@
 #include "transfer_control.h"
 #include "rendering/texture_manager.h"
 #include "rendering/render_scope.h"
+#include "level/level3d_loader.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
 #include "units/heal.h"
@@ -22,6 +23,7 @@ namespace fs = std::filesystem;
 
 // Forward declarations
 static bool game_load_levels(Game* game);
+static bool game_mode_is_3d(const Game* game);
 static bool game_build_level_render_data(Game* game);
 static void game_create_level_collision(Game* game);
 static void game_create_doors(Game* game);
@@ -161,6 +163,23 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game->playerDesiredRotation = 0.0f;
     game->playerUnit = nullptr;
 
+    // Build the elevator graph before spawning, so a 3D spawn can start the player on a lift.
+    // Persists across level switches — stops reference stable runtime level indices. In Objects3D
+    // the TMX lift tiles are in the wrong frame, so build from the exported ship transporters
+    // (render-metric); fall back to the TMX build if absent.
+    if (game_mode_is_3d(game)) {
+        std::vector<TransporterSpec> transporters;
+        if (load3DLevelTransporters(game->assetPath, transporters)) {
+            game->liftManager.buildFromTransporters(transporters, game->levels);
+            TraceLog(LOG_INFO, "Built 3D lift network from %zu transporters", transporters.size());
+        } else {
+            TraceLog(LOG_WARNING, "No transporters.json; falling back to TMX lift build");
+            game->liftManager.build(game->levels);
+        }
+    } else {
+        game->liftManager.build(game->levels);
+    }
+
     // Spawn player unit
     game_spawn_player(game);
 
@@ -190,10 +209,6 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     } else {
         TraceLog(LOG_WARNING, "Failed to load spawn data from %s", spawnPath.c_str());
     }
-
-    // Build the elevator graph from every level's lift objects (persists across
-    // level switches — stops reference stable runtime level indices).
-    game->liftManager.build(game->levels);
 
     // Load the side-on ship rendering data (for the ship-view page).
     std::string shipMapPath = game->assetPath + "/ships/ship1/shipmap.json";
@@ -386,6 +401,17 @@ static bool game_build_level_render_data(Game* game) {
     freeLevelRenderData(&data);
     freeLevelCollisionData(&collision);
 
+    // Objects3D: load the converted 3D bundle (geometry + waypoints, domain frame) instead of the
+    // TMX-baked mesh. Waypoints feed spawns + AI, so units land in the same frame as the geometry.
+    // Collision + objects are handled separately (see game_create_level_collision). Falls back to
+    // the TMX build if no bundle exists for this deck.
+    if (game->levelRenderMode == LevelRenderMode::Objects3D) {
+        if (load3DLevel(game->assetPath, level.number, &game->sceneRenderer, data)) {
+            return data.meshValid;
+        }
+        TraceLog(LOG_WARNING, "Objects3D: no 3D bundle for level %d; using CustomTiles.", level.number);
+    }
+
     // Generate collision data
     collision = generateLevelCollision(level, game->tileset, WORLD_SCALE);
     TraceLog(LOG_INFO, "Generated %zu collision rects for level %d",
@@ -409,12 +435,9 @@ static bool game_build_level_render_data(Game* game) {
     //   CustomTiles — per-tile bump-mapped mesh
     //   Objects3D   — converted 3D geometry (GLTF bundle) — roadmap Phase 6/7, not yet wired,
     //                 so it falls back to CustomTiles for now (keeps the game playable).
-    LevelRenderMode mode = game->levelRenderMode;
-    if (mode == LevelRenderMode::Objects3D) {
-        TraceLog(LOG_WARNING, "Level renderer 'Objects3D' not yet implemented "
-                 "(needs the exported 3D bundle — roadmap Phase 6/7); using CustomTiles.");
-        mode = LevelRenderMode::CustomTiles;
-    }
+    // Objects3D only reaches here when its bundle was missing (warned above) — fall back to bump tiles.
+    LevelRenderMode mode = (game->levelRenderMode == LevelRenderMode::Objects3D)
+                               ? LevelRenderMode::CustomTiles : game->levelRenderMode;
 
     // Create render data structure
     data = createLevelRenderData(meshLevel, game->tileset, mode, WORLD_SCALE);
@@ -463,6 +486,27 @@ static void game_create_level_collision(Game* game) {
     // Clear existing collision bodies
     // Note: Physics bodies are destroyed when physics world is destroyed
     game->collisionBodies.clear();
+
+    // Objects3D uses the converted level's own collision (from the bundle's collision.json), in the
+    // domain frame (render X, render Z). Each `polygon` is a wall-footprint quad (the profiled wall
+    // swept to its real thickness, following its Bézier curve), built as a solid static body. Floor
+    // areas are walkable and are not emitted. Not the TMX rects.
+    if (game_mode_is_3d(game)) {
+        if (game->currentLevel < 0 || game->currentLevel >= (int)game->levels.size()) return;
+        const int deck = game->levels[game->currentLevel].number;
+        Collision3D coll;
+        if (!load3DLevelCollision(game->assetPath, deck, coll)) {
+            TraceLog(LOG_WARNING, "No collision.json for level %d; 3D level has no wall collision", deck);
+            return;
+        }
+        int wallN = 0, skipped = 0;
+        for (auto& poly : coll.polygons) {
+            PhysicsBody b = physics_create_static_polygon(&game->physics, poly.data(), (int)poly.size());
+            if (b.valid) { game->collisionBodies.push_back(b); wallN++; } else skipped++;
+        }
+        TraceLog(LOG_INFO, "3D collision level %d: %d wall polygons (%d skipped)", deck, wallN, skipped);
+        return;
+    }
 
     if (game->currentLevel < 0 || game->currentLevel >= (int)game->levelCollisionData.size()) {
         return;
@@ -534,7 +578,13 @@ static std::vector<DoorSpec> game_detect_doors(const Game* game) {
 }
 
 static void game_create_doors(Game* game) {
-    std::vector<DoorSpec> specs = game_detect_doors(game);
+    // Objects3D sources doors from the bundle (domain frame); the 2D modes detect them from TMX tiles.
+    std::vector<DoorSpec> specs;
+    if (game_mode_is_3d(game)) {
+        load3DLevelDoors(game->assetPath, game->levels[game->currentLevel].number, specs);
+    } else {
+        specs = game_detect_doors(game);
+    }
     game->doorManager.init(game->physics.world_id, specs);
 
     // Build both presentations; the active level-render mode picks which one draws each frame.
@@ -586,7 +636,13 @@ static std::vector<ChargerSpec> game_detect_chargers(const Game* game) {
 }
 
 static void game_create_chargers(Game* game) {
-    std::vector<ChargerSpec> specs = game_detect_chargers(game);
+    // Objects3D sources chargers from the bundle (domain frame); the 2D modes detect them from TMX.
+    std::vector<ChargerSpec> specs;
+    if (game_mode_is_3d(game)) {
+        load3DLevelChargers(game->assetPath, game->levels[game->currentLevel].number, specs);
+    } else {
+        specs = game_detect_chargers(game);
+    }
     game->chargerManager.init(game->physics.world_id, specs);
 
     if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
@@ -667,16 +723,27 @@ static void game_spawn_player(Game* game) {
         }
     }
 
-    // Prefer a lift tile on the starting level (so the player begins on a lift, ready to
-    // travel). Falls back to the waypoint spawn above if the level has no lift.
-    if (!game->testConfig.enabled &&
-        game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
-        const TmxLevel& lvl = game->levels[game->currentLevel];
-        if (!lvl.lifts.empty()) {
-            const TmxLift& lift = lvl.lifts[0];
-            spawnPos = {(lift.col + 0.5f - lvl.width * 0.5f) * WORLD_SCALE,
-                        (lift.row + 0.5f - lvl.height * 0.5f) * WORLD_SCALE};
-            TraceLog(LOG_INFO, "Spawning player on lift tile: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+    // Prefer to start the player on a lift tile of the starting level, ready to travel (falls back
+    // to the waypoint spawn above if the level has no lift).
+    if (!game->testConfig.enabled) {
+        if (game_mode_is_3d(game)) {
+            // Objects3D: the lift network is in the domain frame (built from transporters). Spawn on
+            // the first stop for the current level so onLift() triggers immediately.
+            for (const LiftStop& s : game->liftManager.stops()) {
+                if (s.level == game->currentLevel) {
+                    spawnPos = s.physicsCenter;
+                    TraceLog(LOG_INFO, "Spawning player on 3D lift stop: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+                    break;
+                }
+            }
+        } else if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+            const TmxLevel& lvl = game->levels[game->currentLevel];
+            if (!lvl.lifts.empty()) {
+                const TmxLift& lift = lvl.lifts[0];
+                spawnPos = {(lift.col + 0.5f - lvl.width * 0.5f) * WORLD_SCALE,
+                            (lift.row + 0.5f - lvl.height * 0.5f) * WORLD_SCALE};
+                TraceLog(LOG_INFO, "Spawning player on lift tile: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
+            }
         }
     }
 
@@ -1792,6 +1859,68 @@ static void game_draw_charger_debug_2d(Game* game) {
     }
 }
 
+// Lift debug overlay (toggled with V): show every lift stop's activation zone on the current
+// deck — the ring is the exact use-radius (player must be inside to trigger), plus a vertical beam
+// so it's easy to spot from the top-down camera. GREEN = the stop the player is currently on.
+static void game_draw_lift_debug_3d(Game* game) {
+    for (const LiftStop& s : game->liftManager.stops()) {
+        if (s.level != game->currentLevel) continue;
+        Vector3 c = {s.physicsCenter.x, 0.1f, s.physicsCenter.y};
+        bool active = (game->liftManager.currentStop() == &s);
+        Color col = active ? GREEN : SKYBLUE;
+        // Exact use-radius ring (double-drawn for visibility) laid flat on the XZ ground.
+        DrawCircle3D(c, LIFT_USE_RADIUS, (Vector3){1, 0, 0}, 90.0f, col);
+        DrawCircle3D(c, LIFT_USE_RADIUS * 0.96f, (Vector3){1, 0, 0}, 90.0f, col);
+        // Vertical beam + footprint cylinder — visible even when the camera looks straight down.
+        DrawCylinderWires(c, LIFT_USE_RADIUS, LIFT_USE_RADIUS, 1.6f, 14, (Color){120, 200, 255, 160});
+        DrawCube((Vector3){c.x, 0.8f, c.z}, 0.12f, 1.6f, 0.12f, col);
+    }
+}
+
+// Lift debug text (toggled with V): label each stop (deck + elevator/index) and show the player's
+// live onLift state + distance to the nearest stop, in screen space.
+static void game_draw_lift_debug_2d(Game* game) {
+    for (const LiftStop& s : game->liftManager.stops()) {
+        if (s.level != game->currentLevel) continue;
+        Vector2 screen = GetWorldToScreen((Vector3){s.physicsCenter.x, 1.0f, s.physicsCenter.y}, game->camera);
+        const char* txt = TextFormat("LIFT d%d e%d/%d", s.levelNumber, s.elevator, s.stopIndex);
+        DrawText(txt, (int)screen.x - MeasureText(txt, 14) / 2, (int)screen.y, 14, SKYBLUE);
+    }
+    const char* state = game->liftManager.onLift() ? "ON LIFT" : "off";
+    DrawText(TextFormat("Lift: %s  (%zu stops on deck)", state,
+                        [&]{ size_t n = 0; for (const LiftStop& s : game->liftManager.stops())
+                                             if (s.level == game->currentLevel) n++; return n; }()),
+             10, 70, 16, game->liftManager.onLift() ? GREEN : GRAY);
+}
+
+// Collision debug overlay (toggled with V, Objects3D): draw the static wall-footprint polygons as
+// raised outlines with depth-test disabled, so they read over the rendered wall geometry instead of
+// clipping into it. rlgl batches geometry, so the batch must be FLUSHED while depth test is off —
+// otherwise the toggle is applied at EndMode3D with depth test already restored (why the earlier
+// version stayed hidden). Reads the polygons straight off the collision bodies.
+static void game_draw_collision_debug_3d(Game* game) {
+    if (!game_mode_is_3d(game)) return;
+    const float y = 0.35f;
+    rlDrawRenderBatchActive();   // flush the scene at current depth state
+    rlDisableDepthTest();
+    for (const PhysicsBody& body : game->collisionBodies) {
+        if (!body.valid) continue;
+        b2ShapeId shapes[8];
+        int n = b2Body_GetShapes(body.body_id, shapes, 8);
+        for (int i = 0; i < n; ++i) {
+            if (b2Shape_GetType(shapes[i]) != b2_polygonShape) continue;
+            b2Polygon p = b2Shape_GetPolygon(shapes[i]);
+            for (int k = 0; k < p.count; ++k) {
+                b2Vec2 a = p.vertices[k];
+                b2Vec2 b = p.vertices[(k + 1) % p.count];
+                DrawCylinderEx((Vector3){a.x, y, a.y}, (Vector3){b.x, y, b.y}, 0.04f, 0.04f, 5, ORANGE);
+            }
+        }
+    }
+    rlDrawRenderBatchActive();   // flush the debug bars WHILE depth test is disabled
+    rlEnableDepthTest();
+}
+
 // Debug (hold B): draw EVERY shape in the physics world — including bodies not attached to
 // any game object — coloured by body type (static=red, dynamic=green, kinematic=blue).
 // Draws the shape's true geometry (circle for units, box for polygons) rather than the
@@ -2046,6 +2175,8 @@ void game_render_gameplay(Game* game) {
         game_draw_ai_debug_3d(game);
         game_draw_door_debug_3d(game);
         game_draw_charger_debug_3d(game);
+        game_draw_lift_debug_3d(game);
+        game_draw_collision_debug_3d(game);
     }
 
     EndMode3D();
@@ -2055,6 +2186,7 @@ void game_render_gameplay(Game* game) {
         game_draw_ai_debug_2d(game);
         game_draw_door_debug_2d(game);
         game_draw_charger_debug_2d(game);
+        game_draw_lift_debug_2d(game);
     }
 
     // HUD

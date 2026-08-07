@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "viewer.h"
+#include "scene_convert/ship_parser.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -37,6 +38,8 @@ static void printHelp() {
     printf("  --no-reference         Don't load reference model\n");
     printf("  --no-textures          Don't load textures\n");
     printf("  --export-all <dir>     Headless: load + export every deck to <dir>, then exit\n");
+    printf("  --transport <path>     With --export-all: also export the ship transport.txt lift\n");
+    printf("                         network to <dir>/transporters.json (render-metric)\n");
     printf("  --export-split <dir>   Headless: split export (one file per shape) every deck\n");
     printf("  --materials <path>     materials.xml for wall profiles (default: <srcDir>/../data)\n");
     printf("  --no-caps              Disable wall end caps\n");
@@ -91,6 +94,7 @@ int main(int argc, char* argv[]) {
     bool loadReference = true;
     bool loadTextures = true;
     const char* exportAllDir = nullptr;    // --export-all <dir>: headless export every deck, then exit
+    const char* transportPath = nullptr;   // --transport <path>: ship transport.txt (lift network)
     const char* exportSplitDir = nullptr;  // --export-split <dir>: headless split export every deck
     const char* materialsPath = nullptr; // --materials <path>: materials.xml (for wall profiles)
     bool noCaps = false;                 // --no-caps: disable wall end caps
@@ -121,6 +125,8 @@ int main(int argc, char* argv[]) {
             loadTextures = false;
         } else if (strcmp(argv[i], "--export-all") == 0 && i + 1 < argc) {
             exportAllDir = argv[++i];
+        } else if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
+            transportPath = argv[++i];
         } else if (strcmp(argv[i], "--export-split") == 0 && i + 1 < argc) {
             exportSplitDir = argv[++i];
         } else if (strcmp(argv[i], "--materials") == 0 && i + 1 < argc) {
@@ -200,6 +206,17 @@ int main(int argc, char* argv[]) {
             if (!viewerLoadLevel(&viewer, level)) continue;
             if (exportAllDir) viewerExportLevel(&viewer, exportAllDir);
             if (exportSplitDir) viewerExportLevelSplit(&viewer, exportSplitDir);
+        }
+        // Ship-wide lift network (one file for all decks), if a transport.txt was supplied.
+        if (exportAllDir && transportPath) {
+            std::vector<Transporter> transporters;
+            if (parseTransportFile(transportPath, transporters)) {
+                if (viewerExportTransporters(transporters, viewer.scale, exportAllDir))
+                    printf("Exported %zu transporters to %s/transporters.json\n",
+                           transporters.size(), exportAllDir);
+            } else {
+                fprintf(stderr, "Warning: failed to parse transport file %s\n", transportPath);
+            }
         }
         viewerCleanup(&viewer);
         CloseWindow();

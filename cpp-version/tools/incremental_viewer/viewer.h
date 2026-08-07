@@ -238,6 +238,11 @@ bool viewerExportLevel(Viewer* viewer, const char* dir);
 // with per-file bounds — for isolating which sections have bad geometry. 'Shift+X' / --export-split.
 bool viewerExportLevelSplit(Viewer* viewer, const char* dir);
 
+// Export the ship-wide transporter (lift) network to `<dir>/transporters.json` in the render-metric
+// frame (positions transformed by gameToRenderCoords, matching the level GLTFs). Ship-level, so
+// written once for the whole deck set, not per level. Returns true on success.
+bool viewerExportTransporters(const std::vector<Transporter>& transporters, float scale, const char* dir);
+
 // Set camera to a preset view
 // preset: TopDown (game mode), Isometric (45 degree), or Perspective
 void viewerSetCameraPreset(Viewer* viewer, CameraPreset preset);

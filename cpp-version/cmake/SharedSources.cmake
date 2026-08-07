@@ -34,6 +34,7 @@ set(SHARED_SOURCES
 # Level loading sources (TMX/TSX parsing, tile rendering, collision, spawning)
 set(LEVEL_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/level/tmx_loader.cpp
+    ${CMAKE_SOURCE_DIR}/shared/level/level3d_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/tileset_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/level_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/tile_properties_loader.cpp

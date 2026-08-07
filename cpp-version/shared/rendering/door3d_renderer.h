@@ -35,6 +35,7 @@ public:
 private:
     Model model_{};         // converted door.gltf (metal + bump)
     float height_ = 2.0f;   // model height (world Y), for the open-slide distance
+    float minY_ = 0.0f;     // model's local base Y (bb.min.y) — used to seat the base on the floor
     bool built_ = false;
 };
 

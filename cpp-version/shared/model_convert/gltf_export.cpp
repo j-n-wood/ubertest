@@ -423,6 +423,10 @@ static std::string resolve_texture_path(const char* texture_path, const char* so
         if (c == '\\') c = '/';
     }
 
+    // If the given path already resolves (e.g. an absolute path from a texture lookup, as the level
+    // exporter passes), use it directly — no source_dir/fallback needed.
+    { std::error_code ec; if (fs::exists(fs::path(path), ec)) return path; }
+
     // Extract just the filename for final fallback
     fs::path texture_filename = fs::path(path).filename();
 

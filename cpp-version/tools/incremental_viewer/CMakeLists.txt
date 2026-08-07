@@ -37,6 +37,7 @@ set(SCENE_CONVERT_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/scene_convert/archetile_parser.cpp
     ${CMAKE_SOURCE_DIR}/shared/scene_convert/geometry_xml_parser.cpp
     ${CMAKE_SOURCE_DIR}/shared/scene_convert/scene_json.cpp
+    ${CMAKE_SOURCE_DIR}/shared/scene_convert/ship_parser.cpp
 )
 
 add_executable(${PROJECT_NAME}

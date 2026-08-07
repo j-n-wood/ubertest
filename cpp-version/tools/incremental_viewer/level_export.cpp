@@ -96,44 +96,99 @@ void collectTileMeshes(const Domain& domain, std::vector<ShapeMesh>& out,
     }
 }
 
-json vec2Array(const Vector2& v, float scale) {
-    // Match the mesh space: game Y (forward) is negated in gameToRenderCoords, so the collision's
-    // forward axis is negated too (Box2D plane = render X, render Z).
-    return json::array({v.x * scale, -v.y * scale});
-}
-
-// Aggregate + write Box2D-ready collision. Coordinates are in the game's 2D plane (X, Y-forward),
-// pre-scaled to match the exported mesh; polygons are CCW convex (<=8 verts), chains carry a loop flag.
-void writeCollision(const Domain& domain, float scale, int level, const std::string& path) {
+// Write Box2D-ready wall collision as footprint POLYGONS. A wall is any link that produces a wall
+// mesh (explicit profile, or the geometry's default profile set — matching createDomainWallMeshes).
+// For each wall we rebuild the render-space path exactly as the mesh does (straight, or a subdivided
+// quadratic Bézier) and sweep it by the profile's lateral extent, emitting one convex quad per path
+// segment. So the collision has the wall's real THICKNESS and follows its curves — not a thin
+// centreline. Node positions are already render-metric (scale applied at serialization); the
+// profile's lateral offset is in game units, so it is scaled here. Output is the game's 2D physics
+// plane (render X, render Z). Floor areas are walkable, so they are NOT emitted as solids.
+void writeCollision(const Domain& domain, const WallProfileTable& table, float scale, int level,
+                    const std::string& path) {
     json doc;
     doc["level"] = level;
-    doc["scale"] = scale;
-    doc["space"] = "game-2d (x, y-forward), pre-scaled";
-    doc["polygons"] = json::array();
-    doc["chains"] = json::array();
+    doc["space"] = "render-metric wall footprint polygons (x, z)";
+    json polys = json::array();
 
     for (const auto& area : domain.areas) {
         for (const auto& geom : area.geometry) {
-            CollisionData coll;
-            generateCollisionFromGeometry(geom, coll);
-            for (const auto& poly : coll.polygons) {
-                json verts = json::array();
-                for (const auto& v : poly.vertices) verts.push_back(vec2Array(v, scale));
-                doc["polygons"].push_back({{"vertices", verts}});
-            }
-            for (const auto& chain : coll.chains) {
-                json verts = json::array();
-                for (const auto& v : chain.vertices) verts.push_back(vec2Array(v, scale));
-                bool loop = false;
-                if (chain.vertices.size() >= 2) {
-                    const Vector2& f = chain.vertices.front();
-                    const Vector2& l = chain.vertices.back();
-                    loop = (std::fabs(f.x - l.x) < 1e-4f && std::fabs(f.y - l.y) < 1e-4f);
+            std::unordered_map<int, Vector3> nodePos;
+            for (const auto& n : geom.nodes) nodePos[n.id] = n.position;
+            std::vector<int> defaultSet;
+            for (const auto& p : geom.profiles) defaultSet.push_back(p.id);
+
+            for (const auto& link : geom.links) {
+                const std::vector<int>* profileIds = nullptr;
+                if (!link.profiles.empty()) profileIds = &link.profiles;
+                else if (link.useDefaultProfiles && !defaultSet.empty()) profileIds = &defaultSet;
+                else continue;  // not a wall
+
+                // Wall thickness = the lateral extent of the swept profile(s). Skip trim/border
+                // profiles (near-zero height, e.g. the floor borders) — they are decorative and
+                // extend laterally past the wall, so they must not widen or create collision.
+                constexpr float MIN_WALL_HEIGHT = 2.0f;    // game units; trim ~0.3, walls ~60
+                float latMin = 1e9f, latMax = -1e9f;
+                for (int pid : *profileIds) {
+                    auto it = table.profiles.find(pid);
+                    if (it == table.profiles.end() || !it->second.valid) continue;
+                    float yMin = 1e9f, yMax = -1e9f;
+                    for (const auto& pt : it->second.points) {
+                        yMin = std::min(yMin, pt.y); yMax = std::max(yMax, pt.y);
+                    }
+                    if (yMax - yMin < MIN_WALL_HEIGHT) continue;   // trim/border — not collision
+                    for (const auto& pt : it->second.points) {
+                        latMin = std::min(latMin, pt.x);
+                        latMax = std::max(latMax, pt.x);
+                    }
                 }
-                doc["chains"].push_back({{"vertices", verts}, {"loop", loop}});
+                if (latMin > latMax) continue;             // no wall-height profile on this link
+                latMin *= scale; latMax *= scale;          // game units -> render metres
+                const float minThick = 0.12f;              // keep thin profiles collidable
+                if (latMax - latMin < minThick) {
+                    float c = 0.5f * (latMin + latMax);
+                    latMin = c - 0.5f * minThick; latMax = c + 0.5f * minThick;
+                }
+
+                auto s = nodePos.find(link.start), f = nodePos.find(link.finish);
+                if (s == nodePos.end() || f == nodePos.end()) continue;
+
+                // Render-space path in the X-Z plane (matches the wall mesh: 10-step Bézier).
+                std::vector<Vector2> pts;
+                if (link.control) {
+                    Vector2 p0{s->second.x, s->second.z};
+                    Vector2 cp{link.control->position.x, link.control->position.z};
+                    Vector2 p1{f->second.x, f->second.z};
+                    const int steps = 10;
+                    for (int i = 0; i <= steps; ++i) {
+                        float t = (float)i / steps, u = 1.0f - t;
+                        pts.push_back({u*u*p0.x + 2*u*t*cp.x + t*t*p1.x,
+                                       u*u*p0.y + 2*u*t*cp.y + t*t*p1.y});
+                    }
+                } else {
+                    pts.push_back({s->second.x, s->second.z});
+                    pts.push_back({f->second.x, f->second.z});
+                }
+
+                // One convex quad per path segment, offset ±lateral perpendicular to the segment.
+                for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                    Vector2 p0 = pts[i], p1 = pts[i + 1];
+                    float dx = p1.x - p0.x, dz = p1.y - p0.y;
+                    float len = std::sqrt(dx*dx + dz*dz);
+                    if (len < 1e-5f) continue;
+                    Vector2 perp = {-dz / len, dx / len};
+                    auto pt = [&](const Vector2& p, float lat) {
+                        return json::array({p.x + perp.x * lat, p.y + perp.y * lat});
+                    };
+                    polys.push_back({{"vertices", json::array({
+                        pt(p0, latMin), pt(p1, latMin), pt(p1, latMax), pt(p0, latMax)})}});
+                }
             }
         }
     }
+
+    doc["polygons"] = polys;
+    doc["chains"] = json::array();  // walls are footprint polygons now; no chains
 
     std::ofstream f(path);
     f << doc.dump(2) << "\n";
@@ -227,6 +282,91 @@ bool viewerExportLevelSplit(Viewer* viewer, const char* dir) {
 
     TraceLog(LOG_INFO, "EXPORT(split): level %d -> %s (%zu files)", level,
              outDir.string().c_str(), meshes.size());
+    return true;
+}
+
+// Sidecar: AI waypoints + unit spawns + interactive objects (doors/chargers/consoles), in the SAME
+// render-metric frame as level_N.gltf so the game's 3D-level path can consume geometry + entities
+// together. Positions come from the loaded (render-space) domain verbatim.
+static void writeEntities(const Domain& domain, float scale, int level, const std::string& path) {
+    json doc;
+    doc["level"] = level;
+    doc["scale"] = scale;
+    doc["space"] = "render-metric (matches level_<n>.gltf: X right, Y up, Z depth)";
+
+    json wps = json::array();
+    for (const auto& w : domain.waypoints) {
+        json flags = json::object();
+        if (w.flags.start)    flags["start"] = true;
+        if (w.flags.console)  flags["console"] = true;
+        if (w.flags.recharge) flags["recharge"] = true;
+        if (w.flags.lift)     flags["lift"] = true;
+        if (w.flags.transmat) flags["transmat"] = true;
+        wps.push_back({{"id", w.id},
+                       {"pos", {w.position.x, w.position.y, w.position.z}},
+                       {"neighbors", w.neighbors},
+                       {"flags", flags}});
+    }
+    doc["waypoints"] = wps;
+
+    json sp = json::array();
+    for (const auto& s : domain.spawns)
+        sp.push_back({{"droidClass", s.droidClass}, {"waypointIndex", s.waypointIndex}, {"angle", s.angle}});
+    doc["spawns"] = sp;
+
+    // Positions come from the render-space domain (already metres); `size` is a raw game-unit
+    // extent, so scale it to metres to keep the whole sidecar in the GLTF frame.
+    json doors = json::array();
+    for (const auto& d : domain.objects.doors)
+        doors.push_back({{"id", d.id},
+                         {"pos", {d.position.x, d.position.y, d.position.z}},
+                         {"rot", {d.rotation.x, d.rotation.y, d.rotation.z}},
+                         {"size", {d.size.x * scale, d.size.y * scale}},
+                         {"state", d.state}});
+    doc["doors"] = doors;
+
+    json chargers = json::array();
+    for (const auto& c : domain.objects.chargers)
+        chargers.push_back({{"id", c.id}, {"pos", {c.position.x, c.position.y, c.position.z}}});
+    doc["chargers"] = chargers;
+
+    json consoles = json::array();
+    for (const auto& c : domain.objects.consoles)
+        consoles.push_back({{"id", c.id},
+                            {"pos", {c.position.x, c.position.y, c.position.z}},
+                            {"waypointId", c.waypointId}});
+    doc["consoles"] = consoles;
+
+    std::ofstream f(path);
+    f << doc.dump(2) << "\n";
+}
+
+bool viewerExportTransporters(const std::vector<Transporter>& transporters, float scale,
+                              const char* dir) {
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+
+    json doc;
+    doc["space"] = "render-metric (matches level_<n>.gltf: X right, Y up, Z depth)";
+    doc["scale"] = scale;
+
+    json arr = json::array();
+    for (const auto& t : transporters) {
+        // Transporter.position is game units (tile*64 + centre, z=height); bring it into the same
+        // render-metric frame as the geometry/waypoints so the game's lift stops land on the deck.
+        Vector3 p = gameToRenderCoords(t.position, scale);
+        arr.push_back({{"id", t.id},
+                       {"deck", t.domainIndex},
+                       {"pos", {p.x, p.y, p.z}},
+                       {"levelUp", t.levelUp},
+                       {"levelDown", t.levelDown},
+                       {"liftRow", t.liftRow}});
+    }
+    doc["transporters"] = arr;
+
+    std::ofstream f(fs::path(dir) / "transporters.json");
+    if (!f.is_open()) return false;
+    f << doc.dump(2) << "\n";
     return true;
 }
 
@@ -326,7 +466,11 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
 
     // 7. Collision (separate, Box2D-ready).
     std::string collPath = (outDir / ("level_" + std::to_string(level) + ".collision.json")).string();
-    writeCollision(viewer->loadedDomain, viewer->scale, level, collPath);
+    writeCollision(viewer->loadedDomain, viewer->wallProfiles, viewer->scale, level, collPath);
+
+    // 7b. Entities sidecar (waypoints / spawns / objects) — completes the self-contained bundle.
+    std::string entPath = (outDir / ("level_" + std::to_string(level) + ".entities.json")).string();
+    writeEntities(viewer->loadedDomain, viewer->scale, level, entPath);
 
     TraceLog(LOG_INFO, "EXPORT: level %d -> %s (%d meshes, %d materials)",
              level, outDir.string().c_str(), model.meshCount, model.materialCount);
