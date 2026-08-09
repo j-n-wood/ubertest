@@ -423,9 +423,13 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
         model.materials[i].maps[MATERIAL_MAP_ALBEDO].color = WHITE;
     }
 
-    // 4. Texture URIs per material, resolved from the legacy texture table.
+    // 4. Texture URIs per material, resolved from the legacy texture table. The bundle GLTFs live in
+    //    per-deck subfolders (levels3d/level_N/), but the deck textures are the same handful of
+    //    images, so point them at ONE shared folder a level up (levels3d/textures/) instead of
+    //    duplicating them into every deck. "../textures" is both the URI prefix (resolved by the
+    //    loader relative to the .gltf) and the copy destination (output_dir + "/../textures").
     GLTFExportOptions opts = GLTFDefaultOptions();
-    opts.texture_dir = "textures";
+    opts.texture_dir = "../textures";
     opts.copy_textures = true;
     opts.include_physics_shape = false;
     std::vector<std::string> texPaths(model.materialCount);
