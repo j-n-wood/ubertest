@@ -251,6 +251,21 @@ bool viewerExportLevelSplit(Viewer* viewer, const char* dir);
 // written once for the whole deck set, not per level. Returns true on success.
 bool viewerExportTransporters(const std::vector<Transporter>& transporters, float scale, const char* dir);
 
+// One deck's spawn control, harvested from its domain during --export-all: the xmapfile PROFILE
+// (per-type spawn counts) and PLACEDROID entries. Accumulated across decks, then written to
+// spawns.json so the xmapfile is the authoritative spawn source (see viewerExportSpawns).
+struct DeckSpawnInfo {
+    int level = 0;
+    std::array<int, 9> profile = {};
+    std::vector<Spawn> placed;   // domain.spawns (PLACEDROID)
+};
+
+// Regenerate the ship's spawns.json from every deck's domain PROFILE/PLACEDROID. Written to
+// `<dir>/../spawns.json` (the game reads it from the ship dir, one level above the levels3d bundle).
+// The existing file's "name" is preserved. Ship-wide, so written once after the deck loop. Returns
+// true on success.
+bool viewerExportSpawns(const std::vector<DeckSpawnInfo>& decks, const char* dir);
+
 // Set camera to a preset view
 // preset: TopDown (game mode), Isometric (45 degree), or Perspective
 void viewerSetCameraPreset(Viewer* viewer, CameraPreset preset);

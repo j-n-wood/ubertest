@@ -79,7 +79,7 @@ struct Game {
     // Active level renderer (swappable at startup via --renderer and at runtime via G).
     // Tilemap = flat atlas, CustomTiles = per-tile bump, Objects3D = converted-geometry path
     // (roadmap Phase 6/7 — not yet wired; currently falls back to CustomTiles). See docs/levels.md.
-    LevelRenderMode levelRenderMode = LevelRenderMode::CustomTiles;
+    LevelRenderMode levelRenderMode = LevelRenderMode::Objects3D;
 
     // Per-level runtime state (world, roster, flags), parallel to `levels`. See LevelRuntime
     // above and docs/levels.md. The GPU/build artifacts (levelRenderData, levelCollisionData)
@@ -200,6 +200,10 @@ void game_switch_to_stop(Game* game, const LiftStop& stop);
 
 // Debug: jump to a deck by its stable deck number (used by the --deck startup flag).
 void game_debug_goto_deck(Game* game, int deckNumber);
+
+// Advance to the next level renderer (Tilemap -> CustomTiles -> Objects3D -> …) and reload the
+// current level in that renderer's coordinate frame. Bound to the in-game G key.
+void game_cycle_renderer(Game* game);
 
 // Award score + raise the alert level for destroying or capturing `unit` (50 x its
 // class). Called on a kill (game_reap_dead) and on a completed capture (transfer).

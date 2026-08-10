@@ -35,6 +35,9 @@ static std::vector<ChargerSpec> game_detect_chargers(const Game* game);
 static void game_create_consoles(Game* game);
 static std::vector<ConsoleSpec> game_detect_consoles(const Game* game);
 static void game_spawn_player(Game* game);
+static Vector2 game_level_spawn_pos(const Game* game);
+static void game_build_lift_network(Game* game);
+static void game_switch_renderer(Game* game, LevelRenderMode newMode);
 static void game_spawn_enemies(Game* game);
 static void game_despawn_enemies(Game* game);
 static void game_switch_level(Game* game, int newLevel);
@@ -166,21 +169,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game->playerUnit = nullptr;
 
     // Build the elevator graph before spawning, so a 3D spawn can start the player on a lift.
-    // Persists across level switches — stops reference stable runtime level indices. In Objects3D
-    // the TMX lift tiles are in the wrong frame, so build from the exported ship transporters
-    // (render-metric); fall back to the TMX build if absent.
-    if (game_mode_is_3d(game)) {
-        std::vector<TransporterSpec> transporters;
-        if (load3DLevelTransporters(game->assetPath, transporters)) {
-            game->liftManager.buildFromTransporters(transporters, game->levels);
-            TraceLog(LOG_INFO, "Built 3D lift network from %zu transporters", transporters.size());
-        } else {
-            TraceLog(LOG_WARNING, "No transporters.json; falling back to TMX lift build");
-            game->liftManager.build(game->levels);
-        }
-    } else {
-        game->liftManager.build(game->levels);
-    }
+    game_build_lift_network(game);
 
     // Spawn player unit
     game_spawn_player(game);
@@ -385,7 +374,7 @@ static const char* game_level_render_mode_name(LevelRenderMode m) {
     switch (m) {
         case LevelRenderMode::Tilemap:     return "Tilemap (flat)";
         case LevelRenderMode::CustomTiles: return "CustomTiles (bump)";
-        case LevelRenderMode::Objects3D:   return "Objects3D (3D - placeholder)";
+        case LevelRenderMode::Objects3D:   return "Objects3D (converted 3D)";
     }
     return "?";
 }
@@ -699,6 +688,50 @@ static void game_create_consoles(Game* game) {
 // Player Spawning
 //------------------------------------------------------------------------------
 
+// Build the elevator graph. Stops reference stable runtime level indices and persist across level
+// switches. In Objects3D the TMX lift tiles are in the wrong frame, so build from the exported ship
+// transporters (render-metric); fall back to the TMX build if absent. Renderer-frame dependent, so
+// it is rebuilt on a runtime renderer switch (see game_switch_renderer).
+static void game_build_lift_network(Game* game) {
+    if (game_mode_is_3d(game)) {
+        std::vector<TransporterSpec> transporters;
+        if (load3DLevelTransporters(game->assetPath, transporters)) {
+            game->liftManager.buildFromTransporters(transporters, game->levels);
+            TraceLog(LOG_INFO, "Built 3D lift network from %zu transporters", transporters.size());
+            return;
+        }
+        TraceLog(LOG_WARNING, "No transporters.json; falling back to TMX lift build");
+    }
+    game->liftManager.build(game->levels);
+}
+
+// The player's start position for the current level in the ACTIVE renderer's frame: the first
+// waypoint, upgraded to the level's first lift stop when one exists (so onLift() fires). The frame
+// differs by mode (3D domain vs TMX grid), so this is recomputed on a renderer switch.
+static Vector2 game_level_spawn_pos(const Game* game) {
+    Vector2 spawnPos = {0, 0};
+    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levelRenderData.size()) {
+        const LevelRenderData& data = game->levelRenderData[game->currentLevel];
+        if (!data.waypointPositions.empty()) {
+            Vector3 wpPos = data.waypointPositions[0];
+            spawnPos = {wpPos.x, wpPos.z};   // World X,Z -> Physics X,Y
+        }
+    }
+    if (game_mode_is_3d(game)) {
+        for (const LiftStop& s : game->liftManager.stops()) {
+            if (s.level == game->currentLevel) { spawnPos = s.physicsCenter; break; }
+        }
+    } else if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
+        const TmxLevel& lvl = game->levels[game->currentLevel];
+        if (!lvl.lifts.empty()) {
+            const TmxLift& lift = lvl.lifts[0];
+            spawnPos = {(lift.col + 0.5f - lvl.width * 0.5f) * WORLD_SCALE,
+                        (lift.row + 0.5f - lvl.height * 0.5f) * WORLD_SCALE};
+        }
+    }
+    return spawnPos;
+}
+
 static void game_spawn_player(Game* game) {
     // Use the stored player unit ID (already resolved in game_init)
     const std::string& unitId = game->playerUnitId;
@@ -712,42 +745,9 @@ static void game_spawn_player(Game* game) {
         return;
     }
 
-    // Find spawn position from waypoint or use level center
-    Vector2 spawnPos = {0, 0};
-
-    if (game->currentLevel >= 0 && game->currentLevel < (int)game->levelRenderData.size()) {
-        const LevelRenderData& data = game->levelRenderData[game->currentLevel];
-        if (!data.waypointPositions.empty()) {
-            // Use first waypoint as spawn point
-            Vector3 wpPos = data.waypointPositions[0];
-            spawnPos = {wpPos.x, wpPos.z};  // World X,Z -> Physics X,Y
-            TraceLog(LOG_INFO, "Spawning player at waypoint: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
-        }
-    }
-
-    // Prefer to start the player on a lift tile of the starting level, ready to travel (falls back
-    // to the waypoint spawn above if the level has no lift).
-    if (!game->testConfig.enabled) {
-        if (game_mode_is_3d(game)) {
-            // Objects3D: the lift network is in the domain frame (built from transporters). Spawn on
-            // the first stop for the current level so onLift() triggers immediately.
-            for (const LiftStop& s : game->liftManager.stops()) {
-                if (s.level == game->currentLevel) {
-                    spawnPos = s.physicsCenter;
-                    TraceLog(LOG_INFO, "Spawning player on 3D lift stop: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
-                    break;
-                }
-            }
-        } else if (game->currentLevel >= 0 && game->currentLevel < (int)game->levels.size()) {
-            const TmxLevel& lvl = game->levels[game->currentLevel];
-            if (!lvl.lifts.empty()) {
-                const TmxLift& lift = lvl.lifts[0];
-                spawnPos = {(lift.col + 0.5f - lvl.width * 0.5f) * WORLD_SCALE,
-                            (lift.row + 0.5f - lvl.height * 0.5f) * WORLD_SCALE};
-                TraceLog(LOG_INFO, "Spawning player on lift tile: (%.2f, %.2f)", spawnPos.x, spawnPos.y);
-            }
-        }
-    }
+    // Spawn position for the current level/renderer frame (waypoint, upgraded to a lift stop).
+    Vector2 spawnPos = game_level_spawn_pos(game);
+    TraceLog(LOG_INFO, "Spawning player at (%.2f, %.2f)", spawnPos.x, spawnPos.y);
 
     // In test mode, offset spawn position to avoid nearby geometry
     if (game->testConfig.enabled) {
@@ -793,10 +793,13 @@ static void game_spawn_enemies(Game* game) {
         return;
     }
 
-    // Get spawn definition for current level (ship index 0)
-    const LevelSpawnDef* spawnDef = getSpawnDef(0, game->currentLevel);
+    // Get spawn definition for the current level, keyed by its STABLE DECK NUMBER (not the array
+    // index — levels load in alphabetical filename order, so index != deck). spawns.json is
+    // authored per deck number, which is renderer-independent and also works for non-TMX 3D decks.
+    const int deck = game->levels[game->currentLevel].number;
+    const LevelSpawnDef* spawnDef = getSpawnDef(0, deck);
     if (!spawnDef) {
-        TraceLog(LOG_WARNING, "No spawn definition for level %d", game->currentLevel);
+        TraceLog(LOG_WARNING, "No spawn definition for deck %d", deck);
         return;
     }
 
@@ -823,7 +826,7 @@ static void game_spawn_enemies(Game* game) {
         playerWaypointIdx);
 
     if (spawnEntries.empty()) {
-        TraceLog(LOG_INFO, "No enemies to spawn on level %d", game->currentLevel);
+        TraceLog(LOG_INFO, "No enemies to spawn on deck %d", deck);
         return;
     }
 
@@ -871,7 +874,7 @@ static void game_spawn_enemies(Game* game) {
         renderData.waypointAdjacency,
         enemies);
 
-    TraceLog(LOG_INFO, "Populated %zu enemies on level %d", enemies.size(), L);
+    TraceLog(LOG_INFO, "Populated %zu enemies on deck %d (level index %d)", enemies.size(), deck, L);
 }
 
 static void game_despawn_enemies(Game* game) {
@@ -885,6 +888,66 @@ static void game_despawn_enemies(Game* game) {
         }
     }
     game->enemyUnits.clear();
+}
+
+// Runtime renderer switch (G key). The 2D (TMX) and 3D (converted-bundle) paths use DIFFERENT
+// coordinate frames, so this is a full in-place level reload — not just a mesh swap. Every
+// frame-dependent artifact is rebuilt in the new frame: the lift network, geometry, static
+// collision, doors, chargers and consoles; the player is repositioned and enemies re-populated.
+// The prior enemy/level state (health, positions, lights-out) is discarded — this is a view/debug
+// toggle, not a gameplay event. The sim world itself (and the persistent player device) survive.
+static void game_switch_renderer(Game* game, LevelRenderMode newMode) {
+    const int L = game->currentLevel;
+    if (L < 0 || L >= (int)game->levels.size() || newMode == game->levelRenderMode) return;
+
+    // Release transfer control, then tear down the current level's frame-specific state IN THIS
+    // world — destroy the enemy bodies and the static wall bodies so nothing stale or misplaced
+    // survives into the new frame.
+    transfer_reset(game);
+    game_despawn_enemies(game);
+    game->levelRuntime[L].units.clear();
+    game->levelRuntime[L].populated = false;
+    game->levelRuntime[L].hadEnemies = false;
+    game->levelRuntime[L].cleared = false;   // enemies are about to be re-populated
+    for (auto& body : game->collisionBodies) {
+        if (body.valid) { b2DestroyBody(body.body_id); body.valid = false; }
+    }
+    game->collisionBodies.clear();
+    game->effectManager.init(game->physics.world_id);   // clear old-frame effects (same world)
+    game->particleManager.clear();
+
+    game->levelRenderMode = newMode;
+
+    // Rebuild every frame-dependent artifact in the new mode/frame.
+    game_build_lift_network(game);
+    game_build_level_render_data(game);
+    game_create_level_collision(game);
+    game_create_doors(game);
+    game_create_chargers(game);
+    game_create_consoles(game);
+
+    // Reposition the persistent player into the new frame, then re-populate enemies around it.
+    if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
+        Vector2 tp = game_level_spawn_pos(game);
+        float ang = b2Rot_GetAngle(b2Body_GetRotation(game->playerUnit->bodyId));
+        unit_rebind_world(game->playerUnit, game->levelRuntime[L].world,
+                          game->levelRuntime[L].origin, tp, ang);
+    }
+    game_spawn_enemies(game);
+
+    TraceLog(LOG_INFO, "Level renderer: %s (reloaded in-place)", game_level_render_mode_name(newMode));
+}
+
+// Advance to the next level renderer (Tilemap -> CustomTiles -> Objects3D -> …) and reload the
+// current level in its frame. Public so the G-key handler and debug/test paths share one cycle.
+void game_cycle_renderer(Game* game) {
+    LevelRenderMode next = game->levelRenderMode;
+    switch (game->levelRenderMode) {
+        case LevelRenderMode::Tilemap:     next = LevelRenderMode::CustomTiles; break;
+        case LevelRenderMode::CustomTiles: next = LevelRenderMode::Objects3D;   break;
+        case LevelRenderMode::Objects3D:   next = LevelRenderMode::Tilemap;     break;
+    }
+    game_switch_renderer(game, next);
 }
 
 //------------------------------------------------------------------------------
@@ -1542,16 +1605,11 @@ void game_update_gameplay(Game* game, float dt) {
         game->showAIDebug = !game->showAIDebug;
     }
 
-    // Cycle the level renderer (G): Tilemap -> CustomTiles -> Objects3D -> …, rebuilding the level.
-    // This is the swap seam — the sim is untouched; only the level's draw resources are rebuilt.
+    // Cycle the level renderer (G): Tilemap -> CustomTiles -> Objects3D -> …. Because the 2D and 3D
+    // paths use different coordinate frames, this does a full in-place level reload in the new frame
+    // (collision/doors/chargers/lifts/player/enemies), not just a mesh swap. See game_switch_renderer.
     if (IsKeyPressed(KEY_G)) {
-        switch (game->levelRenderMode) {
-            case LevelRenderMode::Tilemap:     game->levelRenderMode = LevelRenderMode::CustomTiles; break;
-            case LevelRenderMode::CustomTiles: game->levelRenderMode = LevelRenderMode::Objects3D;   break;
-            case LevelRenderMode::Objects3D:   game->levelRenderMode = LevelRenderMode::Tilemap;     break;
-        }
-        game_build_level_render_data(game);
-        TraceLog(LOG_INFO, "Level renderer: %s", game_level_render_mode_name(game->levelRenderMode));
+        game_cycle_renderer(game);
     }
 
     // Pause (P) and debug slow-motion (O). These toggles run even while paused so
@@ -1962,7 +2020,7 @@ static void game_draw_physics_bounds_3d(Game* game) {
 
 void game_render_gameplay(Game* game) {
     BeginDrawing();
-    ClearBackground(DARKGRAY);
+    ClearBackground(game_mode_is_3d(game) ? BLACK : DARKGRAY);  // 3D reads better against black
 
     // Update camera position for specular calculations
     sceneRendererUpdateCamera(&game->sceneRenderer, game->camera.position);

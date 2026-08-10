@@ -224,11 +224,20 @@ int main(int argc, char* argv[]) {
 
     // Headless batch export: load + export every deck, then exit.
     if (exportAllDir || exportSplitDir) {
+        std::vector<DeckSpawnInfo> spawnDecks;   // xmapfile PROFILE/PLACEDROID per deck -> spawns.json
         for (int level : viewer.levelNumbers) {
             if (!viewerLoadLevel(&viewer, level)) continue;
             if (exportAllDir) viewerExportLevel(&viewer, exportAllDir);
             if (exportSplitDir) viewerExportLevelSplit(&viewer, exportSplitDir);
+            DeckSpawnInfo si;
+            si.level = level;
+            si.profile = viewer.loadedDomain.profile;
+            si.placed = viewer.loadedDomain.spawns;
+            spawnDecks.push_back(std::move(si));
         }
+        // Regenerate the ship's spawns.json from the accumulated domain profiles (the xmapfile
+        // PROFILE marker is now the authoritative spawn control).
+        if (exportAllDir) viewerExportSpawns(spawnDecks, exportAllDir);
         // Ship-wide lift network (one file for all decks), if a transport.txt was supplied.
         if (exportAllDir && transportPath) {
             std::vector<Transporter> transporters;

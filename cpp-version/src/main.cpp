@@ -31,7 +31,7 @@ void printUsage(const char* programName) {
     printf("  --asset-path <dir>  Base path for assets (conventional structure)\n");
     printf("                      Default: ./assets\n");
     printf("  --unit <id>         Unit ID for player (default: droid_class_0)\n");
-    printf("  --renderer <mode>   Level renderer: tilemap | custom | 3d (default: custom; toggle in-game with G)\n");
+    printf("  --renderer <mode>   Level renderer: tilemap | custom | 3d (default: 3d; toggle in-game with G)\n");
     printf("  --deck <n>          Jump to deck number n after init (debug)\n");
     printf("  --args-file <path>  Read extra args from a file (also @path); '#' comments. Lets a fixed\n");
     printf("                      command drive different runs by editing the file\n");
@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
 #endif
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
-    LevelRenderMode renderMode = LevelRenderMode::CustomTiles;  // --renderer; runtime-toggle with G
+    LevelRenderMode renderMode = LevelRenderMode::Objects3D;  // default; --renderer overrides, G toggles at runtime
     int startDeck = -1;  // --deck N: jump to deck N after init (debug), -1 = start on deck 0
 
     for (int i = 1; i < argc; ++i) {

@@ -486,7 +486,7 @@ static void parseDomainFooter(std::istream& stream, Domain& domain) {
                 if (token == "CLASS") {
                     iss >> spawn.droidClass;
                 }
-                else if (token == "INDEX") {
+                else if (token == "WAYPOINT" || token == "INDEX") {  // xmapfile uses WAYPOINT
                     iss >> spawn.waypointIndex;
                 }
                 else if (token == "ANGLE") {

@@ -12,6 +12,7 @@
 #include "raymath.h"
 
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -299,6 +300,62 @@ bool viewerExportTransporters(const std::vector<Transporter>& transporters, floa
     std::ofstream f(fs::path(dir) / "transporters.json");
     if (!f.is_open()) return false;
     f << doc.dump(2) << "\n";
+    return true;
+}
+
+bool viewerExportSpawns(const std::vector<DeckSpawnInfo>& decks, const char* dir) {
+    // spawns.json lives one level up from the levels3d bundle dir (…/ship1/spawns.json — where the
+    // game loads it), unlike transporters.json which sits inside the bundle dir.
+    fs::path shipDir = fs::path(dir).parent_path();
+    fs::path out = shipDir / "spawns.json";
+
+    // Preserve the existing "name" (cosmetic; the game reads it as the ship label).
+    std::string name = "Ship 1";
+    {
+        std::ifstream in(out);
+        if (in) {
+            json ex = json::parse(in, nullptr, /*allow_exceptions=*/false);
+            if (!ex.is_discarded() && ex.contains("name")) name = ex.value("name", name);
+        }
+    }
+
+    // Stable output: order decks by level number.
+    std::vector<const DeckSpawnInfo*> sorted;
+    sorted.reserve(decks.size());
+    for (const auto& d : decks) sorted.push_back(&d);
+    std::sort(sorted.begin(), sorted.end(),
+              [](const DeckSpawnInfo* a, const DeckSpawnInfo* b) { return a->level < b->level; });
+
+    std::error_code ec;
+    fs::create_directories(shipDir, ec);
+    std::ofstream f(out);
+    if (!f.is_open()) {
+        TraceLog(LOG_WARNING, "EXPORT: could not write %s", out.string().c_str());
+        return false;
+    }
+
+    // Emit one compact line per level (profile/placedDroids as inline arrays) — matches the original
+    // layout and keeps git diffs readable, instead of dump(2)'s one-int-per-line expansion.
+    f << "{\n";
+    f << "  \"name\": " << json(name).dump() << ",\n";
+    f << "  \"levels\": [\n";
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        const DeckSpawnInfo* d = sorted[i];
+        f << "    {\"level\": " << d->level
+          << ", \"profile\": " << json(d->profile).dump();   // per-type spawn counts (from PROFILE)
+        json pd = json::array();
+        for (const Spawn& s : d->placed) {
+            if (s.droidClass == 0) continue;   // classId 0 is the player device — never an AI enemy
+            pd.push_back({{"classId", s.droidClass},
+                          {"waypointIndex", s.waypointIndex},
+                          {"angle", s.angle}});
+        }
+        if (!pd.empty()) f << ", \"placedDroids\": " << pd.dump();
+        f << "}" << (i + 1 < sorted.size() ? "," : "") << "\n";
+    }
+    f << "  ]\n}\n";
+    TraceLog(LOG_INFO, "EXPORT: wrote %s (%zu decks) from xmapfile PROFILE/PLACEDROID",
+             out.string().c_str(), decks.size());
     return true;
 }
 
