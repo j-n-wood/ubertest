@@ -181,6 +181,9 @@ struct LevelRenderData {
     Mesh tileMesh;
     Model tileModel;
     bool meshValid = false;
+    // Objects3D: tileModel mesh indices tagged glass (drawtype 5) in the bundle manifest — drawn in a
+    // separate transparent env-mapped pass and skipped in the opaque pass.
+    std::vector<int> glassMeshIndices;
 
     // Waypoint visualization data
     std::vector<Vector3> waypointPositions;

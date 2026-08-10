@@ -625,10 +625,24 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
             if (parseGeometryXml(fullPath.string(), geom)) {
                 std::cout << "DOMAIN_PARSER: Loaded geometry with " << geom.areas.size() << " areas, "
                           << geom.nodes.size() << " nodes, " << geom.links.size() << " links" << std::endl;
-                currentArea->geometry.push_back(std::move(geom));
 
-                // Generate collision from geometry
-                generateCollisionFromGeometry(currentArea->geometry.back(), currentArea->collision);
+                // Merge every geometry "section" of this area into ONE PathGeometry with a unified id
+                // space — sections number from 0 independently, so keeping them separate collides on
+                // node/link/area ids (broken id labels + link table for the 2nd+ section). Gross
+                // culling can be done per floor-area/path instead of per section.
+                if (currentArea->geometry.empty()) {
+                    currentArea->geometry.push_back(std::move(geom));
+                } else {
+                    mergePathGeometry(currentArea->geometry[0], std::move(geom));
+                }
+
+                // Regenerate collision from the merged geometry (covers all sections).
+                currentArea->collision = CollisionData{};
+                generateCollisionFromGeometry(currentArea->geometry[0], currentArea->collision);
+
+                const PathGeometry& merged = currentArea->geometry[0];
+                std::cout << "DOMAIN_PARSER: merged geometry now " << merged.nodes.size() << " nodes, "
+                          << merged.links.size() << " links, " << merged.areas.size() << " areas" << std::endl;
             } else {
                 std::cerr << "Warning: Failed to load geometry: " << fullPath << std::endl;
             }

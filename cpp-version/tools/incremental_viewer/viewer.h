@@ -37,6 +37,8 @@ struct ViewerToggles {
     bool enableMiter;      // Generate wall corner miter joins (rebuild on change)
     bool showNodes;        // Draw path-node markers (spheres) + id labels for diagnosis
     bool showWaypoints;    // Draw AI waypoint graph (spheres + neighbor edges) + id labels
+    bool showWallLinks;    // Draw wall-link centrelines + id/direction/bezier labels (UV diagnosis)
+    bool showCollision;    // Draw wall collision footprint quads as wireframe (shared with the game)
 };
 
 // Validity report for the currently loaded level (geometry + collision + textures).
@@ -116,6 +118,10 @@ struct Viewer {
     bool showInspector = false;
     Vector2 inspectorScroll{0, 0};
 
+    // Node editing: click a node marker (with the N overlay on) to select it, then the arrow keys move
+    // it in the floor plane (PageUp/Dn = height); F10 saves. -1 = nothing selected.
+    int selectedNodeId = -1;
+
     // Edited-copy workflow: saved JSON decks live in saveDir (originals untouched); once a deck is
     // saved there, loads prefer it. `loadedFromEdited` reflects the current deck's source.
     std::string saveDir;
@@ -128,6 +134,8 @@ struct Viewer {
 
     // Paths
     std::string outputDir;
+    std::string exportDir;     // 'X' key combined-bundle target (default <outputDir>/export; set to the
+                               // game's levels3d to edit-and-save straight into the game assets)
     std::string texturesPath;  // Path to textures.txt
     std::string texturesBasePath;  // Base path for texture files
     float scale;

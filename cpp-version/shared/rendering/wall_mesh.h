@@ -27,7 +27,10 @@ struct WallProfile {
     int materialId = -1;
     int diffuseTextureIndex = -1;   // texture0 from materials.xml Material
     int normalTextureIndex = -1;    // texture1
-    float dsdx = 1.0f / 64.0f;      // along-path texture scale (per game unit)
+    float dsdx = 1.0f / 64.0f;      // along-path texture scale (per game unit), for tile texgen
+    int texgenType = 0;             // material TexGen0 mode: 0=tile (uniform density), 1=stretch, 2=fixed
+    int solidType = 0;              // collision: 0 = footprint (st_quad), 1 = outer-edge walls (st_walls, tunnel)
+    int drawtype = 0;               // material drawtype: 7 = bump; 5 = glass (bump + env + transparent)
     float occlusionHeight = 0.0f;
     bool cap = false;
     // End-cap geometry (mCapPoints/mCapTriangles): a flat fill of the cross-section, placed at a
@@ -58,5 +61,16 @@ GeometryMeshCollection createWallMeshes(const PathGeometry& geometry, float scal
 GeometryMeshCollection createDomainWallMeshes(const Domain& domain, float scale,
                                               const WallProfileTable& table,
                                               bool enableCaps = true, bool enableMiter = true);
+
+// One wall-collision footprint quad, corners in the game's 2D physics plane (render X, render Z).
+struct WallCollisionQuad { Vector2 v[4]; };
+
+// Build wall-collision quads for a whole domain (shared by the export + the viewer's collision
+// wireframe, so both agree). A normal profile emits one quad per path segment spanning its lateral
+// extent (real thickness). An st_walls profile (the glass tunnel) instead emits TWO edge quads along
+// the OUTER lateral edges (±extent, ~9.5-game-unit half-thickness), leaving the interior walkable.
+// Trim/border profiles (near-zero height) are skipped. Coordinates are render-metric.
+std::vector<WallCollisionQuad> buildWallCollision(const Domain& domain, const WallProfileTable& table,
+                                                  float scale);
 
 #endif // WALL_MESH_H

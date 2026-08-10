@@ -3,6 +3,8 @@
 #include "transfer_control.h"
 #include "rendering/texture_manager.h"
 #include "rendering/render_scope.h"
+#include "rendering/collision_debug.h"
+#include "rendering/glass_render.h"
 #include "level/level3d_loader.h"
 #include "level/spawn_config.h"
 #include "units/movement_tuning.h"
@@ -1894,15 +1896,11 @@ static void game_draw_lift_debug_2d(Game* game) {
 }
 
 // Collision debug overlay (toggled with V, Objects3D): draw the static wall-footprint polygons as
-// raised outlines with depth-test disabled, so they read over the rendered wall geometry instead of
-// clipping into it. rlgl batches geometry, so the batch must be FLUSHED while depth test is off —
-// otherwise the toggle is applied at EndMode3D with depth test already restored (why the earlier
-// version stayed hidden). Reads the polygons straight off the collision bodies.
+// raised outlines over the geometry. Collects each collision body's polygon shapes and hands them to
+// the SHARED drawCollisionWireframe (also used by the viewer, so the two match exactly).
 static void game_draw_collision_debug_3d(Game* game) {
     if (!game_mode_is_3d(game)) return;
-    const float y = 0.35f;
-    rlDrawRenderBatchActive();   // flush the scene at current depth state
-    rlDisableDepthTest();
+    std::vector<std::vector<Vector2>> polys;
     for (const PhysicsBody& body : game->collisionBodies) {
         if (!body.valid) continue;
         b2ShapeId shapes[8];
@@ -1910,15 +1908,12 @@ static void game_draw_collision_debug_3d(Game* game) {
         for (int i = 0; i < n; ++i) {
             if (b2Shape_GetType(shapes[i]) != b2_polygonShape) continue;
             b2Polygon p = b2Shape_GetPolygon(shapes[i]);
-            for (int k = 0; k < p.count; ++k) {
-                b2Vec2 a = p.vertices[k];
-                b2Vec2 b = p.vertices[(k + 1) % p.count];
-                DrawCylinderEx((Vector3){a.x, y, a.y}, (Vector3){b.x, y, b.y}, 0.04f, 0.04f, 5, ORANGE);
-            }
+            std::vector<Vector2> poly;
+            for (int k = 0; k < p.count; ++k) poly.push_back({p.vertices[k].x, p.vertices[k].y});
+            polys.push_back(std::move(poly));
         }
     }
-    rlDrawRenderBatchActive();   // flush the debug bars WHILE depth test is disabled
-    rlEnableDepthTest();
+    drawCollisionWireframe(polys);
 }
 
 // Debug (hold B): draw EVERY shape in the physics world — including bodies not attached to
@@ -1968,7 +1963,20 @@ void game_render_gameplay(Game* game) {
         game->currentLevel < (int)game->levelRenderData.size()) {
         LevelRenderData& data = game->levelRenderData[game->currentLevel];
         if (data.meshValid) {
-            DrawModel(data.tileModel, (Vector3){0, 0, 0}, 1.0f, WHITE);
+            if (data.glassMeshIndices.empty()) {
+                DrawModel(data.tileModel, (Vector3){0, 0, 0}, 1.0f, WHITE);
+            } else {
+                // Draw opaque meshes only; glass meshes go in a later transparent pass.
+                std::vector<bool> isGlass(data.tileModel.meshCount, false);
+                for (int gi : data.glassMeshIndices)
+                    if (gi >= 0 && gi < data.tileModel.meshCount) isGlass[gi] = true;
+                for (int i = 0; i < data.tileModel.meshCount; ++i) {
+                    if (isGlass[i]) continue;
+                    DrawMesh(data.tileModel.meshes[i],
+                             data.tileModel.materials[data.tileModel.meshMaterial[i]],
+                             data.tileModel.transform);
+                }
+            }
         }
     }
 
@@ -1984,6 +1992,24 @@ void game_render_gameplay(Game* game) {
 
     // Draw all units (player, enemies, etc.)
     game->unitManager.renderAll();
+
+    // Glass tunnels: transparent, env-mapped pass drawn AFTER the opaque geometry + units, so it
+    // tests against walls but doesn't occlude what's behind (depth-write off).
+    if (game_mode_is_3d(game) && game->currentLevel >= 0 &&
+        game->currentLevel < (int)game->levelRenderData.size()) {
+        LevelRenderData& data = game->levelRenderData[game->currentLevel];
+        if (data.meshValid && !data.glassMeshIndices.empty()) {
+            Shader shader = sceneRendererGetShader(&game->sceneRenderer);
+            beginGlassPass(shader, 1.0f);
+            for (int gi : data.glassMeshIndices) {
+                if (gi < 0 || gi >= data.tileModel.meshCount) continue;
+                DrawMesh(data.tileModel.meshes[gi],
+                         data.tileModel.materials[data.tileModel.meshMaterial[gi]],
+                         data.tileModel.transform);
+            }
+            endGlassPass(shader);
+        }
+    }
 
     // Beams: additive quads laid flat in the ground plane along each active beam. The frame
     // texture (plasma for weapon 1, lightning for weapon 8) TILES along the beam length — the

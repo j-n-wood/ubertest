@@ -17,6 +17,8 @@ set(VIEWER_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/rendering/tile_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/geometry_mesh.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/wall_mesh.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/collision_debug.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/glass_render.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/texture_loader.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/env_map.cpp
     ${CMAKE_SOURCE_DIR}/shared/utils/string_utils.cpp

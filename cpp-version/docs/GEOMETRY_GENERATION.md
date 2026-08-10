@@ -1,281 +1,186 @@
-# Geometry Generation Plan
+# Procedural geometry generation (walls, floors, collision, texturing)
 
-This document describes the plan to read PathGeometry XML files and generate raylib meshes for rendering floor areas, using the same bump-mapped lighting shader as tile rendering.
+Reference for how the converted 3D levels turn a **path network** (nodes + links + profiles) into
+renderable wall/floor meshes, their texture coordinates, tangents, and Box2D collision. This is the
+pipeline behind the `incremental_viewer` level editor and the exported `levels3d/` bundles the game's
+Objects3D mode consumes. It mirrors the legacy `uber` engine (`uber/source/uberdroid/geometryGen.cpp`,
+`material.h`).
 
-## Overview
+> Supersedes the earlier "Phase 1 floors / Phase 2 walls" plan — walls, profiles, texgen modes,
+> tangents, and collision are all implemented now.
 
-PathGeometry XML files define procedural geometry using:
-- **Nodes**: 3D waypoints (junction points)
-- **Links**: Connections between nodes (edges), optionally with Bezier control points
-- **Areas**: Floor regions bounded by link chains
-- **Profiles**: Cross-section definitions for wall extrusion (future phase)
+## Data model
 
-**Phase 1** focuses on floor areas (2D polygon tessellation).
-**Phase 2** (future) will add profile extrusion for walls and borders.
+A level is a `Domain` (`shared/scene_convert/scene_types.h`) of `Area`s. Each `Area` carries:
 
----
+- `tiles` — flat textured floor/wall **tiles** (archetiles), batched by texture.
+- `geometry : vector<PathGeometry>` — the **procedural** wall/floor network. Source for swept walls
+  and floor polygons.
+- `collision` — optional pre-baked collision (legacy; not used by the game — see *Collision*).
 
-## Source Data Format
+A `PathGeometry` holds:
 
-### Geometry XML Structure
+- `nodes` — `PathNode { id, position(Vector3) }`. Positions are **render-metric** (already through
+  `gameToRenderCoords` at JSON serialization — see *Coordinate frame*).
+- `links` — `PathLink { id, start, finish, control?(bezier), profiles[], useDefaultProfiles }`.
+  A link is a wall/floor edge between two nodes. `control` (optional) makes it a quadratic Bézier.
+- `profiles` — the geometry's **default** profile-id set (`<Profiles>` in the source). A link with an
+  empty `profiles[]` and `useDefaultProfiles == true` sweeps this default set (how interior walls are
+  declared).
+- `areas` — `PathArea { id, materialId, links[] }`. Each is a closed **floor** region (its boundary
+  links) with a material.
 
-```xml
-<Path>
-    <Nodes>
-        <Node id="0" x="544" y="976" z="1" />
-        <!-- z is height (typically 0-1 for floors) -->
-    </Nodes>
-    <Links>
-        <Link id="0" start="24" finish="26">
-            <Control x="288" y="96" z="1" />  <!-- Bezier curve -->
-            <Profile id="0" />
-            <Profile id="1" />
-        </Link>
-        <Link id="49" start="26" finish="52" defaultProfiles="0" />
-    </Links>
-    <Areas>
-        <Area id="0" materialID="0">
-            <Link id="0" />
-            <Link id="49" />
-            <!-- Links form closed polygon boundary -->
-        </Area>
-    </Areas>
-</Path>
-```
+## Coordinate frame
 
-### Materials XML (data/materials.xml)
+Geometry positions are in **render-metric** space: right-handed, **+Y up**, metres, **X-Z is the
+floor plane**. The legacy `gameToRenderCoords` transform (`×0.0254`, game-Y negated → render-Z) is
+applied **at JSON serialization** (`saveCoords`), so anything read from a loaded `Domain`/bundle is
+already metric and needs no further scaling. `1 tile = 64 game units = 64 × 0.0254 ≈ 1.6256 m`
+(`WORLD_SCALE`).
 
-```xml
-<MaterialData>
-    <Materials>
-        <Material id="0" texture0="79" texture1="1" name="floor">
-            <TexGen0 s="0.015625" t="0.015625" type="1"/>
-        </Material>
-    </Materials>
-    <Profiles>
-        <Profile id="0" default="0" materialID="0" occlusionHeight="80.0"/>
-    </Profiles>
-</MaterialData>
-```
+## Wall generation — `shared/rendering/wall_mesh.cpp`
 
----
+`createDomainWallMeshes → createWallMeshes → sweepProfile`. A **wall** is any link that produces a
+wall mesh: `!link.profiles.empty() || (link.useDefaultProfiles && geometry has default profiles)`.
+The *collision* generator and the wall-link debug overlay use this **same** predicate — keep them in
+sync or interior walls render but get no collision.
 
-## Coordinate Systems
+### 1. Path build + subdivision (uber `subdivide()` pattern)
 
-### Game Space (XML)
-- X: Horizontal (left-right)
-- Y: Horizontal (forward-backward)
-- Z: Height (vertical)
+For each wall link, build a render-space path, **subdivided into limited-length sections** (~one tile
+of arc each, `maxSec = 64 × scale`), for **both** straight and Bézier links:
 
-### Render Space (Raylib)
-- X: Horizontal (unchanged)
-- Y: Vertical (UP) ← from game Z
-- Z: Horizontal (depth) ← from game Y
+- Straight: `steps = ceil(|p1−p0| / maxSec)`, linear interpolation.
+- Bézier: `steps = ceil(controlPolygonLength / maxSec)`, quadratic evaluation.
 
-### Transform
-```cpp
-Vector3 gameToRenderCoords(float gameX, float gameY, float gameZ, float scale) {
-    return {
-        gameX * scale,      // X unchanged
-        gameZ * scale,      // Game Z → Render Y (up)
-        gameY * scale       // Game Y → Render Z (depth)
-    };
-}
-// Scale: 0.0254 (game units in inches → meters)
-```
+Uniform sectioning gives consistent vertex resolution and makes the texgen modes behave predictably
+(below). Each path point becomes one **cross-section ring**.
 
----
+### 2. Cross-section sweep + miter joins
 
-## Implementation
+`sweepProfile` emits one ring of `N` profile points per path point. Ring `i` at `path[i]`, profile
+point `k`:
 
-### Data Structures
+- lateral axis `perp = {-dir.y, dir.x}` (⊥ the local path tangent, in XZ).
+- `position = path[i] + (points[k].x · scale) · perp + (points[k].y · scale) · Yup`
+  (profile `x = lateral offset`, `y = height`, both game units).
+- At a **junction end** (`startMiter`/`endMiter`) the per-side **miter** vector replaces `perp` so the
+  corner extends to the true intersection. `computeMiterSides` handles degree-2 corners and degree-3+
+  T-junctions (each side mitres with its angular neighbour; falls back to a square perpendicular).
 
-```cpp
-// Vertex with all attributes for lighting shader
-struct GeometryVertex {
-    Vector3 position;
-    Vector3 normal;      // {0,1,0} for floors (UP)
-    Vector4 tangent;     // {1,0,0,1} for floors (+X, right-handed)
-    Vector2 uv;          // Planar-projected texture coordinates
-    Color color;         // From material (default WHITE)
-};
+Consecutive rings are stitched into quads. Dead-end links get flat **caps** (`generateCap`, winding
+oriented outward by a `facing` test).
 
-// Single mesh (one per material)
-struct GeometryMesh {
-    std::vector<GeometryVertex> vertices;
-    std::vector<uint32_t> indices;
-    int materialId;
-    BoundingBox bounds;
-};
+### 3. Outward normals (winding-independent)
 
-// Collection from one PathGeometry
-struct GeometryMeshCollection {
-    std::vector<GeometryMesh> meshes;
-    BoundingBox totalBounds;
-    bool success;
-    const char* error;
-};
-```
+`computeSmoothNormals` derives normals from triangle winding — but the swept winding's *world*
+orientation depends on path direction (via `perp`), so opposite-winding paths would flip normals
+inward. Before stitching, `sweepProfile` **detects** the winding (compare the first quad's normal to
+the profile's known-outward direction at its highest edge, whose outward ≈ +Y) and **flips all swept
+triangles** if inward. Result: outward normals + correct front-face culling regardless of winding.
 
-### Area Tessellation Algorithm
+### 4. Texture coordinates (texgen modes)
 
-1. **Collect boundary vertices** from area's link chain:
-   ```
-   for each link in area.links:
-       if link has control point:
-           subdivide Bezier curve into segments
-       add node positions to boundary polygon
-   ```
+`V` (t) = the profile point's `texcoordT[k]` (runs across/over the cross-section). `U` (s) is
+**uniform per ring** and selected by the material's `<TexGen0 type>` (`WallProfile.texgenType`):
 
-2. **Transform to render space** using `gameToRenderCoords()`
+- **tile (0)** — `u = centreline length · dsdx`: uniform texel **density** along the wall length.
+- **stretch (1)** — `u = section index`: one texture span **fitted per path section** (the default
+  wall profile 0 → material 0 is `type=1`). Bézier/straight both section uniformly, so this tiles
+  evenly.
+- **fixed (2)** — no known use here; treated as tile.
 
-3. **Tessellate polygon**:
-   - Simple fan triangulation for convex polygons
-   - Ear-clipping for non-convex polygons
+**Miter & U:** U is taken from the **centreline** (which the corner miter does *not* lengthen), so the
+miter is ignored — it just stretches the texture over the corner rather than injecting a per-side U
+offset that would *propagate* down the wall (that propagation was the systematic opposite-sided skew
+seen with per-vertex accumulated U).
+*Known deviation from uber:* legacy **tile** mode included the miter's extra length in U (corner-
+accurate density). Current tile mode is centreline-based like stretch. If a tile wall needs corner
+density, reinstate per-vertex projected length **for tile only** (guard the propagation).
 
-4. **Generate vertex attributes**:
-   - Normal: `{0, 1, 0}` (UP for all floor vertices)
-   - Tangent: `{1, 0, 0, 1}` (aligned with +X/U texture axis)
-   - UV: Planar projection using material TexGen scale
-   - Color: WHITE (texture provides color)
+**Trim/border profiles** (near-zero height, e.g. floor borders): swept UVs skew badly on a flat,
+laterally-wide strip, so these use **planar XZ UVs** (`position · 1/64`, world-X tangent), exactly like
+the floor. Detected by profile vertical extent `< 2` game units (same test the collision trim filter
+uses).
 
-### Bezier Curve Subdivision
+### 5. Tangents — `computeVertexTangents` (Lengyel, from UV + position)
 
-Links with `<Control>` elements define quadratic Bezier curves:
+raylib's `GenMeshTangents` is a coarse, non-mikktspace derivation and is **skipped once a mesh has
+tangents**, so tangents are computed here the way uber did — from **position edges + UV gradients**:
+accumulate a per-triangle tangent/bitangent, Gram-Schmidt the tangent against the vertex normal, and
+derive handedness `w` from the bitangent sign. This keeps tangent-space normal mapping consistent
+across **path joins and winding** (an explicit path-direction tangent flips the bump lighting on
+opposite-winding neighbours — the join "inversion").
 
-```cpp
-Vector3 evaluateQuadraticBezier(Vector3 p0, Vector3 control, Vector3 p1, float t) {
-    float u = 1.0f - t;
-    return p0 * (u * u) + control * (2 * u * t) + p1 * (t * t);
-}
+## Floor generation — `shared/rendering/geometry_mesh.cpp`
 
-// Subdivide into 8 segments for smooth curves
-for (int i = 0; i <= 8; i++) {
-    float t = i / 8.0f;
-    vertices.push_back(evaluateQuadraticBezier(start, control, end, t));
-}
-```
+`PathArea` boundaries triangulate to floor polygons (fan for convex, ear-clip for non-convex). Floors
+use **planar XZ texgen** (`DEFAULT_FLOOR_MATERIAL`, `texgenScale = 1/64`) and a fixed `FLOOR_TANGENT`.
+Floors are **walkable** — they are *not* solid collision.
 
-### UV Generation
+## Materials & profiles — `uber/uberdroid/data/materials.xml`
 
-Planar projection matching original game's TexGen type 1:
+- `<Material id texture0 texture1 drawtype type>` with children `<TexGen0 s t type>` / `<TexGen1 …>`.
+  `texture0` = **diffuse**, `texture1` = **bump/normal**. `drawtype 7` = bump; `drawtype 5` = bump +
+  environment map + additive (env/additive **not** replicated — see below). `TexGen*.type` =
+  `txg_type_t { tile=0, stretch=1, fixed=2 }` (`material.h`).
+- `<Profile id default materialID occlusionHeight>` — `default` selects a built-in cross-section
+  **shape** (`standardShape()` in `wall_mesh.cpp`): 0 = arch wall (32 wide × 60 tall), 1/2 =
+  border-left/right trim (~0.3 tall), 3 = curved tunnel, 4 = box wall, 5 = pillar, … `materialID`
+  links the profile to its textures + texgen mode.
+- Archetiles (`tiles.txt`, `archetile_parser.cpp`) carry a texture **trio** `diffuse bump spec` →
+  `textureIndex1` (diffuse) / `textureIndex2` (bump). Specular is currently ignored.
 
-```cpp
-Vector2 generatePlanarUV(Vector3 renderPos, float scaleS, float scaleT) {
-    // Project onto X-Z plane (floor is horizontal in render space)
-    return { renderPos.x * scaleS, renderPos.z * scaleT };
-}
+## Collision generation — wall footprint polygons
 
-// Material scales from materials.xml:
-// Floor:  s=0.015625, t=0.015625 (64 units per texture repeat)
-// Wall:   s=0.02, t=0.02 (50 units per texture repeat)
-// Border: s=0.015625, t=0.015625
-```
+`writeCollision` (`tools/incremental_viewer/level_export.cpp`) exports **wall footprint quads**, not
+floor areas:
 
----
+- For each wall link, rebuild the same subdivided path, sweep it by the profile's **lateral extent**
+  (`min/max points[].x · scale`) → one convex quad per path segment. Real wall **thickness**, follows
+  the Bézier.
+- **Trim excluded**: profiles with vertical extent `< 2` game units (borders) are skipped so they
+  don't create or widen collision.
+- Coordinates are the game's 2D physics plane (render X, render Z); the game builds them as static
+  `b2` polygons (`physics_create_static_polygon`). Floor areas are deliberately not solid.
 
-## API
+(The `PathGeometry`-embedded `CollisionData` from `generateCollisionFromGeometry` is legacy/unused by
+the game — the footprint-quad export above is authoritative.)
 
-```cpp
-// Generate meshes from PathGeometry
-GeometryMeshCollection createGeometryMeshes(
-    const PathGeometry& geometry,
-    float scale = SCALE_UNITS_TO_METERS
-);
+## Bundle export + JSON
 
-// Load as raylib Model
-Model loadGeometryModel(const GeometryMeshCollection& collection);
+`viewerExportLevel` writes per-deck `levels3d/level_<n>/`:
+`level_<n>.gltf` (geometry + per-material diffuse **and** tangent-space `normalTexture`, TANGENT
+attribute), `.manifest.json`, `.collision.json`, `.entities.json` (waypoints/spawns/doors/chargers/
+consoles), plus a ship-wide `levels3d/transporters.json` and a **shared** `levels3d/textures/` folder
+(`texture_dir = "../textures"`, deduped, normals as lossless PNG).
 
-// Apply lighting shader with bump mapping
-void applyGeometryShader(Model* model, SceneRenderer* renderer);
+## Import / export / regeneration
 
-// Cleanup
-void freeGeometryMeshCollection(GeometryMeshCollection* collection);
-```
+- The viewer reads **legacy** source (`xmapfile*.txt` geometry XML, `tiles.txt`, `materials.xml`) and
+  writes/reads the **new JSON** (`domain.json` / edited `level_<n>.json`).
+- The procedural geometry **fully round-trips through JSON**: `PathGeometry` (`nodes`, `links` incl.
+  `control`/`profiles`/`useDefaultProfiles`, `profiles`, `areas`) is serialized under
+  `areas[].geometry[]` (`scene_json.cpp` `pathGeometryToJson`/`jsonToPathGeometry`). So **wall/floor
+  geometry can be regenerated from the JSON alone** — no need to re-parse the legacy XML.
+- **Texgen inputs preserved:** node/control positions (render-metric), link profile assignment, and
+  `PathProfile.points`. **Not yet** in the domain JSON: the material `TexGen` mode/scale and the
+  `standardShape` cross-sections — these still come from `materials.xml` (the `WallProfileTable`). To
+  make regeneration fully self-contained (mode + shape + dsdx per profile), extend the profile/material
+  JSON to carry `texgenType`, `dsdx`, and the resolved cross-section points.
+- Not serialized (reset to defaults on load): `Objects::generic`, some effect/console/destructible
+  sub-fields (see `scene_json.cpp`).
 
----
+## Not yet replicated from uber
 
-## Rendering
+- `drawtype 5` **environment-mapped / additive** materials (glass) — bump is applied, env map +
+  additive blending are not (`envmapblue.jpg` is copied but unused).
+- Specular (third archetile texture / material specular colour).
+- Tile-mode **corner** density (uses centreline U; see *Texture coordinates*).
 
-Uses the same `lighting.vs/fs` shader as tiles:
-- Diffuse texture from material `texture0`
-- Normal/bump map from material `texture1`
-- Blinn-Phong lighting with bump mapping
+## Viewer diagnostics
 
-Vertex attributes match shader expectations:
-- `vertexPosition` → position
-- `vertexNormal` → normal (0,1,0 for floors)
-- `vertexTangent` → tangent (1,0,0,1 for floors)
-- `vertexTexCoord` → uv
-
----
-
-## JSON Output Format
-
-For saving generated geometry in a modern format:
-
-```json
-{
-  "version": "1.0",
-  "type": "PathGeometryMesh",
-  "sourceFile": "lvl0section0.xml",
-  "meshes": [
-    {
-      "materialId": 0,
-      "primitiveType": "triangles",
-      "vertexCount": 24,
-      "indexCount": 36,
-      "vertices": {
-        "position": [[x,y,z], ...],
-        "normal": [[0,1,0], ...],
-        "tangent": [[1,0,0,1], ...],
-        "texcoord": [[u,v], ...]
-      },
-      "indices": [0, 1, 2, ...],
-      "bounds": {
-        "min": [x, y, z],
-        "max": [x, y, z]
-      }
-    }
-  ],
-  "materials": [
-    {
-      "id": 0,
-      "name": "floor",
-      "diffuseTexture": 79,
-      "normalTexture": 1,
-      "texgenScale": [0.015625, 0.015625]
-    }
-  ]
-}
-```
-
----
-
-## Files to Modify/Create
-
-| File | Action |
-|------|--------|
-| `shared/rendering/geometry_mesh.h` | **Create** - API and structures |
-| `shared/rendering/geometry_mesh.cpp` | **Create** - Implementation |
-| `shared/scene_convert/scene_types.h` | **Modify** - Add GeometryMaterial struct |
-| `cmake/SharedSources.cmake` | **Modify** - Add geometry_mesh.cpp |
-| `tools/incremental_viewer/viewer.cpp` | **Modify** - Render geometry meshes |
-
----
-
-## Future: Profile Extrusion (Phase 2)
-
-For walls, borders, pillars:
-1. Load profile cross-sections from materials.xml `default` attribute
-2. Extrude profile points along subdivided link paths
-3. Generate side-facing normals based on path direction
-4. Compute tangents from extrusion direction
-5. Create collision geometry from solid types (quad, walls, points)
-
-Profile types from original code:
-- `default=0`: Floor edge profile
-- `default=1`: Wall profile (vertical extrusion)
-- `default=2`: Border profile (decorative trim)
-- `default=3`: Glass wall
-- etc.
+- **N** — path-node markers + node-id labels.
+- **K** — wall-link overlay: centreline (green start → red finish), yellow bezier control point, and a
+  label `L<id> <start>-><finish> [B]`. Use to pin UV/normal artefacts to exact links/nodes.
+- **J** — dump per-link profile assignment. **F9** — reload deck from source XML.

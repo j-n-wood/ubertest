@@ -40,6 +40,8 @@ static void printHelp() {
     printf("  --export-all <dir>     Headless: load + export every deck to <dir>, then exit\n");
     printf("  --transport <path>     With --export-all: also export the ship transport.txt lift\n");
     printf("                         network to <dir>/transporters.json (render-metric)\n");
+    printf("  --export-dir <dir>     Interactive: the 'X' key writes the current deck's bundle here\n");
+    printf("                         (e.g. the game's levels3d) instead of <output>/export\n");
     printf("  --export-split <dir>   Headless: split export (one file per shape) every deck\n");
     printf("  --materials <path>     materials.xml for wall profiles (default: <srcDir>/../data)\n");
     printf("  --no-caps              Disable wall end caps\n");
@@ -65,6 +67,10 @@ static void printHelp() {
     printf("  U             Toggle class-14 reference unit (size reference)\n");
     printf("  K / M         Toggle wall caps / miter joins (rebuilds the deck)\n");
     printf("  N             Toggle path-node markers + id labels (diagnosis)\n");
+    printf("  (N on)        Left-click a node to select it; arrows move it in the floor plane,\n");
+    printf("                PageUp/Dn = height, Shift = x16 step (game units); F10 saves\n");
+    printf("  G             Toggle wall-link overlay (id/direction/bezier)\n");
+    printf("  C             Toggle collision footprint wireframe\n");
     printf("  F9            Reload the current deck from source XML (after editing it)\n");
     printf("  J             Dump per-link profile assignment + trim side to console\n");
     printf("  L             Toggle link inspector: edit/add/remove/reverse links; Save / Save All / Revert\n");
@@ -94,6 +100,7 @@ int main(int argc, char* argv[]) {
     bool loadReference = true;
     bool loadTextures = true;
     const char* exportAllDir = nullptr;    // --export-all <dir>: headless export every deck, then exit
+    const char* exportDir = nullptr;       // --export-dir <dir>: interactive 'X' key bundle target
     const char* transportPath = nullptr;   // --transport <path>: ship transport.txt (lift network)
     const char* exportSplitDir = nullptr;  // --export-split <dir>: headless split export every deck
     const char* materialsPath = nullptr; // --materials <path>: materials.xml (for wall profiles)
@@ -125,6 +132,8 @@ int main(int argc, char* argv[]) {
             loadTextures = false;
         } else if (strcmp(argv[i], "--export-all") == 0 && i + 1 < argc) {
             exportAllDir = argv[++i];
+        } else if (strcmp(argv[i], "--export-dir") == 0 && i + 1 < argc) {
+            exportDir = argv[++i];
         } else if (strcmp(argv[i], "--transport") == 0 && i + 1 < argc) {
             transportPath = argv[++i];
         } else if (strcmp(argv[i], "--export-split") == 0 && i + 1 < argc) {
@@ -184,6 +193,7 @@ int main(int argc, char* argv[]) {
 
     // Set up in-app deck cycling: scan the directory that holds xmapfile{N}.txt.
     viewer.outputDir = outputDir;
+    viewer.exportDir = exportDir ? exportDir : "";   // 'X' key bundle target (empty => <output>/export)
     viewer.scale = scale;
     // Edited-deck JSON output folder (originals untouched). Default: <output>/edited.
     viewer.saveDir = saveDir ? saveDir : (fs::path(outputDir) / "edited").string();

@@ -3,6 +3,7 @@
   "level": 4,
   "meshes": [
     {
+      "glass": false,
       "id": 0,
       "index": 0,
       "kind": "floor",
@@ -20,6 +21,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 1,
       "index": 1,
       "kind": "floor",
@@ -37,6 +39,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 2,
       "index": 2,
       "kind": "floor",
@@ -54,6 +57,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 3,
       "index": 3,
       "kind": "floor",
@@ -71,6 +75,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 4,
       "index": 4,
       "kind": "floor",
@@ -88,6 +93,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 5,
       "index": 5,
       "kind": "floor",
@@ -105,6 +111,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 6,
       "index": 6,
       "kind": "floor",
@@ -122,6 +129,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 7,
       "index": 7,
       "kind": "floor",
@@ -139,6 +147,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 8,
       "index": 8,
       "kind": "floor",
@@ -156,6 +165,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 9,
       "index": 9,
       "kind": "floor",
@@ -173,6 +183,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 10,
       "index": 10,
       "kind": "floor",
@@ -190,6 +201,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 11,
       "index": 11,
       "kind": "floor",
@@ -207,6 +219,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 12,
       "index": 12,
       "kind": "floor",
@@ -224,6 +237,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 0,
       "index": 13,
       "kind": "wall",
@@ -236,15 +250,16 @@
       "min": [
         0.40639999508857727,
         0.02539999969303608,
-        -0.6624968647956848
+        -0.6624969244003296
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 1,
       "index": 14,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         9.055218696594238,
         0.03302000090479851,
@@ -253,11 +268,12 @@
       "min": [
         0.0,
         0.030479999259114265,
-        0.04675361141562462
+        0.04675355181097984
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 2,
       "index": 15,
       "kind": "wall",
@@ -268,47 +284,50 @@
         -0.3555999994277954
       ],
       "min": [
-        6.909062385559082,
-        0.02539999783039093,
-        -4.891402721405029
+        6.910431861877441,
+        0.02539999969303608,
+        -4.913183689117432
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 3,
       "index": 16,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
-        9.31429672241211,
+        9.313961029052734,
         0.03302000090479851,
         -0.7922365665435791
       ],
       "min": [
-        7.72133731842041,
-        0.030479997396469116,
-        -4.906005382537842
+        7.719967842102051,
+        0.030479999259114265,
+        -4.9495673179626465
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 4,
       "index": 17,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
-        8.290754318237305,
+        8.21954345703125,
         0.03302000090479851,
-        -0.3661024868488312
+        -0.6624968647956848
       ],
       "min": [
-        6.502924919128418,
-        0.030479997396469116,
-        -4.862197399139404
+        6.505663871765137,
+        0.030479999259114265,
+        -4.840416431427002
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 5,
       "index": 18,
       "kind": "wall",
@@ -326,10 +345,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 6,
       "index": 19,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         12.023663520812988,
         0.03302000090479851,
@@ -343,10 +363,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 7,
       "index": 20,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         12.528672218322754,
         0.03302000090479851,
@@ -360,6 +381,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 8,
       "index": 21,
       "kind": "wall",
@@ -377,10 +399,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 9,
       "index": 22,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
@@ -394,6 +417,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 10,
       "index": 23,
       "kind": "wall",
@@ -411,10 +435,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 11,
       "index": 24,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
@@ -428,6 +453,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 12,
       "index": 25,
       "kind": "wall",
@@ -445,10 +471,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 13,
       "index": 26,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -462,6 +489,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 14,
       "index": 27,
       "kind": "wall",
@@ -479,10 +507,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 15,
       "index": 28,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -496,6 +525,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 16,
       "index": 29,
       "kind": "wall",
@@ -513,10 +543,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 17,
       "index": 30,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -530,10 +561,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 18,
       "index": 31,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         28.04159927368164,
         0.03302000090479851,
@@ -547,6 +579,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 19,
       "index": 32,
       "kind": "wall",
@@ -558,16 +591,17 @@
       ],
       "min": [
         38.20159912109375,
-        0.02539999783039093,
+        0.02539999969303608,
         -7.673962593078613
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 20,
       "index": 33,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         44.804813385009766,
         0.03302000090479851,
@@ -575,12 +609,13 @@
       ],
       "min": [
         38.33903121948242,
-        0.030479997396469116,
+        0.030479999259114265,
         -6.911938190460205
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 21,
       "index": 34,
       "kind": "wall",
@@ -598,10 +633,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 22,
       "index": 35,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         38.47645950317383,
         0.03302000090479851,
@@ -615,6 +651,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 23,
       "index": 36,
       "kind": "wall",
@@ -632,10 +669,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 24,
       "index": 37,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         45.51679992675781,
         0.03302000090479851,
@@ -649,10 +687,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 25,
       "index": 38,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         44.29759979248047,
         0.03302000090479851,
@@ -666,6 +705,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 26,
       "index": 39,
       "kind": "wall",
@@ -683,6 +723,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 27,
       "index": 40,
       "kind": "wall",
@@ -700,10 +741,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 28,
       "index": 41,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         39.007102966308594,
         0.03302000090479851,
@@ -712,15 +754,16 @@
       "min": [
         38.58259201049805,
         0.030479999259114265,
-        -9.758679389953613
+        -9.758678436279297
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 29,
       "index": 42,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         37.79338073730469,
         0.03302000090479851,
@@ -734,6 +777,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 30,
       "index": 43,
       "kind": "wall",
@@ -751,14 +795,15 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 31,
       "index": 44,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         39.007102966308594,
         0.03302000090479851,
-        -11.374120712280273
+        -11.37412166595459
       ],
       "min": [
         38.58259201049805,
@@ -768,10 +813,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 32,
       "index": 45,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         37.793365478515625,
         0.03302000090479851,
@@ -785,6 +831,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 33,
       "index": 46,
       "kind": "wall",
@@ -796,16 +843,17 @@
       ],
       "min": [
         38.20159912109375,
-        0.02539999783039093,
+        0.02539999969303608,
         -15.82636547088623
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 34,
       "index": 47,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         44.804813385009766,
         0.03302000090479851,
@@ -813,12 +861,13 @@
       ],
       "min": [
         38.337249755859375,
-        0.030479997396469116,
+        0.030479999259114265,
         -16.209531784057617
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 35,
       "index": 48,
       "kind": "wall",
@@ -830,16 +879,17 @@
       ],
       "min": [
         44.70399856567383,
-        0.02539999783039093,
+        0.02539999969303608,
         -9.222434997558594
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 36,
       "index": 49,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         52.01919937133789,
         0.03302000090479851,
@@ -847,12 +897,13 @@
       ],
       "min": [
         44.7544059753418,
-        0.030479997396469116,
+        0.030479999259114265,
         -8.659164428710938
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 37,
       "index": 50,
       "kind": "wall",
@@ -870,10 +921,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 38,
       "index": 51,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         52.01919937133789,
         0.03302000090479851,
@@ -887,6 +939,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 39,
       "index": 52,
       "kind": "wall",
@@ -898,16 +951,17 @@
       ],
       "min": [
         44.70399856567383,
-        0.02539999783039093,
+        0.02539999969303608,
         -14.22086238861084
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 40,
       "index": 53,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         52.01919937133789,
         0.03302000090479851,
@@ -915,12 +969,13 @@
       ],
       "min": [
         44.7544059753418,
-        0.030479997396469116,
+        0.030479999259114265,
         -14.624123573303223
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 41,
       "index": 54,
       "kind": "wall",
@@ -938,10 +993,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 42,
       "index": 55,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         45.51679992675781,
         0.03302000090479851,
@@ -955,10 +1011,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 43,
       "index": 56,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         44.29759979248047,
         0.03302000090479851,
@@ -972,6 +1029,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 44,
       "index": 57,
       "kind": "wall",
@@ -989,10 +1047,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 45,
       "index": 58,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         38.472904205322266,
         0.03302000090479851,
@@ -1006,6 +1065,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 46,
       "index": 59,
       "kind": "wall",
@@ -1023,10 +1083,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 47,
       "index": 60,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         28.04159927368164,
         0.03302000090479851,
@@ -1040,10 +1101,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 48,
       "index": 61,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -1057,6 +1119,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 49,
       "index": 62,
       "kind": "wall",
@@ -1074,10 +1137,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 50,
       "index": 63,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -1091,6 +1155,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 51,
       "index": 64,
       "kind": "wall",
@@ -1108,10 +1173,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 52,
       "index": 65,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         29.260799407958984,
         0.03302000090479851,
@@ -1125,6 +1191,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 53,
       "index": 66,
       "kind": "wall",
@@ -1142,10 +1209,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 54,
       "index": 67,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         11.785599708557129,
         0.03302000090479851,
@@ -1159,10 +1227,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 55,
       "index": 68,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
@@ -1176,6 +1245,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 56,
       "index": 69,
       "kind": "wall",
@@ -1193,10 +1263,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 57,
       "index": 70,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         11.785599708557129,
         0.03302000090479851,
@@ -1210,10 +1281,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 58,
       "index": 71,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
@@ -1227,6 +1299,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 59,
       "index": 72,
       "kind": "wall",
@@ -1244,10 +1317,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 60,
       "index": 73,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
@@ -1261,6 +1335,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 61,
       "index": 74,
       "kind": "wall",
@@ -1271,30 +1346,32 @@
         -19.967531204223633
       ],
       "min": [
-        0.40639999508857727,
+        0.4064004123210907,
         0.02539999969303608,
         -22.4141845703125
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 62,
       "index": 75,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         13.004799842834473,
         0.03302000090479851,
         -20.672468185424805
       ],
       "min": [
-        0.0,
+        4.172325134277344e-07,
         0.030479999259114265,
         -22.882766723632813
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 63,
       "index": 76,
       "kind": "wall",
@@ -1312,10 +1389,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 64,
       "index": 77,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         0.40639999508857727,
         0.03302000090479851,
@@ -1329,6 +1407,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 65,
       "index": 78,
       "kind": "wall",
@@ -1346,10 +1425,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 66,
       "index": 79,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
@@ -1363,10 +1443,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 67,
       "index": 80,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         7.315199851989746,
         0.03302000090479851,
@@ -1380,6 +1461,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 68,
       "index": 81,
       "kind": "wall",
@@ -1397,10 +1479,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 69,
       "index": 82,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         8.128000259399414,
         0.03302000090479851,
@@ -1414,10 +1497,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 70,
       "index": 83,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         8.128000259399414,
         0.03302000090479851,
@@ -1431,6 +1515,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 71,
       "index": 84,
       "kind": "wall",
@@ -1448,10 +1533,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 72,
       "index": 85,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         8.128000259399414,
         0.03302000090479851,
@@ -1465,10 +1551,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 73,
       "index": 86,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
@@ -1482,6 +1569,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 74,
       "index": 87,
       "kind": "wall",
@@ -1499,10 +1587,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 75,
       "index": 88,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         0.40639999508857727,
         0.03302000090479851,
@@ -1516,6 +1605,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 76,
       "index": 89,
       "kind": "wall",
@@ -1523,7 +1613,7 @@
       "max": [
         1.2192000150680542,
         1.549399971961975,
-        1.2817975282669067
+        1.2817978858947754
       ],
       "min": [
         0.40639999508857727,
@@ -1533,14 +1623,15 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 77,
       "index": 90,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         0.40639999508857727,
         0.03302000090479851,
-        1.7507950067520142
+        1.7507953643798828
       ],
       "min": [
         0.0,
@@ -1550,6 +1641,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 78,
       "index": 91,
       "kind": "wall",
@@ -1567,10 +1659,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 79,
       "index": 92,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         8.128000259399414,
         0.03302000090479851,
@@ -1584,10 +1677,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 80,
       "index": 93,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
@@ -1601,6 +1695,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 81,
       "index": 94,
       "kind": "wall",
@@ -1611,47 +1706,50 @@
         -6.908799648284912
       ],
       "min": [
-        0.8127999901771545,
+        0.8127999305725098,
         0.02539999969303608,
         -7.72160005569458
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 82,
       "index": 95,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
         -7.72160005569458
       ],
       "min": [
-        1.2192000150680542,
+        1.2191998958587646,
         0.030479999259114265,
         -8.128000259399414
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 83,
       "index": 96,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
         -6.502399921417236
       ],
       "min": [
-        1.2192000150680542,
+        1.2191998958587646,
         0.030479999259114265,
         -6.908799648284912
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 84,
       "index": 97,
       "kind": "wall",
@@ -1669,10 +1767,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 85,
       "index": 98,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         8.128000259399414,
         0.03302000090479851,
@@ -1686,10 +1785,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 86,
       "index": 99,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         6.908799648284912,
         0.03302000090479851,
@@ -1703,6 +1803,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 87,
       "index": 100,
       "kind": "wall",
@@ -1720,10 +1821,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 88,
       "index": 101,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         26.009599685668945,
         0.03302000090479851,
@@ -1737,10 +1839,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 89,
       "index": 102,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         24.7903995513916,
         0.03302000090479851,
@@ -1754,6 +1857,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 90,
       "index": 103,
       "kind": "wall",
@@ -1771,10 +1875,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 91,
       "index": 104,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         26.009599685668945,
         0.03302000090479851,
@@ -1788,10 +1893,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 92,
       "index": 105,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         24.7903995513916,
         0.03302000090479851,
@@ -1805,6 +1911,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 93,
       "index": 106,
       "kind": "wall",
@@ -1822,10 +1929,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 94,
       "index": 107,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         24.7903995513916,
         0.03302000090479851,
@@ -1839,10 +1947,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 95,
       "index": 108,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         26.009599685668945,
         0.03302000090479851,
@@ -1856,6 +1965,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 96,
       "index": 109,
       "kind": "wall",
@@ -1873,10 +1983,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 97,
       "index": 110,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         10.15999984741211,
         0.03302000090479851,
@@ -1890,10 +2001,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 98,
       "index": 111,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         11.379199981689453,
         0.03302000090479851,
@@ -1907,6 +2019,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 99,
       "index": 112,
       "kind": "wall",
@@ -1924,10 +2037,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 100,
       "index": 113,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         16.256000518798828,
         0.03302000090479851,
@@ -1941,10 +2055,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 101,
       "index": 114,
       "kind": "wall",
-      "material": 0,
+      "material": 1,
       "max": [
         16.256000518798828,
         0.03302000090479851,
@@ -1958,10 +2073,11 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 0,
       "index": 115,
       "kind": "tile",
-      "material": 1,
+      "material": 2,
       "max": [
         45.51679992675781,
         0.02539999969303608,
@@ -1975,10 +2091,11 @@
       "textureIndex": 7
     },
     {
+      "glass": false,
       "id": 1,
       "index": 116,
       "kind": "tile",
-      "material": 2,
+      "material": 3,
       "max": [
         17.88159942626953,
         0.02539999969303608,
@@ -1992,10 +2109,11 @@
       "textureIndex": 8
     },
     {
+      "glass": false,
       "id": 2,
       "index": 117,
       "kind": "tile",
-      "material": 3,
+      "material": 4,
       "max": [
         37.388797760009766,
         0.02539999969303608,
@@ -2009,10 +2127,11 @@
       "textureIndex": 34
     },
     {
+      "glass": false,
       "id": 3,
       "index": 118,
       "kind": "tile",
-      "material": 3,
+      "material": 5,
       "max": [
         13.004799842834473,
         0.02539999969303608,
@@ -2026,10 +2145,11 @@
       "textureIndex": 34
     },
     {
+      "glass": false,
       "id": 4,
       "index": 119,
       "kind": "tile",
-      "material": 4,
+      "material": 6,
       "max": [
         13.004799842834473,
         0.02539999969303608,
@@ -2043,6 +2163,7 @@
       "textureIndex": 54
     },
     {
+      "glass": false,
       "id": 5,
       "index": 120,
       "kind": "tile",

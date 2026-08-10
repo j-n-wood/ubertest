@@ -37,7 +37,9 @@ struct GeometryVertex {
 struct GeometryMesh {
     std::vector<GeometryVertex> vertices;
     std::vector<uint32_t> indices;
-    int materialId;
+    int materialId;              // diffuse texture index (texture0)
+    int normalMaterialId = -1;   // bump/normal texture index (texture1); -1 = none
+    bool glass = false;          // material drawtype 5: transparent + env-mapped (glass tunnel)
     BoundingBox bounds;
 };
 
@@ -65,6 +67,7 @@ struct GeometryBatchState {
     int materialId;
     int triangleCount;
     bool valid;
+    bool glass = false;   // drawtype 5 (tunnel): drawn in the transparent env-mapped pass
 };
 
 struct GeometryMeshState {

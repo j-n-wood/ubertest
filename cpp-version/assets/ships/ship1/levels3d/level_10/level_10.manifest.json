@@ -3,6 +3,7 @@
   "level": 10,
   "meshes": [
     {
+      "glass": false,
       "id": 0,
       "index": 0,
       "kind": "floor",
@@ -20,6 +21,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 1,
       "index": 1,
       "kind": "floor",
@@ -37,6 +39,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 0,
       "index": 2,
       "kind": "wall",
@@ -54,6 +57,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 1,
       "index": 3,
       "kind": "wall",
@@ -71,6 +75,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 2,
       "index": 4,
       "kind": "wall",
@@ -88,6 +93,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 3,
       "index": 5,
       "kind": "wall",
@@ -95,7 +101,7 @@
       "max": [
         1.5748000144958496,
         1.549399971961975,
-        -0.40639999508857727
+        -0.4063999354839325
       ],
       "min": [
         0.40639999508857727,
@@ -105,6 +111,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 4,
       "index": 6,
       "kind": "wall",
@@ -122,6 +129,7 @@
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 5,
       "index": 7,
       "kind": "wall",
@@ -132,13 +140,14 @@
         -6.553199768066406
       ],
       "min": [
-        0.40639999508857727,
+        0.4063994586467743,
         0.02539999969303608,
         -7.72160005569458
       ],
       "textureIndex": 79
     },
     {
+      "glass": false,
       "id": 0,
       "index": 8,
       "kind": "tile",
@@ -156,10 +165,11 @@
       "textureIndex": 34
     },
     {
+      "glass": false,
       "id": 1,
       "index": 9,
       "kind": "tile",
-      "material": 1,
+      "material": 2,
       "max": [
         34.13759994506836,
         0.02539999969303608,
@@ -173,10 +183,11 @@
       "textureIndex": 34
     },
     {
+      "glass": false,
       "id": 2,
       "index": 10,
       "kind": "tile",
-      "material": 2,
+      "material": 3,
       "max": [
         3.251199960708618,
         0.02539999969303608,

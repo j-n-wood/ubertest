@@ -300,3 +300,43 @@ void generateCollisionFromGeometry(const PathGeometry& geometry, CollisionData& 
         }
     }
 }
+
+void mergePathGeometry(PathGeometry& dst, PathGeometry src) {
+    // Offsets = one past the current maximum id in each space (0 when dst is empty).
+    int nodeOff = 0, linkOff = 0, areaOff = 0;
+    for (const auto& n : dst.nodes) if (n.id + 1 > nodeOff) nodeOff = n.id + 1;
+    for (const auto& l : dst.links) if (l.id + 1 > linkOff) linkOff = l.id + 1;
+    for (const auto& a : dst.areas) if (a.id + 1 > areaOff) areaOff = a.id + 1;
+
+    for (auto& n : src.nodes) { n.id += nodeOff; dst.nodes.push_back(n); }
+    for (auto& l : src.links) {
+        l.id += linkOff;
+        l.start += nodeOff;
+        l.finish += nodeOff;
+        dst.links.push_back(std::move(l));
+    }
+    // Profile ids reference the global materials.xml profile table — union by id, do not offset.
+    for (auto& p : src.profiles) {
+        bool exists = false;
+        for (const auto& q : dst.profiles) if (q.id == p.id) { exists = true; break; }
+        if (!exists) dst.profiles.push_back(std::move(p));
+    }
+    for (auto& a : src.areas) {
+        a.id += areaOff;
+        for (auto& lid : a.links) lid += linkOff;
+        dst.areas.push_back(std::move(a));
+    }
+    if (!src.sourceFile.empty())
+        dst.sourceFile += (dst.sourceFile.empty() ? std::string() : " + ") + src.sourceFile;
+}
+
+void mergeDomainSections(Domain& domain) {
+    for (auto& area : domain.areas) {
+        if (area.geometry.size() <= 1) continue;
+        PathGeometry merged = std::move(area.geometry[0]);
+        for (size_t i = 1; i < area.geometry.size(); ++i)
+            mergePathGeometry(merged, std::move(area.geometry[i]));
+        area.geometry.clear();
+        area.geometry.push_back(std::move(merged));
+    }
+}

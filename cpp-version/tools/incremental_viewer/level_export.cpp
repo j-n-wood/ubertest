@@ -16,8 +16,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 using json = nlohmann::json;
@@ -27,10 +29,12 @@ namespace {
 
 // One mesh destined for the exported GLTF, tagged for the manifest.
 struct ShapeMesh {
-    Mesh mesh;          // raylib CPU mesh (owned here; unloaded after export)
-    std::string kind;   // "floor" | "tile"
-    int id;             // area index or tile-batch index
-    int textureIndex;   // legacy texture index (for material grouping / URIs)
+    Mesh mesh;                    // raylib CPU mesh (owned here; unloaded after export)
+    std::string kind;             // "floor" | "tile"
+    int id;                       // area index or tile-batch index
+    int textureIndex;             // legacy diffuse texture index (material grouping / URIs)
+    int normalTextureIndex = -1;  // legacy bump/normal texture index (-1 = none)
+    bool glass = false;           // material drawtype 5: transparent + env-mapped (glass tunnel)
 };
 
 // Build one GeometryMesh per PathArea by feeding a single-area copy through the existing
@@ -54,6 +58,7 @@ void collectFloorMeshes(const Domain& domain, float scale, std::vector<ShapeMesh
                     em.kind = "floor";
                     em.id = areaId;
                     em.textureIndex = DEFAULT_FLOOR_MATERIAL.diffuseTextureIndex;
+                    em.normalTextureIndex = DEFAULT_FLOOR_MATERIAL.normalTextureIndex;  // bump
                     out.push_back(em);
                 }
                 areaId++;
@@ -74,7 +79,9 @@ void collectWallMeshes(const Domain& domain, float scale, const WallProfileTable
         em.mesh = geometryMeshToRaylibMesh(gm);
         em.kind = "wall";
         em.id = wallId++;
-        em.textureIndex = gm.materialId;  // diffuse texture index
+        em.textureIndex = gm.materialId;              // diffuse texture index
+        em.normalTextureIndex = gm.normalMaterialId;  // profile bump/normal (texture1)
+        em.glass = gm.glass;                          // drawtype 5 -> transparent glass pass
         out.push_back(em);
     }
 }
@@ -89,106 +96,31 @@ void collectTileMeshes(const Domain& domain, std::vector<ShapeMesh>& out,
             em.mesh = batch.mesh;  // borrowed; freed via freeTileBatchCollection
             em.kind = "tile";
             em.id = batchId;
-            em.textureIndex = batch.textureIndex1;
+            em.textureIndex = batch.textureIndex1;       // archetile diffuse
+            em.normalTextureIndex = batch.textureIndex2; // archetile bump (trio: diffuse bump spec)
         out.push_back(em);
         }
         batchId++;
     }
 }
 
-// Write Box2D-ready wall collision as footprint POLYGONS. A wall is any link that produces a wall
-// mesh (explicit profile, or the geometry's default profile set — matching createDomainWallMeshes).
-// For each wall we rebuild the render-space path exactly as the mesh does (straight, or a subdivided
-// quadratic Bézier) and sweep it by the profile's lateral extent, emitting one convex quad per path
-// segment. So the collision has the wall's real THICKNESS and follows its curves — not a thin
-// centreline. Node positions are already render-metric (scale applied at serialization); the
-// profile's lateral offset is in game units, so it is scaled here. Output is the game's 2D physics
-// plane (render X, render Z). Floor areas are walkable, so they are NOT emitted as solids.
+// Write Box2D-ready wall collision as footprint POLYGONS, via the shared `buildWallCollision` (so the
+// export and the viewer's collision wireframe stay identical). Normal walls -> one quad per path
+// segment spanning the profile lateral extent; st_walls profiles (glass tunnel) -> two outer-edge
+// quads leaving the interior walkable. Coordinates are the game's 2D physics plane (render X, Z).
 void writeCollision(const Domain& domain, const WallProfileTable& table, float scale, int level,
                     const std::string& path) {
     json doc;
     doc["level"] = level;
     doc["space"] = "render-metric wall footprint polygons (x, z)";
     json polys = json::array();
-
-    for (const auto& area : domain.areas) {
-        for (const auto& geom : area.geometry) {
-            std::unordered_map<int, Vector3> nodePos;
-            for (const auto& n : geom.nodes) nodePos[n.id] = n.position;
-            std::vector<int> defaultSet;
-            for (const auto& p : geom.profiles) defaultSet.push_back(p.id);
-
-            for (const auto& link : geom.links) {
-                const std::vector<int>* profileIds = nullptr;
-                if (!link.profiles.empty()) profileIds = &link.profiles;
-                else if (link.useDefaultProfiles && !defaultSet.empty()) profileIds = &defaultSet;
-                else continue;  // not a wall
-
-                // Wall thickness = the lateral extent of the swept profile(s). Skip trim/border
-                // profiles (near-zero height, e.g. the floor borders) — they are decorative and
-                // extend laterally past the wall, so they must not widen or create collision.
-                constexpr float MIN_WALL_HEIGHT = 2.0f;    // game units; trim ~0.3, walls ~60
-                float latMin = 1e9f, latMax = -1e9f;
-                for (int pid : *profileIds) {
-                    auto it = table.profiles.find(pid);
-                    if (it == table.profiles.end() || !it->second.valid) continue;
-                    float yMin = 1e9f, yMax = -1e9f;
-                    for (const auto& pt : it->second.points) {
-                        yMin = std::min(yMin, pt.y); yMax = std::max(yMax, pt.y);
-                    }
-                    if (yMax - yMin < MIN_WALL_HEIGHT) continue;   // trim/border — not collision
-                    for (const auto& pt : it->second.points) {
-                        latMin = std::min(latMin, pt.x);
-                        latMax = std::max(latMax, pt.x);
-                    }
-                }
-                if (latMin > latMax) continue;             // no wall-height profile on this link
-                latMin *= scale; latMax *= scale;          // game units -> render metres
-                const float minThick = 0.12f;              // keep thin profiles collidable
-                if (latMax - latMin < minThick) {
-                    float c = 0.5f * (latMin + latMax);
-                    latMin = c - 0.5f * minThick; latMax = c + 0.5f * minThick;
-                }
-
-                auto s = nodePos.find(link.start), f = nodePos.find(link.finish);
-                if (s == nodePos.end() || f == nodePos.end()) continue;
-
-                // Render-space path in the X-Z plane (matches the wall mesh: 10-step Bézier).
-                std::vector<Vector2> pts;
-                if (link.control) {
-                    Vector2 p0{s->second.x, s->second.z};
-                    Vector2 cp{link.control->position.x, link.control->position.z};
-                    Vector2 p1{f->second.x, f->second.z};
-                    const int steps = 10;
-                    for (int i = 0; i <= steps; ++i) {
-                        float t = (float)i / steps, u = 1.0f - t;
-                        pts.push_back({u*u*p0.x + 2*u*t*cp.x + t*t*p1.x,
-                                       u*u*p0.y + 2*u*t*cp.y + t*t*p1.y});
-                    }
-                } else {
-                    pts.push_back({s->second.x, s->second.z});
-                    pts.push_back({f->second.x, f->second.z});
-                }
-
-                // One convex quad per path segment, offset ±lateral perpendicular to the segment.
-                for (size_t i = 0; i + 1 < pts.size(); ++i) {
-                    Vector2 p0 = pts[i], p1 = pts[i + 1];
-                    float dx = p1.x - p0.x, dz = p1.y - p0.y;
-                    float len = std::sqrt(dx*dx + dz*dz);
-                    if (len < 1e-5f) continue;
-                    Vector2 perp = {-dz / len, dx / len};
-                    auto pt = [&](const Vector2& p, float lat) {
-                        return json::array({p.x + perp.x * lat, p.y + perp.y * lat});
-                    };
-                    polys.push_back({{"vertices", json::array({
-                        pt(p0, latMin), pt(p1, latMin), pt(p1, latMax), pt(p0, latMax)})}});
-                }
-            }
-        }
+    for (const auto& q : buildWallCollision(domain, table, scale)) {
+        polys.push_back({{"vertices", json::array({
+            json::array({q.v[0].x, q.v[0].y}), json::array({q.v[1].x, q.v[1].y}),
+            json::array({q.v[2].x, q.v[2].y}), json::array({q.v[3].x, q.v[3].y})})}});
     }
-
     doc["polygons"] = polys;
-    doc["chains"] = json::array();  // walls are footprint polygons now; no chains
+    doc["chains"] = json::array();  // walls are footprint polygons; no chains
 
     std::ofstream f(path);
     f << doc.dump(2) << "\n";
@@ -396,13 +328,15 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
         return false;
     }
 
-    // 2. Group materials by distinct legacy texture index (keeps material count small).
-    std::unordered_map<int, int> texToMaterial;  // textureIndex -> material index
-    std::vector<int> materialTexIndex;           // material index -> textureIndex
+    // 2. Group materials by distinct (diffuse, normal) texture-index pair, so meshes that share a
+    //    diffuse but differ in bump map get separate materials (keeps material count small otherwise).
+    std::map<std::pair<int, int>, int> texToMaterial;      // (diffuse, normal) -> material index
+    std::vector<std::pair<int, int>> materialTexIndex;     // material index -> (diffuse, normal)
     for (const auto& em : meshes) {
-        if (!texToMaterial.count(em.textureIndex)) {
-            texToMaterial[em.textureIndex] = static_cast<int>(materialTexIndex.size());
-            materialTexIndex.push_back(em.textureIndex);
+        std::pair<int, int> key{em.textureIndex, em.normalTextureIndex};
+        if (!texToMaterial.count(key)) {
+            texToMaterial[key] = static_cast<int>(materialTexIndex.size());
+            materialTexIndex.push_back(key);
         }
     }
 
@@ -414,7 +348,7 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
     model.meshMaterial = (int*)MemAlloc(sizeof(int) * model.meshCount);
     for (int i = 0; i < model.meshCount; ++i) {
         model.meshes[i] = meshes[i].mesh;
-        model.meshMaterial[i] = texToMaterial[meshes[i].textureIndex];
+        model.meshMaterial[i] = texToMaterial[{meshes[i].textureIndex, meshes[i].normalTextureIndex}];
     }
     model.materialCount = static_cast<int>(materialTexIndex.size());
     model.materials = (Material*)MemAlloc(sizeof(Material) * model.materialCount);
@@ -432,11 +366,22 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
     opts.texture_dir = "../textures";
     opts.copy_textures = true;
     opts.include_physics_shape = false;
-    std::vector<std::string> texPaths(model.materialCount);
+    std::vector<std::string> texPaths(model.materialCount), normPaths(model.materialCount);
     opts.texture_count = model.materialCount;
+    opts.normal_texture_count = model.materialCount;
     for (int i = 0; i < model.materialCount && i < GLTF_MAX_TEXTURES; ++i) {
-        texPaths[i] = getTextureFullPath(viewer->textureLookup, materialTexIndex[i]);
+        // Diffuse (texture0).
+        texPaths[i] = getTextureFullPath(viewer->textureLookup, materialTexIndex[i].first);
         opts.texture_paths[i] = texPaths[i].empty() ? nullptr : texPaths[i].c_str();
+        // Bump/normal (texture1) — assigns a tangent-space normalTexture so the game's scene shader
+        // bumps floors/walls/tiles just like the door model.
+        int normIdx = materialTexIndex[i].second;
+        if (normIdx >= 0) {
+            normPaths[i] = getTextureFullPath(viewer->textureLookup, normIdx);
+            opts.normal_texture_paths[i] = normPaths[i].empty() ? nullptr : normPaths[i].c_str();
+        } else {
+            opts.normal_texture_paths[i] = nullptr;
+        }
     }
 
     // 5. Export the GLTF.
@@ -461,6 +406,7 @@ bool viewerExportLevel(Viewer* viewer, const char* dir) {
             {"id", meshes[i].id},
             {"material", model.meshMaterial[i]},
             {"textureIndex", meshes[i].textureIndex},
+            {"glass", meshes[i].glass},   // drawtype 5 -> transparent env-mapped glass pass
             {"min", {bb.min.x, bb.min.y, bb.min.z}},
             {"max", {bb.max.x, bb.max.y, bb.max.z}},
         });

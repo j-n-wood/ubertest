@@ -1,5 +1,6 @@
 #include "level/level3d_loader.h"
 #include "world_scale.h"
+#include "rendering/glass_render.h"
 #include "raylib.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -65,6 +66,26 @@ bool load3DLevel(const std::string& assetPath, int levelNumber, SceneRenderer* r
     if (data.tileModel.meshCount == 0) return false;
     sceneRendererApplyShader(renderer, &data.tileModel);
     data.meshValid = true;
+
+    // Manifest: tag glass meshes (drawtype 5) + reconfigure their material for the transparent
+    // env-mapped glass pass. The manifest mesh order matches the GLTF/tileModel mesh order.
+    data.glassMeshIndices.clear();
+    {
+        std::ifstream mf(dir + stem + ".manifest.json");
+        if (mf.is_open()) {
+            json mdoc;
+            try { mf >> mdoc; } catch (...) {}
+            if (mdoc.contains("meshes")) {
+                for (const auto& m : mdoc["meshes"]) {
+                    if (!m.value("glass", false)) continue;
+                    int idx = m.value("index", -1);
+                    if (idx < 0 || idx >= data.tileModel.meshCount) continue;
+                    data.glassMeshIndices.push_back(idx);
+                    configureGlassMaterial(&data.tileModel.materials[data.tileModel.meshMaterial[idx]]);
+                }
+            }
+        }
+    }
 
     BoundingBox bb = GetModelBoundingBox(data.tileModel);
     data.boundsMin = bb.min;

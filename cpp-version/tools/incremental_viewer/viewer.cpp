@@ -3,8 +3,12 @@
 #include "rlgl.h"
 #include "scene_convert/domain_parser.h"
 #include "scene_convert/scene_json.h"
+#include "scene_convert/geometry_xml_parser.h"  // mergeDomainSections
 #include "rendering/tile_mesh.h"
 #include "rendering/geometry_mesh.h"
+#include "rendering/wall_mesh.h"          // buildWallCollision
+#include "rendering/collision_debug.h"    // drawCollisionWireframe (shared with the game)
+#include "rendering/glass_render.h"       // configureGlassMaterial / begin-endGlassPass
 #include "rendering/texture_loader.h"
 #include <algorithm>
 #include <cmath>
@@ -75,6 +79,8 @@ bool viewerInit(Viewer* viewer, const char* shaderPath) {
     viewer->toggles.enableMiter = true;       // Wall corner miter joins
     viewer->toggles.showNodes = false;        // Path-node markers + labels (diagnosis)
     viewer->toggles.showWaypoints = false;    // AI waypoint graph overlay
+    viewer->toggles.showWallLinks = false;    // Wall-link id/direction overlay (UV diagnosis)
+    viewer->toggles.showCollision = false;    // Collision footprint wireframe (shared with game)
     viewer->cameraPreset = CameraPreset::TopDown;  // Default to game mode
 
     // Initialize geometry mesh state
@@ -423,7 +429,19 @@ void viewerRebuildMeshes(Viewer* viewer) {
                 textureCacheLoad(viewer->textureCache, viewer->textureLookup, wm.materialId);
                 Texture2D diffuse = textureCacheGetDiffuse(viewer->textureCache, wm.materialId);
                 if (diffuse.id > 0) state.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = diffuse;
+                // Bump/normal (texture1) — bind it so the viewer bump-shades walls like the game does.
+                if (wm.normalMaterialId > 0) {
+                    textureCacheLoad(viewer->textureCache, viewer->textureLookup, wm.normalMaterialId);
+                    Texture2D bump = textureCacheGetBump(viewer->textureCache, wm.normalMaterialId);
+                    if (bump.id > 0) state.model.materials[0].maps[MATERIAL_MAP_NORMAL].texture = bump;
+                }
             }
+
+            // Glass tunnel (drawtype 5): reconfigure this batch's material for the transparent
+            // env-mapped pass (diffuse env texture -> env slot, blue tint, keep bump) and flag it so
+            // it's drawn separately from the opaque geometry.
+            state.glass = wm.glass;
+            if (state.glass) configureGlassMaterial(&state.model.materials[0]);
 
             viewer->geometryMesh.batches.push_back(state);
             wallTris += state.triangleCount;
@@ -445,6 +463,9 @@ bool viewerReloadFromJson(Viewer* viewer, const char* jsonPath) {
         TraceLog(LOG_ERROR, "VIEWER: Failed to load domain from JSON: %s", jsonPath);
         return false;
     }
+    // Heal any pre-merge JSON: collapse multiple per-area geometry sections into one unified id space
+    // (source-XML parsing already merges inline). No-op for already-single-section areas.
+    mergeDomainSections(viewer->loadedDomain);
     viewer->domainLoaded = true;
 
     viewerRebuildMeshes(viewer);
@@ -695,6 +716,65 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
     if (IsKeyPressed(KEY_N)) {
         viewer->toggles.showNodes = !viewer->toggles.showNodes;
         TraceLog(LOG_INFO, "VIEWER: node markers %s", viewer->toggles.showNodes ? "ON" : "OFF");
+        if (!viewer->toggles.showNodes) viewer->selectedNodeId = -1;
+    }
+
+    // Node editing (needs the node overlay on). Left-click selects the nearest node marker; the arrow
+    // keys then move it in the floor plane and PageUp/Dn in height. Steps are in GAME units (integers,
+    // to match the source data): 1 fine, 16 with Shift. F10 saves the edited deck (loadedDomain).
+    if (viewer->toggles.showNodes && viewer->domainLoaded) {
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            Vector2 mouse = GetMousePosition();
+            float bestPx = 18.0f; int bestId = -1;
+            for (const auto& area : viewer->loadedDomain.areas)
+                for (const auto& geom : area.geometry)
+                    for (const auto& node : geom.nodes) {
+                        Vector2 sp = GetWorldToScreen(node.position, viewer->camera);
+                        float d = Vector2Distance(sp, mouse);
+                        if (d < bestPx) { bestPx = d; bestId = node.id; }
+                    }
+            if (bestId >= 0) {
+                viewer->selectedNodeId = bestId;
+                TraceLog(LOG_INFO, "VIEWER: selected node %d", bestId);
+            }
+        }
+        if (viewer->selectedNodeId >= 0) {
+            bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+            float step = (shift ? 16.0f : 1.0f) * viewer->scale;   // game units -> render metres
+            Vector3 d = {0, 0, 0};
+            if (IsKeyPressed(KEY_LEFT))      d.x -= step;   // -game x
+            if (IsKeyPressed(KEY_RIGHT))     d.x += step;   // +game x
+            if (IsKeyPressed(KEY_UP))        d.z -= step;   // +game y (screen up in top-down)
+            if (IsKeyPressed(KEY_DOWN))      d.z += step;   // -game y
+            if (IsKeyPressed(KEY_PAGE_UP))   d.y += step;   // +game z (height)
+            if (IsKeyPressed(KEY_PAGE_DOWN)) d.y -= step;   // -game z
+            if (d.x != 0.0f || d.y != 0.0f || d.z != 0.0f) {
+                bool moved = false;
+                for (auto& area : viewer->loadedDomain.areas)
+                    for (auto& geom : area.geometry)
+                        for (auto& node : geom.nodes)
+                            if (node.id == viewer->selectedNodeId) {
+                                node.position.x += d.x; node.position.y += d.y; node.position.z += d.z;
+                                moved = true;
+                            }
+                if (moved) viewerRebuildMeshes(viewer);   // reflect the move in geometry + collision
+            }
+        }
+    }
+
+    // Wall-link overlay (G): centreline (green start -> red finish), yellow bezier control point, and
+    // a label "L<id> <start>-><finish> [B]" — so UV/normal artefacts can be pinned to exact links.
+    // (K is the caps toggle, so this lives on G.)
+    if (IsKeyPressed(KEY_G)) {
+        viewer->toggles.showWallLinks = !viewer->toggles.showWallLinks;
+        TraceLog(LOG_INFO, "VIEWER: wall-link overlay %s", viewer->toggles.showWallLinks ? "ON" : "OFF");
+    }
+
+    // Collision footprint wireframe (C) — the same shapes the game builds (buildWallCollision),
+    // drawn with the shared drawCollisionWireframe so viewer + game match.
+    if (IsKeyPressed(KEY_C)) {
+        viewer->toggles.showCollision = !viewer->toggles.showCollision;
+        TraceLog(LOG_INFO, "VIEWER: collision wireframe %s", viewer->toggles.showCollision ? "ON" : "OFF");
     }
 
     // Reload the current deck from source (re-parses the geometry XML — edit it, then press F9).
@@ -726,9 +806,12 @@ void viewerUpdate(Viewer* viewer, float deltaTime) {
         }
     }
 
-    // Export the current level: X = combined GLTF; Shift+X = split (one file per shape).
+    // Export the current level: X = combined GLTF; Shift+X = split (one file per shape). Writes to
+    // --export-dir when given (e.g. the game's levels3d bundle), else <outputDir>/export.
     if (IsKeyPressed(KEY_X)) {
-        const std::string dir = (fs::path(viewer->outputDir) / "export").string();
+        const std::string dir = !viewer->exportDir.empty()
+            ? viewer->exportDir
+            : (fs::path(viewer->outputDir) / "export").string();
         bool split = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
         bool ok = split ? viewerExportLevelSplit(viewer, dir.c_str())
                         : viewerExportLevel(viewer, dir.c_str());
@@ -806,18 +889,34 @@ void viewerRender(Viewer* viewer) {
         }
     }
 
-    // Draw geometry meshes (floor polygons from PathGeometry)
+    // Draw geometry meshes (floor/wall from PathGeometry). Opaque batches first; glass batches
+    // (tunnels) are drawn afterwards in a transparent env-mapped pass.
     if (viewer->toggles.showGeometry && viewer->geometryMesh.loaded) {
+        bool anyGlass = false;
         for (const auto& batch : viewer->geometryMesh.batches) {
-            if (batch.valid) {
-                DrawModel(batch.model, (Vector3){0, 0, 0}, 1.0f, WHITE);
-
-                // Draw wireframe overlay if enabled
-                if (viewer->toggles.showWireframe) {
-                    DrawModelWires(batch.model, (Vector3){0, 0, 0}, 1.0f, MAGENTA);
-                }
+            if (!batch.valid) continue;
+            if (batch.glass) { anyGlass = true; continue; }
+            DrawModel(batch.model, (Vector3){0, 0, 0}, 1.0f, WHITE);
+            if (viewer->toggles.showWireframe) {
+                DrawModelWires(batch.model, (Vector3){0, 0, 0}, 1.0f, MAGENTA);
             }
         }
+        if (anyGlass) {
+            Shader shader = sceneRendererGetShader(&viewer->renderer);
+            beginGlassPass(shader, 1.0f);
+            for (const auto& batch : viewer->geometryMesh.batches)
+                if (batch.valid && batch.glass) DrawModel(batch.model, (Vector3){0, 0, 0}, 1.0f, WHITE);
+            endGlassPass(shader);
+        }
+    }
+
+    // Collision footprint wireframe (C) — the exact quads the game builds + collides against
+    // (buildWallCollision), drawn with the shared helper so viewer and game look identical.
+    if (viewer->toggles.showCollision && viewer->domainLoaded) {
+        std::vector<std::vector<Vector2>> polys;
+        for (const auto& q : buildWallCollision(viewer->loadedDomain, viewer->wallProfiles, viewer->scale))
+            polys.push_back({q.v[0], q.v[1], q.v[2], q.v[3]});
+        drawCollisionWireframe(polys);
     }
 
     // Class-14 reference unit (drawn in the same 3D pass, with the lighting/env shader).
@@ -833,7 +932,36 @@ void viewerRender(Viewer* viewer) {
         for (const auto& area : viewer->loadedDomain.areas) {
             for (const auto& geom : area.geometry) {
                 for (const auto& node : geom.nodes) {
-                    DrawSphere(node.position, 0.25f, (Color){255, 60, 60, 255});
+                    bool sel = (node.id == viewer->selectedNodeId);
+                    DrawSphere(node.position, sel ? 0.4f : 0.25f,
+                               sel ? (Color){80, 255, 80, 255} : (Color){255, 60, 60, 255});
+                }
+            }
+        }
+        rlDrawRenderBatchActive();
+        rlEnableDepthTest();
+    }
+
+    // Wall-link overlay: centreline with direction (green start -> red finish) + bezier control.
+    if (viewer->toggles.showWallLinks && viewer->domainLoaded) {
+        rlDrawRenderBatchActive();
+        rlDisableDepthTest();
+        const Vector3 lift = {0.0f, 0.3f, 0.0f};
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& geom : area.geometry) {
+                std::unordered_map<int, Vector3> np;
+                for (const auto& node : geom.nodes) np[node.id] = node.position;
+                const bool hasDefault = !geom.profiles.empty();
+                for (const auto& link : geom.links) {
+                    const bool isWall = !link.profiles.empty() || (link.useDefaultProfiles && hasDefault);
+                    if (!isWall) continue;
+                    auto s = np.find(link.start), f = np.find(link.finish);
+                    if (s == np.end() || f == np.end()) continue;
+                    Vector3 a = Vector3Add(s->second, lift), b = Vector3Add(f->second, lift);
+                    DrawLine3D(a, b, ORANGE);
+                    DrawSphere(a, 0.10f, GREEN);   // start
+                    DrawSphere(b, 0.16f, RED);     // finish (direction)
+                    if (link.control) DrawSphere(Vector3Add(link.control->position, lift), 0.13f, YELLOW);
                 }
             }
         }
@@ -1104,6 +1232,7 @@ void viewerDrawOverlay(Viewer* viewer) {
 
     // Node id labels (diagnosis): project each unique node to screen and draw its id.
     if (viewer->toggles.showNodes && viewer->domainLoaded) {
+        const float s = (viewer->scale > 0.0f) ? viewer->scale : 1.0f;
         std::set<int> drawn;
         for (const auto& area : viewer->loadedDomain.areas) {
             for (const auto& geom : area.geometry) {
@@ -1112,8 +1241,50 @@ void viewerDrawOverlay(Viewer* viewer) {
                     Vector2 sp = GetWorldToScreen(node.position, viewer->camera);
                     if (sp.x < -20 || sp.y < -20 || sp.x > GetScreenWidth() + 20 ||
                         sp.y > GetScreenHeight() + 20) continue;
-                    const char* txt = TextFormat("%d", node.id);
-                    DrawText(txt, static_cast<int>(sp.x) + 5, static_cast<int>(sp.y) - 6, 14, YELLOW);
+                    bool sel = (node.id == viewer->selectedNodeId);
+                    DrawText(TextFormat("%d", node.id), static_cast<int>(sp.x) + 5,
+                             static_cast<int>(sp.y) - 6, 14, sel ? GREEN : YELLOW);
+                    if (sel) {
+                        // Selected node: show its GAME coords (inverse of gameToRenderCoords) so they
+                        // match the source XML — x = render.x/s, y = -render.z/s, z(height) = render.y/s.
+                        DrawText(TextFormat("(%.0f, %.0f, %.0f)", node.position.x / s,
+                                            -node.position.z / s, node.position.y / s),
+                                 static_cast<int>(sp.x) + 5, static_cast<int>(sp.y) + 10, 14, GREEN);
+                    }
+                }
+            }
+        }
+        // Editing hint / selected-node readout (top-left, below the deck line).
+        if (viewer->selectedNodeId >= 0) {
+            DrawText(TextFormat("Node %d selected  [arrows: x/y  PgUp/Dn: height  Shift: x16  F10: save]",
+                     viewer->selectedNodeId), 10, 90, 14, GREEN);
+        } else {
+            DrawText("Click a node marker to select; arrows move it (game units)", 10, 90, 14, GRAY);
+        }
+    }
+
+    // Wall-link labels: "L<id> <start>-><finish> [B]" at each wall link's midpoint (B = bezier).
+    if (viewer->toggles.showWallLinks && viewer->domainLoaded) {
+        for (const auto& area : viewer->loadedDomain.areas) {
+            for (const auto& geom : area.geometry) {
+                std::unordered_map<int, Vector3> np;
+                for (const auto& node : geom.nodes) np[node.id] = node.position;
+                const bool hasDefault = !geom.profiles.empty();
+                for (const auto& link : geom.links) {
+                    const bool isWall = !link.profiles.empty() || (link.useDefaultProfiles && hasDefault);
+                    if (!isWall) continue;
+                    auto s = np.find(link.start), f = np.find(link.finish);
+                    if (s == np.end() || f == np.end()) continue;
+                    Vector3 mid = link.control
+                        ? link.control->position
+                        : Vector3{(s->second.x + f->second.x) * 0.5f, (s->second.y + f->second.y) * 0.5f,
+                                  (s->second.z + f->second.z) * 0.5f};
+                    Vector2 sp = GetWorldToScreen(Vector3Add(mid, (Vector3){0, 0.3f, 0}), viewer->camera);
+                    if (sp.x < -20 || sp.y < -20 || sp.x > GetScreenWidth() + 20 ||
+                        sp.y > GetScreenHeight() + 20) continue;
+                    const char* txt = TextFormat("L%d %d>%d%s", link.id, link.start, link.finish,
+                                                 link.control ? " B" : "");
+                    DrawText(txt, static_cast<int>(sp.x) + 5, static_cast<int>(sp.y) - 6, 12, ORANGE);
                 }
             }
         }
