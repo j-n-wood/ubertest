@@ -650,7 +650,15 @@ GeometryMeshCollection createWallMeshes(const PathGeometry& geometry, float scal
             }
         }
 
+        const bool explicitProfiles = !link.profiles.empty();
         for (int profileId : *profileIds) {
+            // Swap the border trims (1 = left, 2 = right) for EXPLICIT (non-default) link profiles:
+            // the render-space Y-negation flips the lateral (perpendicular) axis, so a single-side
+            // trim otherwise lands on the wrong side. The default set carries both, so it's unaffected.
+            if (explicitProfiles) {
+                if (profileId == 1) profileId = 2;
+                else if (profileId == 2) profileId = 1;
+            }
             auto pIt = table.profiles.find(profileId);
             if (pIt == table.profiles.end() || !pIt->second.valid) continue;
             sweepProfile(path, pIt->second, scale, capStart, capEnd, mStart, mEnd, result);

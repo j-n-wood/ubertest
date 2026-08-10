@@ -93,8 +93,9 @@ bool load3DLevel(const std::string& assetPath, int levelNumber, SceneRenderer* r
 
     loadWaypoints(dir + stem + ".entities.json", data);
 
-    TraceLog(LOG_INFO, "Loaded 3D bundle for level %d: %d meshes, %zu waypoints",
-             levelNumber, data.tileModel.meshCount, data.waypointPositions.size());
+    TraceLog(LOG_INFO, "Loaded 3D bundle for level %d: %d meshes, %zu waypoints, %zu glass",
+             levelNumber, data.tileModel.meshCount, data.waypointPositions.size(),
+             data.glassMeshIndices.size());
     return true;
 }
 

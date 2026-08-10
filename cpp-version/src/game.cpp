@@ -1312,6 +1312,17 @@ static void game_switch_level(Game* game, int newLevel) {
     game_change_level(game, newLevel, nullptr);
 }
 
+// Debug: jump to a deck by its stable deck number (for --deck testing).
+void game_debug_goto_deck(Game* game, int deckNumber) {
+    for (int i = 0; i < (int)game->levels.size(); ++i) {
+        if (game->levels[i].number == deckNumber) {
+            if (i != game->currentLevel) game_switch_level(game, i);
+            return;
+        }
+    }
+    TraceLog(LOG_WARNING, "game_debug_goto_deck: no deck with number %d", deckNumber);
+}
+
 // Lift use: move the player to a specific stop, switching level if needed.
 void game_switch_to_stop(Game* game, const LiftStop& stop) {
     if (stop.level == game->currentLevel) {

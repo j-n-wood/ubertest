@@ -64,6 +64,7 @@ int main(int argc, char* argv[]) {
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
     LevelRenderMode renderMode = LevelRenderMode::CustomTiles;  // --renderer; runtime-toggle with G
+    int startDeck = -1;  // --deck N: jump to deck N after init (debug), -1 = start on deck 0
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -90,6 +91,8 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--unit") == 0 && i + 1 < argc) {
             unitId = argv[++i];
             testConfig.unitId = unitId;  // Also set in test config for compatibility
+        } else if (strcmp(argv[i], "--deck") == 0 && i + 1 < argc) {
+            startDeck = atoi(argv[++i]);   // jump to this deck number after init (debug)
         }
     }
 
@@ -129,6 +132,7 @@ int main(int argc, char* argv[]) {
     Game game{};
     game.levelRenderMode = renderMode;  // startup renderer selection (before the first build in game_init)
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
+    if (startDeck >= 0) game_debug_goto_deck(&game, startDeck);  // debug: jump to a specific deck
 
     // View-states are pages on a stack; gameplay is the base GamePage. Other pages
     // (console, future title) are pushed on top and drive update/render while active.

@@ -10,6 +10,12 @@ void configureGlassMaterial(Material* material) {
     if (!material) return;
     MaterialMap& diffuse = material->maps[MATERIAL_MAP_DIFFUSE];
 
+    // Idempotent: several glass meshes can share ONE material (e.g. all glass walls on a deck), so
+    // the loader may call this repeatedly on the same Material. Once converted, the diffuse slot is
+    // the 1x1 white default — use that as a sentinel and bail, otherwise a second call would take
+    // the white default as the "env image" and clobber the real envmapblue reflection.
+    if (diffuse.texture.id == rlGetTextureIdDefault()) return;
+
     // The exporter put the env image (envmapblue) in the diffuse slot; move it to the env slot
     // (texture1 in the shader) so it reads as a spherical reflection, not a base texture.
     Texture2D env = diffuse.texture;

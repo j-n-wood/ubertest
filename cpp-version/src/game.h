@@ -194,6 +194,9 @@ void game_destroy(Game* game);
 // Called by the ship-view page when the player confirms a destination.
 void game_switch_to_stop(Game* game, const LiftStop& stop);
 
+// Debug: jump to a deck by its stable deck number (used by the --deck startup flag).
+void game_debug_goto_deck(Game* game, int deckNumber);
+
 // Award score + raise the alert level for destroying or capturing `unit` (50 x its
 // class). Called on a kill (game_reap_dead) and on a completed capture (transfer).
 void game_award_points(Game* game, const UnitInstance* unit);
