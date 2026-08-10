@@ -83,65 +83,67 @@ static std::vector<Vector3> collectAreaBoundary(
 
     if (area.links.empty()) return boundary;
 
-    // Track the expected next node to ensure proper link chaining
-    int expectedStartNode = -1;
-
-    for (size_t i = 0; i < area.links.size(); ++i) {
-        int linkId = area.links[i];
-        auto linkIt = linkMap.find(linkId);
-        if (linkIt == linkMap.end()) {
-            TraceLog(LOG_WARNING, "GEOMETRY: Link %d not found for area %d", linkId, area.id);
+    // Resolve this area's links.
+    std::vector<const PathLink*> links;
+    for (int lid : area.links) {
+        auto it = linkMap.find(lid);
+        if (it == linkMap.end()) {
+            TraceLog(LOG_WARNING, "GEOMETRY: Link %d not found for area %d", lid, area.id);
             continue;
         }
+        links.push_back(it->second);
+    }
+    if (links.empty()) return boundary;
 
-        const PathLink* link = linkIt->second;
-
-        // Determine if we need to traverse this link in reverse
-        bool reverse = false;
-        if (expectedStartNode >= 0) {
-            if (link->finish == expectedStartNode) {
-                reverse = true;
-            } else if (link->start != expectedStartNode) {
-                TraceLog(LOG_WARNING, "GEOMETRY: Link chain broken at link %d for area %d", linkId, area.id);
+    // The area's <Link> list is NOT stored in boundary-traversal order (and individual links may need
+    // reversing), so CHAIN them by shared node ids rather than trusting file order — otherwise the ring
+    // is scrambled/self-intersecting and ear-clipping fails (missing/inverted triangles). Greedy walk:
+    // start at links[0], then repeatedly append whichever remaining link shares the current end node,
+    // reversing it if it connects by its finish.
+    std::vector<char> used(links.size(), 0);
+    std::vector<std::pair<const PathLink*, bool>> chain;   // (link, reversed)
+    used[0] = 1;
+    chain.push_back({links[0], false});
+    int curEnd = links[0]->finish;
+    for (size_t placed = 1; placed < links.size(); ++placed) {
+        bool found = false;
+        for (size_t k = 0; k < links.size(); ++k) {
+            if (used[k]) continue;
+            if (links[k]->start == curEnd) {
+                chain.push_back({links[k], false}); curEnd = links[k]->finish; used[k] = 1; found = true; break;
+            }
+            if (links[k]->finish == curEnd) {
+                chain.push_back({links[k], true});  curEnd = links[k]->start;  used[k] = 1; found = true; break;
             }
         }
+        if (!found) {
+            TraceLog(LOG_WARNING, "GEOMETRY: area %d boundary does not chain (open/disjoint links)", area.id);
+            break;
+        }
+    }
 
-        int startNodeId = reverse ? link->finish : link->start;
-        int endNodeId = reverse ? link->start : link->finish;
-
+    // Emit boundary vertices from the ordered chain: a straight link contributes its traversal-start
+    // node; a bezier link contributes its subdivided curve minus the last point (shared with the next
+    // link's start). subdivideBezierCurve(start, ctrl, end) yields the curve start->end, so the same
+    // call gives the correct direction whether or not the link was reversed.
+    for (const auto& [link, reversed] : chain) {
+        int startNodeId = reversed ? link->finish : link->start;
+        int endNodeId = reversed ? link->start : link->finish;
         auto startIt = nodeMap.find(startNodeId);
         auto endIt = nodeMap.find(endNodeId);
-
         if (startIt == nodeMap.end() || endIt == nodeMap.end()) {
-            TraceLog(LOG_WARNING, "GEOMETRY: Node not found for link %d", linkId);
+            TraceLog(LOG_WARNING, "GEOMETRY: Node not found for area %d boundary link", area.id);
             continue;
         }
-
-        Vector3 startPos = startIt->second->position;
-        Vector3 endPos = endIt->second->position;
-
-        // Handle Bezier curves
+        const Vector3& startPos = startIt->second->position;
+        const Vector3& endPos = endIt->second->position;
         if (link->control.has_value()) {
-            Vector3 ctrlPos = link->control->position;
-
-            // Subdivide the Bezier curve
-            std::vector<Vector3> curvePoints;
-            if (reverse) {
-                curvePoints = subdivideBezierCurve(endPos, ctrlPos, startPos, BEZIER_SEGMENTS);
-            } else {
-                curvePoints = subdivideBezierCurve(startPos, ctrlPos, endPos, BEZIER_SEGMENTS);
-            }
-
-            // Add all points except the last (to avoid duplicating with next link's start)
-            for (size_t j = 0; j < curvePoints.size() - 1; ++j) {
-                boundary.push_back(curvePoints[j]);
-            }
+            std::vector<Vector3> curvePoints =
+                subdivideBezierCurve(startPos, link->control->position, endPos, BEZIER_SEGMENTS);
+            for (size_t j = 0; j + 1 < curvePoints.size(); ++j) boundary.push_back(curvePoints[j]);
         } else {
-            // Straight line - just add start point
             boundary.push_back(startPos);
         }
-
-        expectedStartNode = endNodeId;
     }
 
     return boundary;
