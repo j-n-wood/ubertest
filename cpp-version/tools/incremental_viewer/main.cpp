@@ -1,10 +1,13 @@
 #include "raylib.h"
 #include "viewer.h"
 #include "scene_convert/ship_parser.h"
+#include "args_file.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -35,6 +38,8 @@ static void printHelp() {
     printf("  --textures-base <dir>  Base directory for texture files\n");
     printf("  --shaders <dir>        Path to shaders directory (default: assets/shaders/)\n");
     printf("  -s, --scale <factor>   Scale factor override (default: 0.0254)\n");
+    printf("  --args-file <path>     Read extra args from a file (also @path); '#' comments. Lets a\n");
+    printf("                         fixed command drive different runs by editing the file\n");
     printf("  --no-reference         Don't load reference model\n");
     printf("  --no-textures          Don't load textures\n");
     printf("  --export-all <dir>     Headless: load + export every deck to <dir>, then exit\n");
@@ -89,6 +94,13 @@ static void printHelp() {
 // Main
 //------------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
+    // Expand any --args-file/@file tokens so a fixed command can drive different runs (see args_file.h).
+    std::vector<std::string> argStore = expandArgsFiles(argc, argv);
+    std::vector<char*> argPtrs;
+    for (auto& s : argStore) argPtrs.push_back(const_cast<char*>(s.c_str()));
+    argc = (int)argPtrs.size();
+    argv = argPtrs.data();
+
     // Parse command line arguments
     const char* sourcePath = nullptr;
     const char* outputDir = "output";

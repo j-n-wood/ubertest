@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "game.h"
+#include "args_file.h"
 #include "rendering/texture_manager.h"
 #include "pages/page_manager.h"
 #include "pages/game_page.h"
@@ -7,6 +8,10 @@
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include <memory>
 
 namespace fs = std::filesystem;
@@ -27,6 +32,9 @@ void printUsage(const char* programName) {
     printf("                      Default: ./assets\n");
     printf("  --unit <id>         Unit ID for player (default: droid_class_0)\n");
     printf("  --renderer <mode>   Level renderer: tilemap | custom | 3d (default: custom; toggle in-game with G)\n");
+    printf("  --deck <n>          Jump to deck number n after init (debug)\n");
+    printf("  --args-file <path>  Read extra args from a file (also @path); '#' comments. Lets a fixed\n");
+    printf("                      command drive different runs by editing the file\n");
     printf("  --help, -h          Show this help\n");
     printf("\n");
     printf("Rotation Test Mode:\n");
@@ -55,6 +63,13 @@ void printUsage(const char* programName) {
 }
 
 int main(int argc, char* argv[]) {
+    // Expand any --args-file/@file tokens so a fixed command can drive different runs (see args_file.h).
+    std::vector<std::string> argStore = expandArgsFiles(argc, argv);
+    std::vector<char*> argPtrs;
+    for (auto& s : argStore) argPtrs.push_back(const_cast<char*>(s.c_str()));
+    argc = (int)argPtrs.size();
+    argv = argPtrs.data();
+
     // Parse arguments
 #ifdef GAME_SOURCE_ASSETS_DIR
     const char* assetPath = GAME_SOURCE_ASSETS_DIR;  // absolute source dir (edits persist)

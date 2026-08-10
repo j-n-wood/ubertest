@@ -24,6 +24,7 @@ struct SceneRenderer {
     int effectiveEyeHeightLoc;
     int useEnvMapLoc;       // Per-material env-map toggle (set during unit draw loop)
     int envIntensityLoc;    // Per-material env-map additive strength
+    int darknessLoc;        // Lights-out scene dimming (0 = full brightness, 1 = black)
 
     // Current settings
     int debugMode;
@@ -58,6 +59,9 @@ void sceneRendererApplyShader(SceneRenderer* renderer, Model* model);
 
 // Set ambient light level (0.0 - 1.0)
 void sceneRendererSetAmbient(SceneRenderer* renderer, float r, float g, float b, float a);
+
+// Set the lights-out dimming applied to the whole lit scene (0 = full brightness, 1 = black).
+void sceneRendererSetDarkness(SceneRenderer* renderer, float darkness);
 
 // Set specular properties
 void sceneRendererSetSpecular(SceneRenderer* renderer, float power, float intensity);

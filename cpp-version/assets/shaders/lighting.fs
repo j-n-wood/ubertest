@@ -75,6 +75,11 @@ uniform vec3 viewPos;
 uniform float effectiveEyeHeight;  // Height above ground for specular calculations (-1 = use viewPos.y)
 uniform vec4 ambient;
 
+// "Lights out": scene dimming applied to the final lit colour. 0 = full brightness (the GLSL
+// default, so any pass that never sets it is unaffected), up to 1 = black. The 3D game ramps this
+// up when a level is cleared — the literal-dimming counterpart of the 2D tile "lights out" row.
+uniform float darkness;
+
 // Light uniforms
 uniform int light0_enabled;
 uniform int light0_type;
@@ -234,6 +239,9 @@ void main() {
         vec4 envSample = texture(texture1, envUV) * colSpecular;
         result += envIntensity * envSample.a * envSample.rgb;
     }
+
+    // Lights-out dimming (ambient + diffuse + specular + env all fade together).
+    result *= (1.0 - clamp(darkness, 0.0, 1.0));
 
     finalColor = vec4(result, colDiffuse.a * texelColor.a);
 }

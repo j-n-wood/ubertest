@@ -38,6 +38,7 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     renderer->effectiveEyeHeightLoc = GetShaderLocation(renderer->shader, "effectiveEyeHeight");
     renderer->useEnvMapLoc = GetShaderLocation(renderer->shader, "useEnvMap");
     renderer->envIntensityLoc = GetShaderLocation(renderer->shader, "envIntensity");
+    renderer->darknessLoc = GetShaderLocation(renderer->shader, "darkness");
 
     // Set default values
     renderer->debugMode = 0;
@@ -67,6 +68,8 @@ bool sceneRendererInit(SceneRenderer* renderer, const char* shaderPath) {
     float envDefaultIntensity = 1.0f;
     SetShaderValue(renderer->shader, renderer->useEnvMapLoc, &envOff, SHADER_UNIFORM_INT);
     SetShaderValue(renderer->shader, renderer->envIntensityLoc, &envDefaultIntensity, SHADER_UNIFORM_FLOAT);
+    float darknessOff = 0.0f;   // full brightness by default
+    SetShaderValue(renderer->shader, renderer->darknessLoc, &darknessOff, SHADER_UNIFORM_FLOAT);
 
     // Load default flat normal map (derived from shader path)
     // shaderPath is like "shaders/" so we go up one level to find textures/
@@ -144,6 +147,16 @@ void sceneRendererSetAmbient(SceneRenderer* renderer, float r, float g, float b,
     renderer->ambient[2] = b;
     renderer->ambient[3] = a;
     SetShaderValue(renderer->shader, renderer->ambientLoc, renderer->ambient, SHADER_UNIFORM_VEC4);
+}
+
+//------------------------------------------------------------------------------
+// Set lights-out scene dimming (0 = full brightness, 1 = black)
+//------------------------------------------------------------------------------
+void sceneRendererSetDarkness(SceneRenderer* renderer, float darkness) {
+    if (!renderer || !renderer->initialized) return;
+    if (darkness < 0.0f) darkness = 0.0f;
+    if (darkness > 1.0f) darkness = 1.0f;
+    SetShaderValue(renderer->shader, renderer->darknessLoc, &darkness, SHADER_UNIFORM_FLOAT);
 }
 
 //------------------------------------------------------------------------------

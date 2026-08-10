@@ -169,6 +169,10 @@ struct Game {
     bool paused = false;       // P key: freeze all game-state updates (still renders)
     bool slowMotion = false;   // O key: debug 1/10-speed simulation
 
+    // 3D "lights out": when the active level is cleared, the scene shader dims (the literal-lighting
+    // counterpart of the 2D tile "lights out" row). Eased toward its target each render frame.
+    float lightsOutDarkness = 0.0f;
+
     // Paths
     std::string assetPath;
     std::string shadersPath;
