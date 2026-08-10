@@ -272,6 +272,19 @@ bool loadWallProfiles(const char* materialsXmlPath, WallProfileTable& out) {
             wp.capTriangles = shape.capTriangles;
             wp.solidType = shape.solidType;
 
+            // Convert the profile's lateral axis from uber's GAME frame to our RENDER frame. Uber
+            // sweeps the profile with lateral along y = (-dir.y, dir.x) in the game plane; after the
+            // game->render transform (gx,gy,gz)->(gx,gz,-gy) that lateral maps to render rightNormal
+            // (dz,-dx), but our sweep/cap/collision all use render leftNormal (-dz,dx) as the base
+            // perpendicular — the exact negation. So negate each point's stored lateral (in place, so
+            // it stays paired with its texcoord): L*leftNormal == (-L)*rightNormal reproduces uber's
+            // placement. This makes ASYMMETRIC profiles (e.g. standardShape 3 on deck 10) curve the
+            // correct way and puts single-sided border trims (profiles 1/2) on their proper sides,
+            // which is why the old per-link 1<->2 trim swap is no longer needed. Symmetric profiles
+            // are unaffected (mirror-invariant). See geometryGen.cpp generateProfile.
+            for (auto& p : wp.points) p.x = -p.x;
+            for (auto& p : wp.capPoints) p.x = -p.x;
+
             auto it = materials.find(wp.materialId);
             if (it != materials.end()) {
                 wp.diffuseTextureIndex = it->second.tex0;
@@ -650,15 +663,9 @@ GeometryMeshCollection createWallMeshes(const PathGeometry& geometry, float scal
             }
         }
 
-        const bool explicitProfiles = !link.profiles.empty();
         for (int profileId : *profileIds) {
-            // Swap the border trims (1 = left, 2 = right) for EXPLICIT (non-default) link profiles:
-            // the render-space Y-negation flips the lateral (perpendicular) axis, so a single-side
-            // trim otherwise lands on the wrong side. The default set carries both, so it's unaffected.
-            if (explicitProfiles) {
-                if (profileId == 1) profileId = 2;
-                else if (profileId == 2) profileId = 1;
-            }
+            // (Border trims 1/2 now land on the correct side via the render-frame lateral negation in
+            // loadWallProfiles — no per-link 1<->2 swap needed.)
             auto pIt = table.profiles.find(profileId);
             if (pIt == table.profiles.end() || !pIt->second.valid) continue;
             sweepProfile(path, pIt->second, scale, capStart, capEnd, mStart, mEnd, result);

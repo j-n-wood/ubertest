@@ -5,3 +5,4 @@ uber
 cpp-version/droid_output/*
 cpp-version/droid_output_test/*
 cpp-version/tools/scripts/venv/*
+cpp-version/wall_export_example/*
