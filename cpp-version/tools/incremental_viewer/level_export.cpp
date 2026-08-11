@@ -267,6 +267,7 @@ static void writeEntities(const Domain& domain, float scale, int level, const st
     for (const auto& c : domain.objects.consoles)
         consoles.push_back({{"id", c.id},
                             {"pos", {c.position.x, c.position.y, c.position.z}},
+                            {"rot", {c.rotation.x, c.rotation.y, c.rotation.z}},
                             {"waypointId", c.waypointId}});
     doc["consoles"] = consoles;
 

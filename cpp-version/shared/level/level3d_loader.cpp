@@ -137,6 +137,21 @@ void load3DLevelChargers(const std::string& assetPath, int levelNumber, std::vec
     }
 }
 
+void load3DLevelConsoles(const std::string& assetPath, int levelNumber, std::vector<ConsoleSpec>& out) {
+    std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".entities.json");
+    if (!f.is_open()) return;
+    json doc;
+    try { f >> doc; } catch (...) { return; }
+    if (!doc.contains("consoles")) return;
+    for (const auto& c : doc["consoles"]) {
+        const json& p = c["pos"];
+        ConsoleSpec s;
+        s.physicsCenter = {p[0].get<float>(), p[2].get<float>()};   // domain X, Z (metres)
+        s.facingRad = (c.contains("rot") && c["rot"].size() >= 3) ? c["rot"][2].get<float>() : 0.0f;
+        out.push_back(s);
+    }
+}
+
 bool load3DLevelCollision(const std::string& assetPath, int levelNumber, Collision3D& out) {
     std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".collision.json");
     if (!f.is_open()) return false;

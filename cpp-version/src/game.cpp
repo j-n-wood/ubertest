@@ -679,9 +679,40 @@ static std::vector<ConsoleSpec> game_detect_consoles(const Game* game) {
 }
 
 static void game_create_consoles(Game* game) {
-    std::vector<ConsoleSpec> specs = game_detect_consoles(game);
+    // Objects3D sources consoles from the bundle (domain frame, with facing); the 2D modes detect
+    // them from TMX tiles. Mirrors doors/chargers.
+    std::vector<ConsoleSpec> specs;
+    if (game_mode_is_3d(game)) {
+        load3DLevelConsoles(game->assetPath, game->levels[game->currentLevel].number, specs);
+    } else {
+        specs = game_detect_consoles(game);
+    }
     game->consoleManager.init(specs);
-    TraceLog(LOG_INFO, "Created %zu consoles from level data", specs.size());
+    // Build the 3D console model (idempotent; only drawn in Objects3D mode).
+    game->console3DRenderer.build(&game->sceneRenderer,
+                                  (game->assetPath + "/models/scenery/console.gltf").c_str());
+
+    // Objects3D: consoles are solid models, so give each a static collision footprint matching the
+    // drawn model (oriented by the same facing). Appended to the level's collision bodies, which are
+    // rebuilt per frame/level. The 2D tile modes rely on the tilemap's own collision.
+    int consoleColliders = 0;
+    if (game_mode_is_3d(game)) {
+        for (const ConsoleSpec& c : specs) {
+            const float a = consoleFacingAngle(c.facingRad);
+            const float ca = std::cos(a), sa = std::sin(a);
+            Vector2 corners[4];
+            const float sx[4] = {-1, 1, 1, -1}, sz[4] = {-1, -1, 1, 1};
+            for (int i = 0; i < 4; ++i) {
+                float x = sx[i] * CONSOLE_HALF_X, z = sz[i] * CONSOLE_HALF_Z;
+                float xr = x * ca + z * sa, zr = -x * sa + z * ca;   // rotate about up (matches DrawModelEx)
+                corners[i] = {c.physicsCenter.x + xr, c.physicsCenter.y + zr};
+            }
+            PhysicsBody b = physics_create_static_polygon(&game->physics, corners, 4);
+            if (b.valid) { game->collisionBodies.push_back(b); consoleColliders++; }
+        }
+    }
+    TraceLog(LOG_INFO, "Created %zu consoles from level data (%d collision footprints)",
+             specs.size(), consoleColliders);
 }
 
 //------------------------------------------------------------------------------
@@ -1921,6 +1952,17 @@ static void game_draw_charger_debug_3d(Game* game) {
     }
 }
 
+// V-debug: outline each console's "use" activation zone (the box in front where SPACE works).
+static void game_draw_console_debug_3d(Game* game) {
+    for (const ConsoleSpec& c : game->consoleManager.consoles()) {
+        std::array<Vector2, 4> q = consoleUseZoneCorners(c);
+        for (int i = 0; i < 4; ++i) {
+            Vector2 a = q[i], b = q[(i + 1) % 4];
+            DrawLine3D((Vector3){a.x, 0.15f, a.y}, (Vector3){b.x, 0.15f, b.y}, LIME);
+        }
+    }
+}
+
 static void game_draw_charger_debug_2d(Game* game) {
     for (const ChargerView& c : game->chargerManager.views()) {
         Vector2 screen = GetWorldToScreen((Vector3){c.worldPos.x, 0.5f, c.worldPos.y}, game->camera);
@@ -2067,6 +2109,7 @@ void game_render_gameplay(Game* game) {
     if (game_mode_is_3d(game)) {
         game->door3DRenderer.render(game->doorManager.views());
         game->charger3DRenderer.render(game->camera, gTextures().get(TEX_FLARE));
+        game->console3DRenderer.render(game->consoleManager.consoles());
     } else {
         game->doorRenderer.render();
         game->chargerRenderer.render();
@@ -2283,6 +2326,7 @@ void game_render_gameplay(Game* game) {
         game_draw_ai_debug_3d(game);
         game_draw_door_debug_3d(game);
         game_draw_charger_debug_3d(game);
+        game_draw_console_debug_3d(game);
         game_draw_lift_debug_3d(game);
         game_draw_collision_debug_3d(game);
     }
@@ -2454,6 +2498,7 @@ void game_destroy(Game* game) {
     game->chargerRenderer.destroy();
     game->charger3DRenderer.destroy();
     game->consoleManager.destroy();
+    game->console3DRenderer.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
     game->particleManager.clear();  // render-only; just drop the buffers
 

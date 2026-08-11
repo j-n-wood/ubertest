@@ -12,6 +12,7 @@ set(SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/shared/rendering/door3d_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/charger_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/charger3d_renderer.cpp
+    ${CMAKE_SOURCE_DIR}/shared/rendering/console3d_renderer.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/collision_debug.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/glass_render.cpp
     ${CMAKE_SOURCE_DIR}/shared/utils/string_utils.cpp

@@ -21,6 +21,7 @@
 #include "rendering/door3d_renderer.h"    // 3D block doors (Objects3D mode)
 #include "rendering/charger_renderer.h"    // 2D animated-tile chargers (Tilemap/CustomTiles)
 #include "rendering/charger3d_renderer.h"  // 3D particle chargers (Objects3D mode)
+#include "rendering/console3d_renderer.h"  // 3D console models (Objects3D mode)
 #include "units/unit_manager.h"
 #include "units/weapon.h"
 #include "rendering/sprite_animation.h"
@@ -144,6 +145,7 @@ struct Game {
 
     // Consoles: static usable tiles (player-near-centre -> SPACE opens console page)
     ConsoleManager consoleManager;
+    Console3DRenderer console3DRenderer;    // 3D console models (Objects3D mode)
 
     // Lifts: elevator graph built from in-map lift objects (SPACE opens the ship view);
     // shipMap holds the side-on rendering rects (shipmap.json).

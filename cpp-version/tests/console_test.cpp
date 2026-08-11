@@ -8,25 +8,34 @@
 #include "pages/page_manager.h"
 
 //------------------------------------------------------------------------------
-// ConsoleManager: player is "in range" only within CONSOLE_USE_RADIUS of a centre.
+// ConsoleManager: the "use" zone is a box the size of the console footprint placed IN FRONT of the
+// console (the console body blocks its own centre). Its centre is consoleUseZoneCenter().
 //------------------------------------------------------------------------------
 
-TEST(ConsoleManagerTest, InRangeOnlyNearCentre) {
+TEST(ConsoleManagerTest, InRangeInFrontNotAtCentre) {
     ConsoleManager cm;
     ConsoleSpec s;
     s.physicsCenter = {5.0f, 5.0f};
+    s.facingRad = 0.0f;
     cm.init({s});
 
-    cm.update({5.0f, 5.0f});                     // dead centre
+    const Vector2 front = consoleUseZoneCenter(s);
+
+    cm.update(front);                            // standing in front -> usable
     EXPECT_TRUE(cm.playerInRange());
 
-    cm.update({5.0f + CONSOLE_USE_RADIUS - 0.01f, 5.0f});  // just inside
+    // In front but offset along the wide face (within CONSOLE_HALF_Z) -> still usable.
+    cm.update({front.x + 0.7f, front.y});
     EXPECT_TRUE(cm.playerInRange());
 
-    cm.update({5.0f + CONSOLE_USE_RADIUS + 0.1f, 5.0f});   // just outside
+    cm.update({5.0f, 5.0f});                      // the console centre itself is blocked -> not usable
     EXPECT_FALSE(cm.playerInRange());
 
-    cm.update({50.0f, 50.0f});                   // far away
+    // Opposite side (mirror of the front zone about the console) -> not usable.
+    cm.update({2.0f * s.physicsCenter.x - front.x, 2.0f * s.physicsCenter.y - front.y});
+    EXPECT_FALSE(cm.playerInRange());
+
+    cm.update({50.0f, 50.0f});                    // far away
     EXPECT_FALSE(cm.playerInRange());
 }
 
@@ -37,17 +46,18 @@ TEST(ConsoleManagerTest, NoConsolesNeverInRange) {
     EXPECT_FALSE(cm.playerInRange());
 }
 
-TEST(ConsoleManagerTest, NearestOfMultipleConsoles) {
+TEST(ConsoleManagerTest, InFrontOfOneOfMultipleConsoles) {
     ConsoleManager cm;
     ConsoleSpec a, b;
     a.physicsCenter = {0.0f, 0.0f};
     b.physicsCenter = {10.0f, 0.0f};
+    a.facingRad = b.facingRad = 0.0f;
     cm.init({a, b});
 
-    cm.update({10.0f, 0.0f});   // on the second console
+    cm.update(consoleUseZoneCenter(b));   // in front of the second console
     EXPECT_TRUE(cm.playerInRange());
 
-    cm.update({5.0f, 0.0f});    // midway, near neither
+    cm.update({5.0f, 0.0f});              // midway, in front of neither
     EXPECT_FALSE(cm.playerInRange());
 }
 

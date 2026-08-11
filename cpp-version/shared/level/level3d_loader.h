@@ -4,6 +4,7 @@
 #include "level/level_types.h"
 #include "level/door_manager.h"      // DoorSpec
 #include "level/charger_manager.h"   // ChargerSpec
+#include "level/console_manager.h"   // ConsoleSpec
 #include "level/lift_manager.h"      // TransporterSpec
 #include "rendering/scene_renderer.h"
 #include <string>
@@ -28,6 +29,7 @@ bool load3DLevel(const std::string& assetPath, int levelNumber, SceneRenderer* r
 // so Objects3D places them on the 3D geometry rather than at TMX-derived positions.
 void load3DLevelDoors(const std::string& assetPath, int levelNumber, std::vector<DoorSpec>& out);
 void load3DLevelChargers(const std::string& assetPath, int levelNumber, std::vector<ChargerSpec>& out);
+void load3DLevelConsoles(const std::string& assetPath, int levelNumber, std::vector<ConsoleSpec>& out);
 
 // Static wall collision from the bundle's level_<n>.collision.json, in the game's 2D physics plane
 // (render X, render Z), already metric. Polygons are CCW convex solids; chains are wall outlines.
