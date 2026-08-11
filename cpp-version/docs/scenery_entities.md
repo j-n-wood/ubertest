@@ -183,8 +183,28 @@ defaults 0 (safe no-op when the map isn't bound). Wired in `game_render_gameplay
 covers the current defs; revisit if a def needs a genuinely different pipeline. Tuning knobs: FBO
 resolution (`build(2048)`), light `extent`/`height`, and `bias` (`apply`, 0.0015).
 
-**Phase 4 — Glow materials.** Emissive/glow shader variant for `glow` defs (alert/lift-top; consoleglow
-for screens).
+**Phase 4 — Glow materials (DONE).** `lighting.fs` gained an `emissive` uniform (float strength,
+default 0 = safe no-op): a glow surface adds its material colour back as self-illumination **after**
+the shadow and lights-out steps, so a glowing object stays bright in shadow and when the level's
+lights go out. `Object3DRenderer::render` sets the uniform per-draw — `glowIntensity` for a `Glow`
+def, 0 otherwise — and **resets it to 0 after the loop** so the shared scene shader never glows the
+tiles/units drawn elsewhere in the frame (uniforms persist across draws in one program). Rather than
+a second shader program, this reuses the one lit shader with a branch — the deferred "shader
+switching" from Phase 3 still isn't needed. Data-driven via a new `glowIntensity` def field (default
+1.0). Alert lights + lift tops on deck 10 now read as self-lit beacons. (`consoleglow` for console
+screens is a separate renderer and out of scope here.)
+
+*Dynamic alert glow (uber `gs_alert`).* A glow def can set `glowSource: alert` (vs the default
+`static`): its glow colour then comes from the ship's alert **band** — green→yellow→amber→red
+(`scoring.h alert_band_color`, matching uber's colours) — pulsed by a sine whose **rate rises with
+the alert level** (`alert_pulse_hz`, ~0.4 Hz calm → ~2 Hz at red; uber used a fixed 0.4 Hz, faster-
+with-alert is our addition). The game integrates the pulse into `alertGlowPhase` (so a rate change
+never jumps the wave), computes `bandColour × pulse`, and feeds it to `Object3DRenderer::setAlertGlow`
+each frame; the shader picks it via `emissiveTint = 1` (a flag, not "is the colour black?", so the
+pulse trough can legitimately reach black). The alert light (renderIndex 42) uses it; it glows green
+when calm. uber's other glow source, `gs_wave` (self-coloured sine pulse + a **scrolling glow-mask
+texture**), is not ported — the only placed ship1 user is the lift top, whose wave effect is a
+scrolling yellow glow texture (needs a glow-texture channel + UV-scroll in the shader/pipeline, TBD).
 
 **Phase 5 — Decals (deferred).** Runtime `dirty_t`-style projected sprites (explosion scorch, drips)
 and, separately, the map-placed `Feature` wall-detail layer (own index table) — lower priority.
@@ -200,4 +220,6 @@ the test suite green. Phase 2 (done): on deck 10 (four tanks, health 50) shoot a
 (shared blast + sparks), its footprint drops (you can walk through where it stood), and it stops
 rendering/casting a shadow; the blast damages nearby droids. Phase 3 (done):
 `--deck 10` (four ceiling fans) — the fan blades cast crisp cross shadows straight down onto the
-floor, and units/tanks passing under a caster are shadowed; 152 tests green.
+floor, and units/tanks passing under a caster are shadowed. Phase 4 (done): on `--deck 10` the alert
+light + lift top read as self-lit glowing beacons against the scene (and stay lit in shadow), while
+neighbouring tiles/units render normally — no emissive leak. 152 tests green.

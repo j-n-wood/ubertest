@@ -2213,6 +2213,15 @@ void game_render_gameplay(Game* game) {
         game->door3DRenderer.render(game->doorManager.views());
         game->charger3DRenderer.render(game->camera, gTextures().get(TEX_FLARE));
         game->console3DRenderer.render(game->consoleManager.consoles());
+        // Alert beacon: band colour (green/yellow/amber/red) × sine pulse, the rate rising with the
+        // alert level. Phase is integrated so a rate change doesn't jump the wave. Fed to the object
+        // renderer for glowSource: Alert defs (the alert lights). Mirrors uber's domainView glow.
+        {
+            AlertColor ac = alert_band_color(alert_band(game->alertLevel));
+            game->alertGlowPhase += (float)(alert_pulse_hz(game->alertLevel) * GetFrameTime());
+            float pulse = 0.5f + 0.5f * sinf(2.0f * PI * game->alertGlowPhase);
+            game->object3DRenderer.setAlertGlow((Vector3){ac.r * pulse, ac.g * pulse, ac.b * pulse});
+        }
         game->object3DRenderer.render(game->objectManager.instances());
     } else {
         game->doorRenderer.render();

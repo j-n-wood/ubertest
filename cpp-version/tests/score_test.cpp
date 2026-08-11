@@ -23,6 +23,31 @@ TEST(AlertBandTest, ScoreRatePerBand) {
 }
 
 //------------------------------------------------------------------------------
+// Alert glow beacon: band colours (uber green/yellow/amber/red) + pulse rate rising with level.
+//------------------------------------------------------------------------------
+TEST(AlertGlowTest, BandColours) {
+    auto eq = [](AlertColor c, float r, float g, float b) {
+        return c.r == r && c.g == g && c.b == b;
+    };
+    EXPECT_TRUE(eq(alert_band_color(AlertBand::Green),  0.0f, 1.0f, 0.0f));
+    EXPECT_TRUE(eq(alert_band_color(AlertBand::Yellow), 1.0f, 1.0f, 0.0f));
+    EXPECT_TRUE(eq(alert_band_color(AlertBand::Amber),  0.8f, 0.5f, 0.0f));
+    EXPECT_TRUE(eq(alert_band_color(AlertBand::Red),    1.0f, 0.0f, 0.0f));
+}
+
+TEST(AlertGlowTest, PulseRateRisesWithLevel) {
+    // Calm floor at/below 0, red-alert ceiling clamped at ALERT_RED and beyond.
+    EXPECT_DOUBLE_EQ(alert_pulse_hz(0.0), 0.4);
+    EXPECT_DOUBLE_EQ(alert_pulse_hz(-100.0), 0.4);        // clamps low
+    EXPECT_DOUBLE_EQ(alert_pulse_hz(ALERT_RED), 2.0);     // ceiling
+    EXPECT_DOUBLE_EQ(alert_pulse_hz(ALERT_RED * 2.0), 2.0);  // clamps high
+    // Monotonic rise between the extremes.
+    EXPECT_GT(alert_pulse_hz(ALERT_YELLOW), alert_pulse_hz(0.0));
+    EXPECT_GT(alert_pulse_hz(ALERT_AMBER), alert_pulse_hz(ALERT_YELLOW));
+    EXPECT_GT(alert_pulse_hz(ALERT_RED), alert_pulse_hz(ALERT_AMBER));
+}
+
+//------------------------------------------------------------------------------
 // Points = 50 x class (typeCode/100, clamped 1..9).
 //------------------------------------------------------------------------------
 TEST(ScorePointsTest, PerClass) {

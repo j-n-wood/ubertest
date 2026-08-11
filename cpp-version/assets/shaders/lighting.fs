@@ -80,6 +80,18 @@ uniform vec4 ambient;
 // up when a level is cleared — the literal-dimming counterpart of the 2D tile "lights out" row.
 uniform float darkness;
 
+// Emissive / glow (DRAWTYPE glow — alert lights, lift tops). 0 = normal lit surface (the GLSL
+// default, so any pass that never sets it is unaffected). >0 adds a glow colour back as
+// self-illumination AFTER shadow + lights-out, so a glowing object stays bright in shadow and when
+// the level's lights go out. Set per-draw by Object3DRenderer for glow definitions.
+//   emissiveTint = 0 -> glow uses the material's own diffuse colour (steady, e.g. lift tops).
+//   emissiveTint = 1 -> glow uses emissiveColor (the ship's pulsing alert-band colour). A separate
+//     flag (not "is emissiveColor black?") so the alert pulse can legitimately reach black at its
+//     trough without falling back to the material colour.
+uniform float emissive;
+uniform vec3 emissiveColor;
+uniform int  emissiveTint;
+
 // Shadow mapping: a depth map rendered from the light's POV. `useShadows` gates it (0 = off, the GLSL
 // default, so any pass that never sets it is unaffected). `lightVP` transforms world space into the
 // light's clip space for the occlusion lookup. See shared/rendering/shadow_map.*.
@@ -270,6 +282,13 @@ void main() {
 
     // Lights-out dimming (ambient + diffuse + specular + env all fade together).
     result *= (1.0 - clamp(darkness, 0.0, 1.0));
+
+    // Emissive glow: add a glow colour back as self-illumination, unaffected by shadow or lights-out
+    // (a glowing light stays lit). emissive is the strength (0 = off); emissiveTint selects the tint.
+    if (emissive > 0.0) {
+        vec3 glowTint = (emissiveTint == 1) ? emissiveColor : diffuseColor;
+        result += emissive * glowTint;
+    }
 
     finalColor = vec4(result, colDiffuse.a * texelColor.a);
 }

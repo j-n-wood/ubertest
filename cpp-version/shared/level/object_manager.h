@@ -18,8 +18,16 @@
 
 enum class ObjectDrawType {
     Diffuse,     // plain lit model
-    Glow,        // emissive/glow material (Phase 4; rendered as Diffuse until then)
+    Glow,        // emissive/glow material — self-illuminated via the shader's emissive term (glowIntensity)
     ShadowOnly,  // mesh never drawn — contributes only to the shadow pass (Phase 3)
+};
+
+// Where a Glow def's colour comes from (uber's eGlowSource). Static = the model's own material
+// colour, steady. Alert = the ship's alert-band colour, pulsed (the alert lights) — driven each
+// frame by the game from the alert level. See docs/scenery_entities.md.
+enum class GlowSource {
+    Static,
+    Alert,
 };
 
 struct ObjectDefinition {
@@ -33,6 +41,8 @@ struct ObjectDefinition {
     int health = 50;
     float explodeSize = 0.0f;
     ObjectDrawType drawType = ObjectDrawType::Diffuse;
+    float glowIntensity = 1.0f;        // emissive strength when drawType == Glow (self-illumination)
+    GlowSource glowSource = GlowSource::Static;  // Glow colour source (Static = material, Alert = pulsing band colour)
     bool castsShadow = false;
     Vector3 spin = {0, 0, 0};          // default spin (rad/s about up); an instance's own spin wins
 };

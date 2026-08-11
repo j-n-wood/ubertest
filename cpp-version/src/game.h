@@ -184,6 +184,11 @@ struct Game {
     // counterpart of the 2D tile "lights out" row). Eased toward its target each render frame.
     float lightsOutDarkness = 0.0f;
 
+    // Alert glow beacon: accumulated sine phase for the pulsing alert lights (glowSource: Alert).
+    // Phase is integrated (not time×rate) so the pulse stays continuous as the rate rises with the
+    // alert level. See scoring.h alert_band_color/alert_pulse_hz and Object3DRenderer::setAlertGlow.
+    float alertGlowPhase = 0.0f;
+
     // Paths
     std::string assetPath;
     std::string shadersPath;

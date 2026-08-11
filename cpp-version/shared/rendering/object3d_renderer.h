@@ -27,6 +27,10 @@ public:
     void build(SceneRenderer* renderer, const std::vector<ObjectDefinition>& defs,
                const std::string& assetPath);
 
+    // The current ship alert glow colour (band colour × pulse), fed each frame by the game and used
+    // for `glowSource: Alert` definitions (the alert lights). See scoring.h alert_band_color/pulse.
+    void setAlertGlow(Vector3 rgb) { alertGlow_ = rgb; }
+
     void render(const std::vector<ObjectInstance>& instances) const;
 
     // Draw all shadow-casting instances' models normally (for the shadow-map depth pass), including
@@ -37,6 +41,11 @@ public:
 
 private:
     std::unordered_map<int, Model> models_;   // keyed by def renderIndex
+    Shader shader_{};                          // the shared scene shader (for the per-draw emissive uniforms)
+    int emissiveLoc_ = -1;                     // cached "emissive" (strength) uniform location
+    int emissiveColorLoc_ = -1;                // cached "emissiveColor" (tint) uniform location
+    int emissiveTintLoc_ = -1;                 // cached "emissiveTint" (flag) uniform location
+    Vector3 alertGlow_ = {0, 1, 0};            // current alert-band glow colour × pulse (green when calm)
     bool built_ = false;
 };
 

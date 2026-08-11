@@ -6,5 +6,6 @@
   "floating": true,
   "destructible": false,
   "drawtype": "glow",
+  "glowSource": "alert",
   "castsShadow": true
 }

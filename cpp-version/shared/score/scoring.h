@@ -44,6 +44,36 @@ inline double alert_score_rate(AlertBand band) {
     }
 }
 
+//------------------------------------------------------------------------------
+// Alert glow (ship alert beacon). Mirrors the uber renderer: an alert-sourced glow surface takes
+// the band's colour, pulsed by a sine 0..1. Kept raylib-free (plain RGB) so it stays header-only
+// and unit-testable; the 3D game feeds the result into the scene shader's emissive term for
+// `glowSource: alert` scenery (the alert lights). See docs/scenery_entities.md.
+//------------------------------------------------------------------------------
+
+struct AlertColor { float r = 0.0f, g = 0.0f, b = 0.0f; };
+
+// Band colours match uber (game.cpp alertGreen/Yellow/Amber/Red).
+inline AlertColor alert_band_color(AlertBand band) {
+    switch (band) {
+        case AlertBand::Red:    return {1.0f, 0.0f, 0.0f};
+        case AlertBand::Amber:  return {0.8f, 0.5f, 0.0f};
+        case AlertBand::Yellow: return {1.0f, 1.0f, 0.0f};
+        case AlertBand::Green:  default: return {0.0f, 1.0f, 0.0f};
+    }
+}
+
+// Glow pulse frequency (Hz), rising with alert level so the beacon blinks faster under higher
+// alert (uber used a fixed 0.4 Hz; scaling the rate is our addition). ~0.4 Hz when calm up to
+// ~2.0 Hz at red alert. Integrate this into a phase (don't multiply straight into sin(t)) so the
+// pulse stays continuous as the rate changes.
+inline double alert_pulse_hz(double level) {
+    double t = level / ALERT_RED;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    return 0.4 + 1.6 * t;
+}
+
 // Points for a droid: 50 x class, where class = typeCode/100 clamped to 1..9.
 inline int score_points_for_typecode(int typeCode) {
     int cls = typeCode / 100;

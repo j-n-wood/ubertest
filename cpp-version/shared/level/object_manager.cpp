@@ -14,6 +14,11 @@ ObjectDrawType parseDrawType(const std::string& s) {
     if (s == "shadowOnly") return ObjectDrawType::ShadowOnly;
     return ObjectDrawType::Diffuse;
 }
+
+GlowSource parseGlowSource(const std::string& s) {
+    if (s == "alert") return GlowSource::Alert;
+    return GlowSource::Static;
+}
 }  // namespace
 
 void ObjectManager::loadDefinitions(const std::string& dir) {
@@ -44,6 +49,8 @@ void ObjectManager::loadDefinitions(const std::string& dir) {
         d.health = j.value("health", 50);
         d.explodeSize = j.value("explodeSize", 0.0f);
         d.drawType = parseDrawType(j.value("drawtype", "diffuse"));
+        d.glowIntensity = j.value("glowIntensity", 1.0f);
+        d.glowSource = parseGlowSource(j.value("glowSource", "static"));
         d.castsShadow = j.value("castsShadow", false);
         if (j.contains("spin") && j["spin"].is_array() && j["spin"].size() >= 3) {
             d.spin = {j["spin"][0].get<float>(), j["spin"][1].get<float>(), j["spin"][2].get<float>()};
