@@ -33,6 +33,12 @@ void printUsage(const char* programName) {
     printf("  --unit <id>         Unit ID for player (default: droid_class_0)\n");
     printf("  --renderer <mode>   Level renderer: tilemap | custom | 3d (default: 3d; toggle in-game with G)\n");
     printf("  --deck <n>          Jump to deck number n after init (debug)\n");
+    printf("  --screenshot <path> Capture a PNG after --shot-frame frames, then exit\n");
+    printf("  --shot-frame <n>    Frame to capture on (default: 30)\n");
+    printf("  --shot-eye x,y,z    Screenshot camera position (world coords)\n");
+    printf("  --shot-target x,y,z Screenshot camera look-at target\n");
+    printf("  --shot-overview     Screenshot camera frames the whole deck\n");
+    printf("  --shot-debug        Enable V-mode debug overlays (collision + entity markers) in the shot\n");
     printf("  --args-file <path>  Read extra args from a file (also @path); '#' comments. Lets a fixed\n");
     printf("                      command drive different runs by editing the file\n");
     printf("  --help, -h          Show this help\n");
@@ -62,6 +68,11 @@ void printUsage(const char* programName) {
     printf("  ESC         - Quit\n");
 }
 
+// Parse "x,y,z" into a Vector3 (for the --shot-eye / --shot-target screenshot camera args).
+static bool parseVec3Arg(const char* s, Vector3& out) {
+    return sscanf(s, "%f,%f,%f", &out.x, &out.y, &out.z) == 3;
+}
+
 int main(int argc, char* argv[]) {
     // Expand any --args-file/@file tokens so a fixed command can drive different runs (see args_file.h).
     std::vector<std::string> argStore = expandArgsFiles(argc, argv);
@@ -80,6 +91,14 @@ int main(int argc, char* argv[]) {
     RotationTestConfig testConfig;
     LevelRenderMode renderMode = LevelRenderMode::Objects3D;  // default; --renderer overrides, G toggles at runtime
     int startDeck = -1;  // --deck N: jump to deck N after init (debug), -1 = start on deck 0
+
+    // Screenshot capture (dev/QA): after --shot-frame frames, save the framebuffer to a PNG and exit.
+    // Combine with --args-file to keep the command line stable. Optional camera override via
+    // --shot-eye/--shot-target (world coords "x,y,z") or --shot-overview (frame the whole deck).
+    const char* screenshotPath = nullptr;
+    int shotFrame = 30;
+    Vector3 shotEye{}, shotTarget{};
+    bool hasShotEye = false, hasShotTarget = false, shotOverview = false, shotDebug = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -108,6 +127,18 @@ int main(int argc, char* argv[]) {
             testConfig.unitId = unitId;  // Also set in test config for compatibility
         } else if (strcmp(argv[i], "--deck") == 0 && i + 1 < argc) {
             startDeck = atoi(argv[++i]);   // jump to this deck number after init (debug)
+        } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
+            screenshotPath = argv[++i];
+        } else if (strcmp(argv[i], "--shot-frame") == 0 && i + 1 < argc) {
+            shotFrame = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--shot-eye") == 0 && i + 1 < argc) {
+            hasShotEye = parseVec3Arg(argv[++i], shotEye);
+        } else if (strcmp(argv[i], "--shot-target") == 0 && i + 1 < argc) {
+            hasShotTarget = parseVec3Arg(argv[++i], shotTarget);
+        } else if (strcmp(argv[i], "--shot-overview") == 0) {
+            shotOverview = true;
+        } else if (strcmp(argv[i], "--shot-debug") == 0) {
+            shotDebug = true;   // enable the V-mode overlays (collision wireframe, object/entity markers)
         }
     }
 
@@ -154,10 +185,35 @@ int main(int argc, char* argv[]) {
     PageManager pages;
     pages.push(std::make_unique<GamePage>(&game, &pages));
 
+    int frameNo = 0;
     while (!WindowShouldClose() && game.running) {
         float dt = GetFrameTime();
         pages.update(dt);
+        // Screenshot camera override (applied after the game's per-frame camera update, before draw).
+        if (screenshotPath) {
+            if (shotDebug) game.showAIDebug = true;   // V-mode overlays (collision + entity markers)
+            if (shotOverview && game.currentLevel >= 0 &&
+                game.currentLevel < (int)game.levelRenderData.size()) {
+                const LevelRenderData& d = game.levelRenderData[game.currentLevel];
+                Vector3 lo = d.boundsMin, hi = d.boundsMax;
+                Vector3 c = {(lo.x + hi.x) * 0.5f, (lo.y + hi.y) * 0.5f, (lo.z + hi.z) * 0.5f};
+                float sx = hi.x - lo.x, sz = hi.z - lo.z;
+                game.camera.position = (sx >= sz) ? (Vector3){lo.x - sx * 0.12f, c.y + sz * 0.5f, c.z}
+                                                  : (Vector3){c.x, c.y + sx * 0.5f, lo.z - sz * 0.12f};
+                game.camera.target = c;
+                game.camera.up = {0, 1, 0};
+            } else if (hasShotEye || hasShotTarget) {
+                if (hasShotEye) game.camera.position = shotEye;
+                if (hasShotTarget) game.camera.target = shotTarget;
+                game.camera.up = {0, 1, 0};
+            }
+        }
         pages.render();
+        if (screenshotPath && ++frameNo >= shotFrame) {
+            TakeScreenshot(screenshotPath);
+            TraceLog(LOG_INFO, "Saved screenshot: %s (frame %d)", screenshotPath, shotFrame);
+            break;
+        }
     }
 
     game_destroy(&game);

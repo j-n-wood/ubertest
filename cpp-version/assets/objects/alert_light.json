@@ -1,0 +1,10 @@
+{
+  "id": "alert_light",
+  "renderIndex": 42,
+  "model": "models/scenery/alert.gltf",
+  "scale": 1.0,
+  "floating": true,
+  "destructible": false,
+  "drawtype": "glow",
+  "castsShadow": true
+}

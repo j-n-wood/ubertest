@@ -1,0 +1,13 @@
+{
+  "id": "tank",
+  "renderIndex": 79,
+  "model": "models/scenery/tank.gltf",
+  "scale": 1.0,
+  "floating": false,
+  "collisionRadius": 0.2,
+  "destructible": true,
+  "health": 50,
+  "explodeSize": 1.6,
+  "drawtype": "diffuse",
+  "castsShadow": true
+}

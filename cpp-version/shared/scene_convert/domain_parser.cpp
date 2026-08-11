@@ -674,7 +674,11 @@ bool parseDomainFile(std::string_view path, Domain& outDomain,
                 outDomain.objects.chargers.push_back(std::move(charger));
             }
         }
-        else if (keyword == "Object") {
+        else if (keyword == "Object" || keyword == "Destructible" || keyword == "Organic") {
+            // All three share object::load's record layout (parseGenericObject captures id/pos/rot/
+            // renderIndex/spin and ignores the extra EXPLODE*/FIXED lines). Destructible/Organic gain
+            // their gameplay behaviour from the object DEFINITION (keyed by renderIndex), not per-record
+            // flags, so they route here uniformly. See docs/scenery_entities.md.
             GenericObject obj;
             if (parseGenericObject(file, obj)) {
                 outDomain.objects.generic.push_back(std::move(obj));

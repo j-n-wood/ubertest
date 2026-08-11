@@ -631,6 +631,31 @@ static Destructible jsonToDestructible(const json& j) {
     return d;
 }
 
+static json genericToJson(const GenericObject& o) {
+    Vector3 renderPos = saveCoords(o.position);
+    return {
+        {"id", o.id},
+        {"position", vector3ToJson(renderPos)},
+        {"rotation", vector3ToJson(o.rotation)},
+        {"typeId", o.typeId},          // uber renderIndex — selects the object definition
+        {"mass", o.mass},
+        {"alwaysRender", o.alwaysRender},
+        {"spin", vector3ToJson(o.spin)}
+    };
+}
+
+static GenericObject jsonToGeneric(const json& j) {
+    GenericObject o;
+    o.id = j.value("id", 0);
+    o.position = jsonToVector3(j["position"]);
+    o.rotation = jsonToVector3(j["rotation"]);
+    o.typeId = j.value("typeId", 0);
+    o.mass = j.value("mass", 0.0f);
+    o.alwaysRender = j.value("alwaysRender", false);
+    if (j.contains("spin")) o.spin = jsonToVector3(j["spin"]);
+    return o;
+}
+
 static json objectsToJson(const Objects& o) {
     json doors = json::array();
     for (const auto& d : o.doors) {
@@ -648,11 +673,16 @@ static json objectsToJson(const Objects& o) {
     for (const auto& d : o.destructibles) {
         destructibles.push_back(destructibleToJson(d));
     }
+    json generic = json::array();
+    for (const auto& g : o.generic) {
+        generic.push_back(genericToJson(g));
+    }
     return {
         {"doors", doors},
         {"consoles", consoles},
         {"chargers", chargers},
-        {"destructibles", destructibles}
+        {"destructibles", destructibles},
+        {"generic", generic}
     };
 }
 
@@ -676,6 +706,11 @@ static Objects jsonToObjects(const json& j) {
     if (j.contains("destructibles")) {
         for (const auto& d : j["destructibles"]) {
             o.destructibles.push_back(jsonToDestructible(d));
+        }
+    }
+    if (j.contains("generic")) {
+        for (const auto& g : j["generic"]) {
+            o.generic.push_back(jsonToGeneric(g));
         }
     }
     return o;

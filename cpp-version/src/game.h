@@ -13,6 +13,8 @@
 #include "level/level_renderer.h"
 #include "level/tile_properties_loader.h"
 #include "level/console_manager.h"
+#include "level/object_manager.h"
+#include "rendering/object3d_renderer.h"
 #include "level/lift_manager.h"
 #include "level/ship_map.h"
 #include "score/scoring.h"
@@ -146,6 +148,12 @@ struct Game {
     // Consoles: static usable tiles (player-near-centre -> SPACE opens console page)
     ConsoleManager consoleManager;
     Console3DRenderer console3DRenderer;    // 3D console models (Objects3D mode)
+
+    // Scenery objects: data-driven definitions (assets/objects/) instanced per level from the
+    // bundle. Objects3D-only. See docs/scenery_entities.md.
+    ObjectManager objectManager;
+    Object3DRenderer object3DRenderer;
+    ShadowRenderer shadowRenderer;          // planar floor shadows for objects + units (Objects3D)
 
     // Lifts: elevator graph built from in-map lift objects (SPACE opens the ship view);
     // shipMap holds the side-on rendering rects (shipmap.json).

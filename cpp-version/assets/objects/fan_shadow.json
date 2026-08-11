@@ -1,0 +1,11 @@
+{
+  "id": "fan_shadow",
+  "renderIndex": 147,
+  "model": "models/scenery/fan.gltf",
+  "scale": 1.0,
+  "floating": true,
+  "destructible": false,
+  "drawtype": "shadowOnly",
+  "castsShadow": true,
+  "spin": [0.0, 0.0, 1.3]
+}

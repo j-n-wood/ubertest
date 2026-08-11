@@ -1,0 +1,10 @@
+{
+  "id": "lift_top",
+  "renderIndex": 49,
+  "model": "models/scenery/lifttop.gltf",
+  "scale": 1.0,
+  "floating": true,
+  "destructible": false,
+  "drawtype": "glow",
+  "castsShadow": true
+}

@@ -271,6 +271,18 @@ static void writeEntities(const Domain& domain, float scale, int level, const st
                             {"waypointId", c.waypointId}});
     doc["consoles"] = consoles;
 
+    // Generic scenery objects (Object/Destructible/Organic records). `renderIndex` selects the object
+    // DEFINITION (assets/objects/*.json) that gives it model/physics/health/shader; the full 3D pos
+    // (these can be ceiling-height, not floor-seated), facing, and spin are per-instance. See
+    // docs/scenery_entities.md.
+    json objects = json::array();
+    for (const auto& o : domain.objects.generic)
+        objects.push_back({{"renderIndex", o.typeId},
+                           {"pos", {o.position.x, o.position.y, o.position.z}},
+                           {"rot", {o.rotation.x, o.rotation.y, o.rotation.z}},
+                           {"spin", {o.spin.x, o.spin.y, o.spin.z}}});
+    doc["objects"] = objects;
+
     std::ofstream f(path);
     f << doc.dump(2) << "\n";
 }

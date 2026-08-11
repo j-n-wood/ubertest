@@ -152,6 +152,25 @@ void load3DLevelConsoles(const std::string& assetPath, int levelNumber, std::vec
     }
 }
 
+void load3DLevelObjects(const std::string& assetPath, int levelNumber, std::vector<ObjectSpec>& out) {
+    std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".entities.json");
+    if (!f.is_open()) return;
+    json doc;
+    try { f >> doc; } catch (...) { return; }
+    if (!doc.contains("objects")) return;
+    auto v3 = [](const json& a) -> Vector3 {
+        return {a[0].get<float>(), a[1].get<float>(), a[2].get<float>()};
+    };
+    for (const auto& o : doc["objects"]) {
+        ObjectSpec s;
+        s.renderIndex = o.value("renderIndex", -1);
+        if (o.contains("pos")) s.position = v3(o["pos"]);   // full render-space position (X, Y up, Z)
+        if (o.contains("rot")) s.rotation = v3(o["rot"]);
+        if (o.contains("spin")) s.spin = v3(o["spin"]);
+        out.push_back(s);
+    }
+}
+
 bool load3DLevelCollision(const std::string& assetPath, int levelNumber, Collision3D& out) {
     std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".collision.json");
     if (!f.is_open()) return false;

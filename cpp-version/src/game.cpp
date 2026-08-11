@@ -34,6 +34,7 @@ static void game_create_chargers(Game* game);
 static std::vector<ChargerSpec> game_detect_chargers(const Game* game);
 static void game_create_consoles(Game* game);
 static std::vector<ConsoleSpec> game_detect_consoles(const Game* game);
+static void game_create_objects(Game* game);
 static void game_spawn_player(Game* game);
 static Vector2 game_level_spawn_pos(const Game* game);
 static void game_build_lift_network(Game* game);
@@ -88,6 +89,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         game->running = false;
         return;
     }
+    game->shadowRenderer.build(game->shadersPath);   // planar floor-shadow shader
 
     // Configure lighting - directional light from above
     sceneRendererAddDirectionalLight(&game->sceneRenderer,
@@ -148,6 +150,8 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
+    game->objectManager.loadDefinitions(game->assetPath + "/objects");   // catalog, once
+    game_create_objects(game);
     game->effectManager.init(game->physics.world_id);  // bind active world (no tiles; dynamic)
     game->particleManager.clear();                      // render-only; no world binding
 
@@ -715,6 +719,31 @@ static void game_create_consoles(Game* game) {
              specs.size(), consoleColliders);
 }
 
+// Scenery objects (Objects3D only): instance this level's bundle objects[] against the object
+// definition catalog, build their models, and give non-floating (solid) instances a static
+// collision footprint. Definitions were preloaded once in game_init. See docs/scenery_entities.md.
+static void game_create_objects(Game* game) {
+    game->objectManager.clear();
+    if (!game_mode_is_3d(game)) return;   // scenery objects render only in the 3D path
+
+    std::vector<ObjectSpec> specs;
+    load3DLevelObjects(game->assetPath, game->levels[game->currentLevel].number, specs);
+    game->objectManager.setInstances(specs);
+    game->object3DRenderer.build(&game->sceneRenderer, game->objectManager.definitions(), game->assetPath);
+
+    int colliders = 0;
+    for (const ObjectInstance& inst : game->objectManager.instances()) {
+        if (!inst.def || inst.def->floating || inst.def->collisionRadius <= 0.0f) continue;
+        // Grounded solid object: axis-aligned static box footprint at its ground position (X,Z).
+        const float r = inst.def->collisionRadius;
+        Vector2 centre = {inst.position.x, inst.position.z};
+        PhysicsBody b = physics_create_static_box(&game->physics, centre, 2.0f * r, 2.0f * r);
+        if (b.valid) { game->collisionBodies.push_back(b); colliders++; }
+    }
+    TraceLog(LOG_INFO, "Created %zu scenery objects (%d collision footprints)",
+             game->objectManager.instances().size(), colliders);
+}
+
 //------------------------------------------------------------------------------
 // Player Spawning
 //------------------------------------------------------------------------------
@@ -956,6 +985,7 @@ static void game_switch_renderer(Game* game, LevelRenderMode newMode) {
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
+    game_create_objects(game);
 
     // Reposition the persistent player into the new frame, then re-populate enemies around it.
     if (game->playerUnit && b2Body_IsValid(game->playerUnit->bodyId)) {
@@ -1369,6 +1399,7 @@ static void game_change_level(Game* game, int newLevel, const Vector2* target) {
     game_create_doors(game);
     game_create_chargers(game);
     game_create_consoles(game);
+    game_create_objects(game);
     game->effectManager.init(game->physics.world_id);  // rebind to new world; clears old effects
     game->particleManager.clear();                      // drop the old level's particles
 
@@ -1747,6 +1778,9 @@ void game_update_gameplay(Game* game, float dt) {
             game->chargerRenderer.update(simDt, game->chargerManager.views());
         }
 
+        // Scenery objects: advance spin (fans, etc.); empty/no-op outside Objects3D.
+        game->objectManager.update(simDt);
+
         // Line-of-sight: only units the player can see are rendered (render flag only).
         game_update_unit_visibility(game);
 
@@ -1963,6 +1997,19 @@ static void game_draw_console_debug_3d(Game* game) {
     }
 }
 
+// V-debug: mark every scenery object (incl. invisible shadow-only fans) with a wire box + a stalk to
+// the floor, colour-coded — red=destructible, magenta=shadow-only, sky=floating cosmetic.
+static void game_draw_object_debug_3d(Game* game) {
+    for (const ObjectInstance& inst : game->objectManager.instances()) {
+        if (!inst.def) continue;
+        Color col = inst.def->destructible ? RED
+                  : (inst.def->drawType == ObjectDrawType::ShadowOnly) ? MAGENTA : SKYBLUE;
+        Vector3 p = inst.position;
+        DrawCubeWires(p, 0.4f, 0.4f, 0.4f, col);
+        DrawLine3D(p, (Vector3){p.x, 0.0f, p.z}, Fade(col, 0.5f));   // stalk to floor
+    }
+}
+
 static void game_draw_charger_debug_2d(Game* game) {
     for (const ChargerView& c : game->chargerManager.views()) {
         Vector2 screen = GetWorldToScreen((Vector3){c.worldPos.x, 0.5f, c.worldPos.y}, game->camera);
@@ -2104,12 +2151,23 @@ void game_render_gameplay(Game* game) {
         }
     }
 
+    // Shadow pass: planar floor shadows for scenery objects (and later units), drawn after the
+    // floor/walls (so walls occlude them via the depth test) but before the casters are drawn on top.
+    if (game_mode_is_3d(game) && game->shadowRenderer.ready()) {
+        // Straight down, matching the scene's directional light ((0,50,0) -> (0,0,0)).
+        game->shadowRenderer.begin((Vector3){0.0f, -1.0f, 0.0f}, 0.03f, (Color){0, 0, 0, 110});
+        game->object3DRenderer.castShadows(game->shadowRenderer, game->objectManager.instances());
+        game->unitManager.castShadows(game->shadowRenderer);
+        game->shadowRenderer.end();
+    }
+
     // Draw doors + chargers (excluded from the baked tile mesh above). Doors: 3D blocks in the
     // Objects3D mode, animated tiles in the 2D modes — a 2D/3D mix would read as jarring.
     if (game_mode_is_3d(game)) {
         game->door3DRenderer.render(game->doorManager.views());
         game->charger3DRenderer.render(game->camera, gTextures().get(TEX_FLARE));
         game->console3DRenderer.render(game->consoleManager.consoles());
+        game->object3DRenderer.render(game->objectManager.instances());
     } else {
         game->doorRenderer.render();
         game->chargerRenderer.render();
@@ -2327,6 +2385,7 @@ void game_render_gameplay(Game* game) {
         game_draw_door_debug_3d(game);
         game_draw_charger_debug_3d(game);
         game_draw_console_debug_3d(game);
+        game_draw_object_debug_3d(game);
         game_draw_lift_debug_3d(game);
         game_draw_collision_debug_3d(game);
     }
@@ -2499,6 +2558,9 @@ void game_destroy(Game* game) {
     game->charger3DRenderer.destroy();
     game->consoleManager.destroy();
     game->console3DRenderer.destroy();
+    game->objectManager.clear();
+    game->object3DRenderer.destroy();
+    game->shadowRenderer.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
     game->particleManager.clear();  // render-only; just drop the buffers
 
