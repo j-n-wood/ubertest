@@ -120,10 +120,6 @@ public:
     // heightOffsets: optional per-section height offsets (indexed by allSections order)
     void renderAll(const std::vector<float>* heightOffsets = nullptr);
 
-    // Cast each visible unit's silhouette into the shadow pass (call between sr.begin/end). Draws
-    // every section's model flattened onto the floor — the unit's ground shadow.
-    void castShadows(const class ShadowRenderer& sr);
-
     // Render all debris objects
     void renderDebris();
 

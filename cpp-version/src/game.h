@@ -15,6 +15,7 @@
 #include "level/console_manager.h"
 #include "level/object_manager.h"
 #include "rendering/object3d_renderer.h"
+#include "rendering/shadow_map.h"
 #include "level/lift_manager.h"
 #include "level/ship_map.h"
 #include "score/scoring.h"
@@ -153,7 +154,7 @@ struct Game {
     // bundle. Objects3D-only. See docs/scenery_entities.md.
     ObjectManager objectManager;
     Object3DRenderer object3DRenderer;
-    ShadowRenderer shadowRenderer;          // planar floor shadows for objects + units (Objects3D)
+    ShadowMap shadowMap;                     // depth-map shadows for level/objects/units (Objects3D)
 
     // Lifts: elevator graph built from in-map lift objects (SPACE opens the ship view);
     // shipMap holds the side-on rendering rects (shipmap.json).

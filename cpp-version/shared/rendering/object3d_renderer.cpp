@@ -40,15 +40,15 @@ void Object3DRenderer::render(const std::vector<ObjectInstance>& instances) cons
     }
 }
 
-void Object3DRenderer::castShadows(const ShadowRenderer& sr, const std::vector<ObjectInstance>& instances) const {
-    if (!built_ || !sr.ready()) return;
+void Object3DRenderer::renderDepth(const std::vector<ObjectInstance>& instances) const {
+    if (!built_) return;
     for (const ObjectInstance& inst : instances) {
         if (!inst.def || !inst.alive || !inst.def->castsShadow) continue;
         auto it = models_.find(inst.def->renderIndex);
-        if (it == models_.end()) continue;   // no model loaded (e.g. fan.gltf not yet converted)
+        if (it == models_.end()) continue;   // no model loaded (e.g. fan.gltf missing)
         float rotDeg = -(inst.facingRad + inst.spinAngle) * RAD2DEG;   // same transform as render()
         float s = inst.def->scale;
-        sr.drawModel(it->second, inst.position, rotDeg, (Vector3){s, s, s});
+        DrawModelEx(it->second, inst.position, (Vector3){0, 1, 0}, rotDeg, (Vector3){s, s, s}, WHITE);
     }
 }
 

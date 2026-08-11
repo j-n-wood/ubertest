@@ -4,7 +4,6 @@
 #include "raylib.h"
 #include "level/object_manager.h"      // ObjectDefinition, ObjectInstance
 #include "rendering/scene_renderer.h"  // SceneRenderer
-#include "rendering/shadow_renderer.h" // ShadowRenderer
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,9 +29,9 @@ public:
 
     void render(const std::vector<ObjectInstance>& instances) const;
 
-    // Cast each shadow-enabled instance's silhouette via the shadow pass (call between sr.begin/end).
-    // Includes shadow-only defs (fan) — their mesh is drawn ONLY here, never in render().
-    void castShadows(const ShadowRenderer& sr, const std::vector<ObjectInstance>& instances) const;
+    // Draw all shadow-casting instances' models normally (for the shadow-map depth pass), including
+    // shadow-only defs (the fan) whose mesh is otherwise never drawn.
+    void renderDepth(const std::vector<ObjectInstance>& instances) const;
 
     void destroy();
 

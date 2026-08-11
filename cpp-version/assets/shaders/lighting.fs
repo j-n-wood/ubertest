@@ -80,6 +80,32 @@ uniform vec4 ambient;
 // up when a level is cleared — the literal-dimming counterpart of the 2D tile "lights out" row.
 uniform float darkness;
 
+// Shadow mapping: a depth map rendered from the light's POV. `useShadows` gates it (0 = off, the GLSL
+// default, so any pass that never sets it is unaffected). `lightVP` transforms world space into the
+// light's clip space for the occlusion lookup. See shared/rendering/shadow_map.*.
+uniform sampler2D shadowMap;
+uniform mat4 lightVP;
+uniform int useShadows;
+uniform float shadowBias;
+
+// 1.0 (lit) .. 0.0 (fully shadowed) for a world-space position, 3x3 PCF filtered.
+float shadowFactor(vec3 worldPos) {
+    if (useShadows == 0) return 1.0;
+    vec4 lp = lightVP * vec4(worldPos, 1.0);
+    vec3 p = lp.xyz / lp.w;
+    p = p * 0.5 + 0.5;                        // NDC -> [0,1]
+    if (p.z > 1.0) return 1.0;                // past the light's far plane -> lit
+    if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return 1.0;   // outside the map -> lit
+    vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
+    float lit = 0.0;
+    for (int x = -1; x <= 1; ++x)
+        for (int y = -1; y <= 1; ++y) {
+            float closest = texture(shadowMap, p.xy + vec2(x, y) * texel).r;
+            lit += (p.z - shadowBias > closest) ? 0.0 : 1.0;
+        }
+    return lit / 9.0;
+}
+
 // Light uniforms
 uniform int light0_enabled;
 uniform int light0_type;
@@ -225,10 +251,12 @@ void main() {
         return;
     }
 
-    // Combine lighting with material
+    // Combine lighting with material. Shadow darkens the direct (diffuse + specular) contribution;
+    // ambient stays so shadowed surfaces aren't pitch black.
+    float sh = shadowFactor(fragPosition);
     vec3 diffuseColor = colDiffuse.rgb * texelColor.rgb;
-    vec3 result = (ambientLight + diffuseLight) * diffuseColor;
-    result += specularLight;
+    vec3 result = (ambientLight + diffuseLight * sh) * diffuseColor;
+    result += specularLight * sh;
 
     // Old-school spherical environment mapping (additive reflection/glow layer).
     // UV = eye-space normal XY remapped to [0,1] (0.5,0.5 = facing camera). Modulated by the

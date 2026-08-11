@@ -2,7 +2,6 @@
 #include "unit_json.h"
 #include "movement_tuning.h"
 #include "../rendering/env_map.h"
-#include "../rendering/shadow_renderer.h"
 #include "rlgl.h"
 #include "raymath.h"
 #include <cmath>
@@ -720,20 +719,6 @@ void UnitManager::renderAll(const std::vector<float>* heightOffsets) {
             // renderHeightOffset lifts the whole unit (device-on-top overlay); 0 normally.
             renderSection(instance->rootSection.get(), heightOffsets, instance->allSections,
                           instance->renderHeightOffset);
-        }
-    }
-}
-
-void UnitManager::castShadows(const ShadowRenderer& sr) {
-    if (!sr.ready()) return;
-    for (auto& instance : m_instances) {
-        if (!instance || !instance->active || !instance->visible) continue;
-        for (auto* section : instance->allSections) {
-            if (!section || !section->hasModel) continue;
-            // Same placement as renderSection: {worldPos.x, height, worldPos.y}, negated rotation.
-            Vector3 pos = {section->worldPosition.x, getAccumulatedHeight(section), section->worldPosition.y};
-            sr.drawModel(section->model, pos, -section->worldRotation * RAD2DEG,
-                         section->definition->scale);
         }
     }
 }

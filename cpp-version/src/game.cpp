@@ -89,7 +89,7 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         game->running = false;
         return;
     }
-    game->shadowRenderer.build(game->shadersPath);   // planar floor-shadow shader
+    game->shadowMap.build(2048);   // depth-map shadows
 
     // Configure lighting - directional light from above
     sceneRendererAddDirectionalLight(&game->sceneRenderer,
@@ -2127,6 +2127,25 @@ void game_render_gameplay(Game* game) {
         sceneRendererSetDarkness(&game->sceneRenderer, game->lightsOutDarkness);
     }
 
+    // Shadow-map depth pass (Objects3D): render all shadow casters from the light's POV (orthographic,
+    // straight down — matching the scene's vertical directional light) into a sampleable depth target,
+    // so ceiling casters (fans, alert lights, lift tops) and walls shadow whatever passes underneath.
+    // Must run before the main BeginMode3D — it needs its own light camera. See docs/scenery_entities.md.
+    Shader sceneShader = sceneRendererGetShader(&game->sceneRenderer);
+    if (game_mode_is_3d(game) && game->shadowMap.ready()) {
+        ShadowMap::disable(sceneShader);   // no self-sampling while the depth target is being written
+        Vector3 center = {game->camera.target.x, 0.0f, game->camera.target.z};
+        game->shadowMap.beginDepth(center, /*extent(m)*/ 26.0f, /*height(m)*/ 10.0f);
+        if (game->currentLevel >= 0 && game->currentLevel < (int)game->levelRenderData.size()) {
+            LevelRenderData& data = game->levelRenderData[game->currentLevel];
+            if (data.meshValid) DrawModel(data.tileModel, (Vector3){0, 0, 0}, 1.0f, WHITE);
+        }
+        game->object3DRenderer.renderDepth(game->objectManager.instances());
+        game->unitManager.renderAll();
+        game->shadowMap.endDepth();
+        game->shadowMap.apply(sceneShader, /*bias*/ 0.0015f);
+    }
+
     BeginMode3D(game->camera);
 
     // Draw level tiles
@@ -2149,16 +2168,6 @@ void game_render_gameplay(Game* game) {
                 }
             }
         }
-    }
-
-    // Shadow pass: planar floor shadows for scenery objects (and later units), drawn after the
-    // floor/walls (so walls occlude them via the depth test) but before the casters are drawn on top.
-    if (game_mode_is_3d(game) && game->shadowRenderer.ready()) {
-        // Straight down, matching the scene's directional light ((0,50,0) -> (0,0,0)).
-        game->shadowRenderer.begin((Vector3){0.0f, -1.0f, 0.0f}, 0.03f, (Color){0, 0, 0, 110});
-        game->object3DRenderer.castShadows(game->shadowRenderer, game->objectManager.instances());
-        game->unitManager.castShadows(game->shadowRenderer);
-        game->shadowRenderer.end();
     }
 
     // Draw doors + chargers (excluded from the baked tile mesh above). Doors: 3D blocks in the
@@ -2560,7 +2569,7 @@ void game_destroy(Game* game) {
     game->console3DRenderer.destroy();
     game->objectManager.clear();
     game->object3DRenderer.destroy();
-    game->shadowRenderer.destroy();
+    game->shadowMap.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
     game->particleManager.clear();  // render-only; just drop the buffers
 

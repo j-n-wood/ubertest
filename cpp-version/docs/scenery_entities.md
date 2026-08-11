@@ -146,10 +146,20 @@ Phase 3.) Result: alert lights, lift tops, tanks appear, driven entirely by data
 (reuse `applyDamage`/`accumulateRealtimeDamage`) + a reap sweep (mirror `game_reap_dead`) that spawns
 the existing explosion/sparks and removes the instance. Tanks block movement and explode when shot.
 
-**Phase 3 — Shadow pass + shader switching (first-class; the biggest new feature).** Teach
-`SceneRenderer` to switch shaders and add a shadow-casting pass covering **unit models** (the main
-win), floating scenery, and `shadowOnly` defs (the fan — drawn only here). Depth-map or projected
-approach; its own design.
+**Phase 3 — Shadow mapping (DONE; the biggest new feature).** Real depth-map shadows that land on
+**every** surface below a caster — so a ceiling fan/light shadows units passing underneath (the planar
+projection couldn't; it only flattened onto the floor). `ShadowMap` (`shared/rendering/shadow_map.*`)
+renders a depth pass from the light's POV — orthographic, straight down, following the camera target,
+matching the scene's vertical directional light — into a sampleable depth FBO (raylib shadowmap
+pattern, texture unit 15 so per-mesh material binds don't clobber it). The depth pass draws all
+casters (level mesh + `Object3DRenderer::renderDepth` for `castsShadow` instances incl. the
+`shadowOnly` fan whose mesh is drawn *only* here + `UnitManager::renderAll`). `lighting.fs`
+`shadowFactor()` projects each fragment into light space and does 3×3 PCF with a small depth bias,
+attenuating diffuse + specular only (ambient is left, so shadows aren't pure black). `useShadows`
+defaults 0 (safe no-op when the map isn't bound). Wired in `game_render_gameplay` before the main
+`BeginMode3D`. Shader *switching* per drawtype is not needed yet — one lit shader + the shadow term
+covers the current defs; revisit if a def needs a genuinely different pipeline. Tuning knobs: FBO
+resolution (`build(2048)`), light `extent`/`height`, and `bias` (`apply`, 0.0015).
 
 **Phase 4 — Glow materials.** Emissive/glow shader variant for `glow` defs (alert/lift-top; consoleglow
 for screens).
@@ -164,4 +174,6 @@ and, separately, the map-placed `Feature` wall-detail layer (own index table) �
 Convert models; re-export bundles (`incremental_viewer --export-all …`); run
 `topdown_game --renderer 3d --deck <n>` on a deck with objects (e.g. tanks on deck 0), screenshot via
 the established framing-debug flow; confirm models appear at the mapped positions/orientations; keep
-the test suite green. Phase 2: shoot a tank, confirm it explodes and is removed.
+the test suite green. Phase 2: shoot a tank, confirm it explodes and is removed. Phase 3 (done):
+`--deck 10` (four ceiling fans) — the fan blades cast crisp cross shadows straight down onto the
+floor, and units/tanks passing under a caster are shadowed; 152 tests green.
