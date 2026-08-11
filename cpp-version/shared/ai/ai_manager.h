@@ -101,10 +101,10 @@ private:
     Vector2 getUnitPosition(const AIComponent& ai) const;
     Vector2 waypointPos2D(int index) const;
 
-    // Head vision: true if the unit has no head, or `targetPos` lies within the head's
-    // forward cone (AI_HEAD_VISION_DOT). Gates detection and firing for head units so they
-    // "can only see what is in front of them".
-    bool headSeesTarget(const AIComponent& ai, Vector2 targetPos) const;
+    // Sight cone: true if the unit has neither a head nor a turret, or `targetPos` lies within
+    // the forward cone (AI_HEAD_VISION_DOT) of its head — or, if it has no head, its turret (in
+    // that order). Gates detection and firing so oriented units "only see what they face".
+    bool sightConeSeesTarget(const AIComponent& ai, Vector2 targetPos) const;
 
     // True if the unit currently has sight of the player: within visual range, a clear
     // line of sight (walls + closed doors block it), and — for head units — inside the head

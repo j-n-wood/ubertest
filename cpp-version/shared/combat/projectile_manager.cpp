@@ -158,6 +158,12 @@ void ProjectileManager::processContactEvents(b2WorldId worldId) {
             auto* unit = static_cast<UnitInstance*>(otherUD->owner);
             if (unit) {
                 applyDamage(unit->combatState, proj.damage);
+                // Alert the AI: the hit came from back along the projectile's travel direction.
+                Vector2 from = Vector2Negate(Vector2Normalize(proj.velocity));
+                if (from.x != 0.0f || from.y != 0.0f) {
+                    unit->damageAlert = true;
+                    unit->damageFromDir = from;
+                }
             }
         } else if (otherUD && otherUD->tag == BodyTag::Object) {
             // Destructible scenery: decrement its hit points; the game's reap sweep detects

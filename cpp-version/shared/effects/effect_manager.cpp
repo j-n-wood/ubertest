@@ -44,6 +44,12 @@ bool damageOverlapCallback(b2ShapeId shapeId, void* ctxPtr) {
         auto* unit = static_cast<UnitInstance*>(ud->owner);
         if (unit->collisionGroupId == ctx->ownerGroup) return true;  // same unit — immune
         accumulateRealtimeDamage(unit->combatState, dps * ctx->dt);
+        // Alert the AI: the hit came from the blast centre (dx,dy point unit->outward, so negate).
+        float m = sqrtf(dx * dx + dy * dy);
+        if (m > 1e-4f) {
+            unit->damageAlert = true;
+            unit->damageFromDir = {-dx / m, -dy / m};
+        }
     } else if (ud->tag == BodyTag::Object) {
         // Destructible scenery: chains blasts (a tank explosion can set off its neighbour).
         accumulateObjectDamage(*static_cast<ObjectInstance*>(ud->owner), dps * ctx->dt);

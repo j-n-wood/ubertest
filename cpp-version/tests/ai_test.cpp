@@ -622,6 +622,85 @@ TEST_F(AITestFixture, HeadUnitDetectsTargetInFront) {
 }
 
 //------------------------------------------------------------------------------
+// Sight cone: turret fallback when there is no head (item 1). A turret-only unit gates sight by
+// the turret's facing — head → else turret → else omnidirectional.
+//------------------------------------------------------------------------------
+
+TEST_F(AITestFixture, TurretUnitIgnoresTargetBehind) {
+    UnitInstance unit;
+    initSingleEnemy(unit, turretDef, 1, -10);  // at (5, 0), turret faces +Y
+    auto& ai = aiManager.components()[0];
+    ASSERT_TRUE(ai.hasTurret);
+    ASSERT_FALSE(ai.hasHead);
+
+    Vector2 behind = {5.0f, -5.0f};  // within detectionRadius 8 but behind the turret
+    aiManager.update(0.016f, behind, worldId, nullptr);
+
+    EXPECT_EQ(ai.state, AIState::Patrol) << "Turret unit should not see a target behind the turret";
+}
+
+TEST_F(AITestFixture, TurretUnitDetectsTargetInFront) {
+    UnitInstance unit;
+    initSingleEnemy(unit, turretDef, 1, -10);  // at (5, 0)
+    auto& ai = aiManager.components()[0];
+    ASSERT_TRUE(ai.hasTurret);
+    ASSERT_FALSE(ai.hasHead);
+
+    Vector2 front = {5.0f, 5.0f};  // within detectionRadius 8 and in the turret's forward cone
+    aiManager.update(0.016f, front, worldId, nullptr);
+
+    EXPECT_EQ(ai.state, AIState::Chase) << "Turret unit should detect a target in the turret's cone";
+}
+
+//------------------------------------------------------------------------------
+// Damage reaction: an armed unit stops and looks toward where the hit came from (item 2).
+//------------------------------------------------------------------------------
+
+TEST_F(AITestFixture, DamageArmedRecordsLookDirection) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+
+    unit.damageFromDir = {0.0f, -1.0f};   // hit came from behind
+    aiManager.onDamageTaken(&unit);
+
+    EXPECT_EQ(ai.state, AIState::Chase);
+    EXPECT_TRUE(ai.hostile);
+    EXPECT_TRUE(ai.damageLookActive);
+    EXPECT_NEAR(ai.damageLookDir.x, 0.0f, 1e-5f);
+    EXPECT_NEAR(ai.damageLookDir.y, -1.0f, 1e-5f);
+}
+
+TEST_F(AITestFixture, DamageOmniSkipsLookReaction) {
+    UnitInstance unit;
+    initSingleEnemy(unit, omniDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+
+    unit.damageFromDir = {0.0f, -1.0f};
+    aiManager.onDamageTaken(&unit);
+
+    EXPECT_EQ(ai.state, AIState::Chase);   // still engages
+    EXPECT_FALSE(ai.damageLookActive)      // but omnidirectional never halts to look
+        << "omnidirectional units keep maneuvering (facing is meaningless)";
+}
+
+TEST_F(AITestFixture, DamageAlertFlagIsPolledInUpdate) {
+    UnitInstance unit;
+    initSingleEnemy(unit, armedDef, 0, -10);
+    auto& ai = aiManager.components()[0];
+    ASSERT_EQ(ai.state, AIState::Patrol);
+
+    // Player far out of sight so detection can't fire — only the damage flag should provoke it.
+    unit.damageAlert = true;
+    unit.damageFromDir = {1.0f, 0.0f};
+    aiManager.update(0.016f, {0.0f, -50.0f}, worldId, nullptr);
+
+    EXPECT_FALSE(unit.damageAlert) << "the flag is consumed by the poll";
+    EXPECT_EQ(ai.state, AIState::Chase);
+    EXPECT_TRUE(ai.damageLookActive);
+}
+
+//------------------------------------------------------------------------------
 // Disruptor (area weapon) test
 //------------------------------------------------------------------------------
 

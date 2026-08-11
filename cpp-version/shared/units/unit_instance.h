@@ -98,6 +98,14 @@ struct UnitInstance {
     // Combat
     UnitCombatState combatState;
 
+    // Damage alert (AI hook): the damage sites (projectile/beam/explosion) set `damageAlert` and
+    // record `damageFromDir` — a world-space unit vector pointing FROM this unit TOWARD where the
+    // hit came from. The AIManager polls it each update to trigger the "stop and look toward the
+    // source" reaction, then clears the flag. Kept here (not in shared/ai) so shared/combat needn't
+    // know about the AI. See AIManager::onDamageTaken / docs.
+    bool damageAlert = false;
+    Vector2 damageFromDir = {0, 0};
+
     // State
     bool active = true;
 

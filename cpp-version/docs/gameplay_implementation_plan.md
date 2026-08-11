@@ -315,11 +315,11 @@ All droids begin in a **Patrol** state. Patrol uses the waypoint link graph defi
 Aggression is predicated on the **presence of a weapon** (weapon ≥ 0), not brain type. Unarmed droids never become hostile — they flee if damaged.
 
 **Transitions to hostile:**
-- Armed droids become hostile when they can **see** the player: within `proximityRadius`, a clear line of sight (`pathClear` including closed doors), and — for head units — inside the head vision cone. Proximity alone is not enough; a player behind a wall/closed door is not detected.
-- Any droid that takes damage becomes hostile (armed → Chase, unarmed → Flee), regardless of sight.
+- Armed droids become hostile when they can **see** the player: within `proximityRadius`, a clear line of sight (`pathClear` including closed doors), and — for oriented units — inside the **sight cone** (`sightConeSeesTarget`). The cone is gated by the **head's** facing if the unit has one, else the **turret's** (in that order); a unit with neither sees omnidirectionally. Proximity alone is not enough; a player behind a wall/closed door is not detected.
+- Any droid that takes damage becomes hostile (armed → Chase, unarmed → Flee), regardless of sight. The damage sites flag the unit with the hit direction (`UnitInstance::damageAlert`/`damageFromDir`) and the AI consumes it each update — so a shot from behind or out of the cone now provokes a reaction (previously `onDamageTaken` was unwired). An armed unit that can't yet see its attacker **stops and turns toward where the hit came from**: it holds station and slews its aiming section (head/turret, else the body) toward `damageFromDir` until it acquires the player (→ normal Chase/fire) or the lose-sight timer expires (→ Patrol). Omnidirectional and fire-while-moving units skip the halt/turn (facing is meaningless / they never stop) and just engage.
 
 **Disengagement (lose-sight timeout):**
-- A chasing droid tracks how long it has gone **without sight** of the player (`loseSightTimer`) — out of visual range (`visualRadius`), line of sight broken around a corner or behind a closed door, or (head units) the player left the vision cone. Seeing the player resets the timer, so brief occlusion doesn't drop the pursuit.
+- A chasing droid tracks how long it has gone **without sight** of the player (`loseSightTimer`) — out of visual range (`visualRadius`), line of sight broken around a corner or behind a closed door, or the player left the sight cone. Seeing the player resets the timer, so brief occlusion doesn't drop the pursuit.
 - After `AI_LOSE_SIGHT_TIME` (2 s) without sight it gives up: reverts to Patrol, clears hostility, and resumes random waypoint patrol from its current position. Because detection also requires line of sight, it won't immediately re-detect a player still standing behind the wall it lost them behind.
 
 ### Collision response (non-hostile only)

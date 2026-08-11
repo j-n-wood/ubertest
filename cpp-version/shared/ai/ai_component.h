@@ -65,6 +65,14 @@ struct AIComponent {
     // and reverts to Patrol. See updateChase.
     float loseSightTimer = 0.0f;
 
+    // Damage reaction: set when an armed unit is hit and can't yet see the attacker. While active
+    // (and out of sight), the unit halts and slews its aiming section (head/turret, else body)
+    // toward damageLookDir — the world direction the hit came from — until it acquires the player
+    // (→ normal Chase) or the lose-sight timer expires (→ Patrol). Not set for omnidirectional or
+    // fire-while-moving units (they keep maneuvering). See onDamageTaken / updateChase.
+    bool damageLookActive = false;
+    Vector2 damageLookDir = {0, 0};
+
     // Collision response: short decision cooldown after redirecting away from a
     // collision. This does NOT stop the unit — it keeps moving toward its new
     // target; the cooldown just debounces the redirect decision.

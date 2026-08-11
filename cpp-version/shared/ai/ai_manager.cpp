@@ -118,6 +118,13 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
         if (!ai.unit || !ai.unit->active) continue;
         if (ai.controlled) continue;  // player is piloting this unit — no AI drive
 
+        // React to fresh damage: become hostile and (armed) stop + look toward the source. The
+        // damage sites just flag the unit (shared/combat doesn't know about the AI); we consume it.
+        if (ai.unit->damageAlert) {
+            ai.unit->damageAlert = false;
+            onDamageTaken(ai.unit);
+        }
+
         // Tick the collision-redirect decision cooldown
         if (ai.collideCooldown > 0.0f) ai.collideCooldown -= dt;
 
@@ -152,18 +159,24 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
 //------------------------------------------------------------------------------
 
 void AIManager::onDamageTaken(UnitInstance* unit) {
-    for (auto& ai : components_) {
-        if (ai.unit == unit) {
-            if (ai.armed) {
-                ai.state = AIState::Chase;
-                ai.hostile = true;
-                ai.loseSightTimer = 0.0f;  // full grace window before giving up
-            } else {
-                ai.state = AIState::Flee;
-                ai.hostile = true;
-            }
-            return;
-        }
+    AIComponent* found = findComponent(unit);
+    if (!found) return;
+    AIComponent& ai = *found;
+    ai.hostile = true;
+    if (!ai.armed) {
+        ai.state = AIState::Flee;   // unarmed: run
+        return;
+    }
+    // Armed: engage. Chase already navigates toward the player once it has sight; until then, a unit
+    // that can orient stops and turns toward where the hit came from (damageFromDir, set by the
+    // damage site) so it can bring the attacker into its sight cone. Omnidirectional / fire-while-
+    // moving units keep maneuvering (facing is meaningless / they never halt), so they skip the look.
+    ai.state = AIState::Chase;
+    ai.loseSightTimer = 0.0f;       // full grace window before giving up
+    Vector2 d = unit->damageFromDir;
+    if (!ai.omnidirectional && !ai.fireWhileMoving && (d.x * d.x + d.y * d.y) > 1e-6f) {
+        ai.damageLookDir = d;
+        ai.damageLookActive = true;
     }
 }
 
@@ -340,7 +353,7 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
         // (walls + closed doors block it), and — for head units — inside the vision cone.
         // The LOS check also stops a just-disengaged unit re-detecting the player through
         // the wall it lost them behind.
-        if (dist <= ai.detectionRadius && headSeesTarget(ai, playerPos) &&
+        if (dist <= ai.detectionRadius && sightConeSeesTarget(ai, playerPos) &&
             pathClear(pos, playerPos, 0.0f, /*includeDoors=*/true)) {
             ai.state = AIState::Chase;
             ai.hostile = true;
@@ -450,18 +463,35 @@ void AIManager::updateChase(AIComponent& ai, float dt, Vector2 playerPos,
     float distToPlayer = Vector2Distance(unitPos, playerPos);
 
     // Give up the chase after AI_LOSE_SIGHT_TIME without sight of the player (out of visual
-    // range, LOS broken around a corner / behind a closed door, or — for head units — out of
-    // the vision cone). Seeing the player resets the timer, so brief occlusion doesn't drop
-    // the pursuit; the unit keeps heading to the last-seen direction meanwhile.
-    if (hasSightOfPlayer(ai, playerPos)) {
+    // range, LOS broken around a corner / behind a closed door, or out of the vision cone).
+    // Seeing the player resets the timer, so brief occlusion doesn't drop the pursuit; the unit
+    // keeps heading to the last-seen direction meanwhile.
+    bool sees = hasSightOfPlayer(ai, playerPos);
+    if (sees) {
         ai.loseSightTimer = 0.0f;
+        ai.damageLookActive = false;   // acquired the attacker — engage normally
     } else {
         ai.loseSightTimer += dt;
         if (ai.loseSightTimer >= AI_LOSE_SIGHT_TIME) {
             ai.state = AIState::Patrol;
             ai.hostile = false;
             ai.loseSightTimer = 0.0f;
+            ai.damageLookActive = false;
             return;
+        }
+        // Freshly hit and can't see the attacker yet: stop and turn toward where it came from
+        // (rather than running the normal navigation toward the as-yet-unseen player). Turning the
+        // aiming section swings the sight cone, so the unit can acquire and then engage.
+        if (ai.damageLookActive) {
+            float lookAngle = facing_angle_to(ai.damageLookDir.x, ai.damageLookDir.y);
+            if (ai.headSection || ai.turretSection) {
+                float bodyAngle = b2Rot_GetAngle(b2Body_GetRotation(ai.unit->bodyId));
+                unit_set_move_target(ai.unit, unitPos, bodyAngle);  // hold station + body facing
+                updateAimingSections(ai, lookAngle, dt);            // slew head/turret to the source
+            } else {
+                unit_set_move_target(ai.unit, unitPos, lookAngle);  // no aim section: turn the body
+            }
+            return;   // investigating — no chase navigation / no firing this frame
         }
     }
 
@@ -717,19 +747,22 @@ bool AIManager::hasSightOfPlayer(const AIComponent& ai, Vector2 playerPos) const
     // Thin sightline (radius floored to 0.1 in pathClear); closed doors block it.
     if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true))
         return false;
-    if (!headSeesTarget(ai, playerPos))
+    if (!sightConeSeesTarget(ai, playerPos))
         return false;
     return true;
 }
 
-bool AIManager::headSeesTarget(const AIComponent& ai, Vector2 targetPos) const {
-    if (!ai.headSection) return true;  // no head → unrestricted vision
+bool AIManager::sightConeSeesTarget(const AIComponent& ai, Vector2 targetPos) const {
+    // Sight is gated by the head's facing if the unit has one, else the turret's (in that order);
+    // a unit with neither sees omnidirectionally.
+    const SectionInstance* sightSection = ai.headSection ? ai.headSection : ai.turretSection;
+    if (!sightSection) return true;   // no head or turret → unrestricted vision
     Vector2 unitPos = getUnitPosition(ai);
     Vector2 to = Vector2Subtract(targetPos, unitPos);
     float len = sqrtf(to.x * to.x + to.y * to.y);
     if (len < 1e-4f) return true;     // on top of the target
     to = {to.x / len, to.y / len};
-    float a = ai.headSection->facingAngle;
+    float a = sightSection->facingAngle;
     Vector2 fwd = {-sinf(a), cosf(a)};  // forward vector for a facing angle
     return Vector2DotProduct(fwd, to) >= AI_HEAD_VISION_DOT;
 }
@@ -783,7 +816,7 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
         return false;
 
     // Head units can only fire at a target their head can see (in its forward cone).
-    if (!headSeesTarget(ai, playerPos)) return false;
+    if (!sightConeSeesTarget(ai, playerPos)) return false;
 
     // Disruptor (area weapon) ignores facing
     if (ai.weaponState.definition.type == WeaponType::Area) return true;
@@ -860,7 +893,7 @@ bool AIManager::beamActive(const AIComponent& ai, Vector2 playerPos) const {
     if (Vector2Distance(unitPos, playerPos) > ai.weaponState.definition.maxRange) return false;
     // Thin sightline; closed doors block. No facing gate — the beam sweeps as the unit aims.
     if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true)) return false;
-    if (!headSeesTarget(ai, playerPos)) return false;
+    if (!sightConeSeesTarget(ai, playerPos)) return false;
     return true;
 }
 

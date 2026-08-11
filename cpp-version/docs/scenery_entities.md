@@ -203,8 +203,8 @@ never jumps the wave), computes `bandColour × pulse`, and feeds it to `Object3D
 each frame; the shader picks it via `emissiveTint = 1` (a flag, not "is the colour black?", so the
 pulse trough can legitimately reach black). The alert light (renderIndex 42) uses it; it glows green
 when calm. uber's other glow source, `gs_wave` (self-coloured sine pulse + a **scrolling glow-mask
-texture**), is not ported — the only placed ship1 user is the lift top, whose wave effect is a
-scrolling yellow glow texture (needs a glow-texture channel + UV-scroll in the shader/pipeline, TBD).
+texture**), is **deferred** — the real driver is unit type 21 (`852.gltf`, scrolling blue-tek skin);
+the lift top is a scroll-only bonus. Full plan + difficulties in [glowscroll.md](glowscroll.md).
 
 **Phase 5 — Decals (deferred).** Runtime `dirty_t`-style projected sprites (explosion scorch, drips)
 and, separately, the map-placed `Feature` wall-detail layer (own index table) — lower priority.

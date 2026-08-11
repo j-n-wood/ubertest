@@ -83,6 +83,9 @@ float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxR
     if (dps > 0.0f && dt > 0.0f) {
         if (hit.unit && hit.unit->active) {
             accumulateRealtimeDamage(hit.unit->combatState, dps * dt);
+            // Alert the AI: the beam came from back along its travel direction (forward = {-sin,cos}).
+            hit.unit->damageAlert = true;
+            hit.unit->damageFromDir = {std::sin(angle), -std::cos(angle)};
         } else if (hit.object) {
             accumulateObjectDamage(*hit.object, dps * dt);
         }
