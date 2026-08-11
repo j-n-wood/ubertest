@@ -2,6 +2,8 @@
 #define OBJECT_MANAGER_H
 
 #include "raylib.h"
+#include "box2d/box2d.h"
+#include "physics/body_user_data.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -49,9 +51,25 @@ struct ObjectInstance {
     float facingRad = 0.0f;            // rotation.z (game frame)
     float spinRad = 0.0f;              // rad/s about up
     float spinAngle = 0.0f;            // accumulated spin
-    int health = 0;                    // Phase 2
-    bool alive = true;
+    float health = 0.0f;               // remaining hit points (destructible defs); Phase 2
+    bool alive = true;                 // cleared on destruction (stops render/shadow/collision)
+    // Continuous-damage accumulator (explosions, beams): raw damage sums into pendingDamage and is
+    // flushed into health once per REALTIME_DAMAGE_INTERVAL in ObjectManager::update — mirrors the
+    // unit realtime-damage path. Single-hit projectile damage still subtracts immediately.
+    float pendingDamage = 0.0f;
+    float damageAccumTimer = 0.0f;
+    // Physics footprint for a grounded object (b2_nullBodyId when floating). The game owns creation
+    // and sets bodyUserData so a projectile contact can find this instance. See docs/scenery_entities.md.
+    b2BodyId bodyId = b2_nullBodyId;
+    BodyUserData bodyUserData;         // {BodyTag::Object, this} once the game wires the body
 };
+
+// Accumulate continuous (explosion/beam) raw damage onto a destructible object; flushed on the
+// shared realtime tick in ObjectManager::update (mirrors unit accumulateRealtimeDamage). No-op for
+// floating/cosmetic/dead instances, so callers can pass any hit body blindly.
+inline void accumulateObjectDamage(ObjectInstance& o, float raw) {
+    if (raw > 0.0f && o.alive && o.def && o.def->destructible) o.pendingDamage += raw;
+}
 
 class ObjectManager {
 public:
@@ -64,6 +82,10 @@ public:
     void setInstances(const std::vector<ObjectSpec>& specs);
     void update(float dt);                       // advance spin animation
     const std::vector<ObjectInstance>& instances() const { return instances_; }
+    // Mutable view for the game: wiring collision bodies (game_create_objects) and reaping
+    // destroyed destructibles (game_reap_objects). Instance addresses are stable after setInstances
+    // (the vector isn't grown or compacted), so pointers held in body userData stay valid.
+    std::vector<ObjectInstance>& instancesMut() { return instances_; }
     void clear() { instances_.clear(); }
 
 private:

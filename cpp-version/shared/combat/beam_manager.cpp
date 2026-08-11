@@ -1,6 +1,7 @@
 #include "beam_manager.h"
 #include "units/unit_instance.h"
 #include "units/combat_state.h"
+#include "level/object_manager.h"
 #include "physics/body_user_data.h"
 #include <cmath>
 
@@ -19,6 +20,7 @@ struct BeamCastCtx {
     b2Vec2 normal{};
     bool isUnit = false;
     UnitInstance* unit = nullptr;
+    ObjectInstance* object = nullptr;
 };
 float beamCastCallback(b2ShapeId shape, b2Vec2 point, b2Vec2 normal, float fraction, void* ctx) {
     auto* c = static_cast<BeamCastCtx*>(ctx);
@@ -33,6 +35,8 @@ float beamCastCallback(b2ShapeId shape, b2Vec2 point, b2Vec2 normal, float fract
     c->normal = normal;
     c->isUnit = isUnit;
     c->unit = isUnit ? static_cast<UnitInstance*>(ud->owner) : nullptr;
+    // A destructible object stops the beam like a wall but also takes damage (resolved in fire()).
+    c->object = (ud && ud->tag == BodyTag::Object) ? static_cast<ObjectInstance*>(ud->owner) : nullptr;
     return fraction;   // clip the ray to this hit (only nearer shapes are reported after)
 }
 }  // namespace
@@ -61,6 +65,7 @@ BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float
         out.normal = {ctx.normal.x, ctx.normal.y};
         out.hitWall = !ctx.isUnit;   // geometry → sparks; a unit absorbs the beam
         out.unit = ctx.unit;
+        out.object = ctx.object;
     }
     return out;
 }
@@ -73,10 +78,14 @@ float BeamManager::fire(b2WorldId world, Vector2 origin, float angle, float maxR
                         float dps, float dt, const UnitInstance* shooter, int weaponId) {
     BeamHit hit = castRay(world, origin, angle, maxRange, shooter);
 
-    // The beam stops at (and damages) the first unit it reaches — continuous dps*dt fed
-    // through the shared realtime-damage accumulator, like explosion damage. No fireRate gate.
-    if (hit.unit && hit.unit->active && dps > 0.0f && dt > 0.0f) {
-        accumulateRealtimeDamage(hit.unit->combatState, dps * dt);
+    // The beam stops at (and damages) the first unit OR destructible object it reaches — continuous
+    // dps*dt fed through the shared realtime-damage accumulator, like explosion damage. No fireRate gate.
+    if (dps > 0.0f && dt > 0.0f) {
+        if (hit.unit && hit.unit->active) {
+            accumulateRealtimeDamage(hit.unit->combatState, dps * dt);
+        } else if (hit.object) {
+            accumulateObjectDamage(*hit.object, dps * dt);
+        }
     }
 
     Beam b;

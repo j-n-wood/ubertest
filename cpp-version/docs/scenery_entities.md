@@ -142,9 +142,31 @@ per level and draw each at its **full position + rot + spin** with the plain lit
 defs (tank) get a static collision footprint; floating defs don't. (`fan_shadow` shows nothing until
 Phase 3.) Result: alert lights, lift tops, tanks appear, driven entirely by data.
 
-**Phase 2 — Destructible mechanics.** `destructible` defs get a health struct + a weapon-damage hook
-(reuse `applyDamage`/`accumulateRealtimeDamage`) + a reap sweep (mirror `game_reap_dead`) that spawns
-the existing explosion/sparks and removes the instance. Tanks block movement and explode when shot.
+**Phase 2 — Destructible mechanics (DONE).** A grounded object's static footprint now carries
+`BodyUserData{BodyTag::Object, &ObjectInstance}` (new `Object` tag), so a projectile contact resolves
+back to the instance: `ProjectileManager::processContactEvents` decrements `inst.health` for
+`destructible` defs (single-hit, immediate — same place unit hits call `applyDamage`). A reap sweep
+`game_reap_objects` (mirrors `game_reap_dead`, runs right after it each step) fires the shared
+`game_spawn_explosion` at the object's ground position (owner group 0 = no unit's group, so the blast
+hurts nearby droids) and destroys the footprint. The dead instance is **marked `!alive`, not erased** —
+its address lives in the body userData, so keeping the slot avoids dangling; render/shadow/collision
+all skip it. The footprint's `collisionBodies` slot is invalidated before `b2DestroyBody` so
+level-teardown can't double-free. `ObjectInstance` gained `bodyId` + `bodyUserData`; `ObjectManager`
+gained `instancesMut()`. Tanks (deck 10, health 50) block movement and explode when shot to death.
+
+**Continuous damage + blast scaling.** Beyond single-hit projectiles, objects now take *continuous*
+damage from the two accumulating sources, via a per-instance accumulator (`pendingDamage` /
+`damageAccumTimer`) flushed on the shared `REALTIME_DAMAGE_INTERVAL` tick in `ObjectManager::update` —
+the exact `UnitCombatState` pattern, so `health` is now a float. `accumulateObjectDamage()` (a no-op
+on floating/cosmetic/dead instances) is the single entry point: **explosions** — `EffectManager`'s
+overlap now masks `CATEGORY_UNIT | CATEGORY_STATIC` and its callback branches on the body tag
+(`Unit` → `accumulateRealtimeDamage`, `Object` → `accumulateObjectDamage`; untagged walls ignored),
+so a tank blast **chains** to neighbouring tanks; **beams** — the beam cast already stops on
+`CATEGORY_STATIC`, so it now also carries the hit `ObjectInstance` and feeds it `dps*dt`. Explosions
+**scale** by a per-effect `sizeScale` (radius, core, cutoff, and the visual billboard all stretch
+together — the falloff curve is reused by dividing measured distance by the scale); a destroyed
+object passes its def's `explodeSize` (tank = 1.6), so a bigger object makes a bigger boom with wider
+chain reach. Spark burst is left unscaled for now.
 
 **Phase 3 — Shadow mapping (DONE; the biggest new feature).** Real depth-map shadows that land on
 **every** surface below a caster — so a ceiling fan/light shadows units passing underneath (the planar
@@ -174,6 +196,8 @@ and, separately, the map-placed `Feature` wall-detail layer (own index table) �
 Convert models; re-export bundles (`incremental_viewer --export-all …`); run
 `topdown_game --renderer 3d --deck <n>` on a deck with objects (e.g. tanks on deck 0), screenshot via
 the established framing-debug flow; confirm models appear at the mapped positions/orientations; keep
-the test suite green. Phase 2: shoot a tank, confirm it explodes and is removed. Phase 3 (done):
+the test suite green. Phase 2 (done): on deck 10 (four tanks, health 50) shoot a tank — it explodes
+(shared blast + sparks), its footprint drops (you can walk through where it stood), and it stops
+rendering/casting a shadow; the blast damages nearby droids. Phase 3 (done):
 `--deck 10` (four ceiling fans) — the fan blades cast crisp cross shadows straight down onto the
 floor, and units/tanks passing under a caster are shadowed; 152 tests green.

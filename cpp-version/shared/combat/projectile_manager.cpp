@@ -1,5 +1,6 @@
 #include "projectile_manager.h"
 #include "units/unit_instance.h"
+#include "level/object_manager.h"
 #include <algorithm>
 
 //------------------------------------------------------------------------------
@@ -157,6 +158,13 @@ void ProjectileManager::processContactEvents(b2WorldId worldId) {
             auto* unit = static_cast<UnitInstance*>(otherUD->owner);
             if (unit) {
                 applyDamage(unit->combatState, proj.damage);
+            }
+        } else if (otherUD && otherUD->tag == BodyTag::Object) {
+            // Destructible scenery: decrement its hit points; the game's reap sweep detects
+            // health <= 0 and handles the explosion + footprint removal (mirrors unit death).
+            auto* obj = static_cast<ObjectInstance*>(otherUD->owner);
+            if (obj && obj->alive && obj->def && obj->def->destructible) {
+                obj->health -= proj.damage;
             }
         }
 

@@ -30,6 +30,7 @@ struct Effect {
     float age = 0.0f;           // seconds alive; drives animation + lifetime
     float rotationDeg = 0.0f;   // fixed random screen-space rotation
     int32_t ownerGroup = 0;     // collisionGroupId of the source unit (immune to its own blast)
+    float sizeScale = 1.0f;     // blast multiplier (radius + visual); e.g. a tank's explodeSize
     bool active = true;
 };
 
@@ -38,7 +39,7 @@ public:
     ~EffectManager();
 
     void init(b2WorldId world);   // bind the active level world; clears existing effects
-    void spawnExplosion(Vector2 pos, int32_t ownerGroup);
+    void spawnExplosion(Vector2 pos, int32_t ownerGroup, float sizeScale = 1.0f);
     void update(float dt);        // advance age, apply area damage, expire + compact
     void destroy();               // clear (no bodies to free — effects don't collide)
 

@@ -1,4 +1,5 @@
 #include "level/object_manager.h"
+#include "units/combat_state.h"   // REALTIME_DAMAGE_INTERVAL (shared flush cadence)
 #include <nlohmann/json.hpp>
 #include <cmath>
 #include <filesystem>
@@ -77,5 +78,18 @@ void ObjectManager::setInstances(const std::vector<ObjectSpec>& specs) {
 void ObjectManager::update(float dt) {
     for (ObjectInstance& inst : instances_) {
         if (inst.spinRad != 0.0f) inst.spinAngle += inst.spinRad * dt;
+
+        // Flush accumulated continuous damage on the shared realtime tick (same cadence as units),
+        // so a whole interval's explosion/beam dps lands in one subtraction.
+        if (inst.alive && inst.def && inst.def->destructible) {
+            inst.damageAccumTimer += dt;
+            while (inst.damageAccumTimer >= REALTIME_DAMAGE_INTERVAL) {
+                inst.damageAccumTimer -= REALTIME_DAMAGE_INTERVAL;
+                if (inst.pendingDamage > 0.0f) {
+                    inst.health -= inst.pendingDamage;
+                    inst.pendingDamage = 0.0f;
+                }
+            }
+        }
     }
 }

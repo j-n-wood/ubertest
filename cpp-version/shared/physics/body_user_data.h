@@ -13,7 +13,8 @@ enum class BodyTag : uint8_t {
     Projectile,
     Debris,
     Static,
-    Door
+    Door,
+    Object      // destructible scenery (owner = ObjectInstance*); see docs/scenery_entities.md
 };
 
 struct BodyUserData {

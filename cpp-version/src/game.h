@@ -221,7 +221,8 @@ void game_cycle_renderer(Game* game);
 void game_award_points(Game* game, const UnitInstance* unit);
 
 // Spawn the death visuals at `pos`: an EffectManager explosion (area damage, owner `group`)
-// plus a ParticleManager spark burst. Called from every unit-death site.
-void game_spawn_explosion(Game* game, Vector2 pos, int32_t group);
+// plus a ParticleManager spark burst. `sizeScale` stretches the blast radius + visual (e.g. a
+// destructible's explodeSize; 1.0 = unit-sized). Called from every unit-/object-death site.
+void game_spawn_explosion(Game* game, Vector2 pos, int32_t group, float sizeScale = 1.0f);
 
 #endif

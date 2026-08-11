@@ -8,6 +8,7 @@
 #include <cstdint>
 
 struct UnitInstance;
+struct ObjectInstance;
 
 //------------------------------------------------------------------------------
 // Beam weapons (simulation layer). A beam is an instantaneous hitscan line from a
@@ -39,10 +40,11 @@ struct Beam {
 // is the unit it stopped on (nullptr otherwise) and takes the beam's damage.
 struct BeamHit {
     float length = 0.0f;
-    bool hitWall = false;      // stopped on a wall/closed door (→ impact sparks)
+    bool hitWall = false;      // stopped on geometry — wall/closed door/non-destructible object (→ sparks)
     Vector2 point = {0, 0};
     Vector2 normal = {0, 0};
-    UnitInstance* unit = nullptr;  // unit the beam stopped on (absorbs the beam), if any
+    UnitInstance* unit = nullptr;      // unit the beam stopped on (absorbs the beam), if any
+    ObjectInstance* object = nullptr;  // destructible object the beam stopped on, if any
 };
 
 // Tunables.

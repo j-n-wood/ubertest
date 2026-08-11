@@ -49,6 +49,7 @@ static void game_update_player_turret(Game* game, float dt);
 static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
+static void game_reap_objects(Game* game);
 static void game_update_score(Game* game, float dt);
 static void game_update_player_fire(Game* game, float dt);
 
@@ -732,13 +733,22 @@ static void game_create_objects(Game* game) {
     game->object3DRenderer.build(&game->sceneRenderer, game->objectManager.definitions(), game->assetPath);
 
     int colliders = 0;
-    for (const ObjectInstance& inst : game->objectManager.instances()) {
+    for (ObjectInstance& inst : game->objectManager.instancesMut()) {
         if (!inst.def || inst.def->floating || inst.def->collisionRadius <= 0.0f) continue;
         // Grounded solid object: axis-aligned static box footprint at its ground position (X,Z).
         const float r = inst.def->collisionRadius;
         Vector2 centre = {inst.position.x, inst.position.z};
         PhysicsBody b = physics_create_static_box(&game->physics, centre, 2.0f * r, 2.0f * r);
-        if (b.valid) { game->collisionBodies.push_back(b); colliders++; }
+        if (b.valid) {
+            // Tag the body so a projectile contact resolves back to this instance (destructibles
+            // take damage; the reap sweep destroys the footprint on death). Address is stable —
+            // instancesMut() isn't grown after setInstances.
+            inst.bodyId = b.body_id;
+            inst.bodyUserData = {BodyTag::Object, &inst};
+            b2Body_SetUserData(b.body_id, &inst.bodyUserData);
+            game->collisionBodies.push_back(b);
+            colliders++;
+        }
     }
     TraceLog(LOG_INFO, "Created %zu scenery objects (%d collision footprints)",
              game->objectManager.instances().size(), colliders);
@@ -1215,6 +1225,30 @@ static void game_reap_dead(Game* game) {
     }
 }
 
+// Destroy scenery destructibles whose health has hit zero (mirrors game_reap_dead for units): fire
+// the shared explosion/sparks at the object's ground position and remove its collision footprint.
+// The instance stays in the vector (marked !alive) so its address — held in body userData — never
+// dangles; render/shadow/collision all skip a dead instance. See docs/scenery_entities.md.
+static void game_reap_objects(Game* game) {
+    for (ObjectInstance& inst : game->objectManager.instancesMut()) {
+        if (!inst.alive || !inst.def || !inst.def->destructible || inst.health > 0) continue;
+        inst.alive = false;
+        // Owner group 0 is no unit's group (unit groups are negative), so nearby droids take the blast.
+        // Scale the blast by the def's explodeSize (bigger scenery → bigger boom + wider chain reach).
+        const float blast = (inst.def->explodeSize > 0.0f) ? inst.def->explodeSize : 1.0f;
+        game_spawn_explosion(game, {inst.position.x, inst.position.z}, 0, blast);
+        if (b2Body_IsValid(inst.bodyId)) {
+            // Invalidate the matching collisionBodies slot BEFORE destroying, so the level-teardown
+            // sweep (which destroys every valid body) can't double-free this one.
+            for (auto& body : game->collisionBodies) {
+                if (body.valid && B2_ID_EQUALS(body.body_id, inst.bodyId)) { body.valid = false; break; }
+            }
+            b2DestroyBody(inst.bodyId);
+            inst.bodyId = b2_nullBodyId;
+        }
+    }
+}
+
 //------------------------------------------------------------------------------
 // Score + alert
 //------------------------------------------------------------------------------
@@ -1233,9 +1267,9 @@ static const ParticleBurst EXPLOSION_SPARKS = {
     /*startColor*/ {255, 200, 120, 255}, /*endColor*/ {255, 80, 0, 0},
     /*angularVelMax*/ 180.0f, /*texture*/ TEX_FLARE};
 
-void game_spawn_explosion(Game* game, Vector2 pos, int32_t group) {
-    game->effectManager.spawnExplosion(pos, group);      // animated blast + area damage
-    game->particleManager.burst(EXPLOSION_SPARKS, pos);  // render-only spark spray
+void game_spawn_explosion(Game* game, Vector2 pos, int32_t group, float sizeScale) {
+    game->effectManager.spawnExplosion(pos, group, sizeScale);   // animated blast + area damage (scaled)
+    game->particleManager.burst(EXPLOSION_SPARKS, pos);          // render-only spark spray
 }
 
 // Impact sparks: a directional burst of `count` sparks in colour `color`, reflected off a
@@ -1810,6 +1844,9 @@ void game_update_gameplay(Game* game, float dt) {
         // explosions (chain reactions) — added to effectManager for next frame.
         game_reap_dead(game);
 
+        // Same for destructible scenery (tanks): explode + drop the footprint when shot to death.
+        game_reap_objects(game);
+
         // Lights out: the first time a populated level has no hostile (non-captured) enemies
         // left, latch it permanently and rebuild the tiles on the darkened atlas row. One-shot
         // (guarded by !cleared), and captures are already applied earlier via transfer_update.
@@ -2326,13 +2363,14 @@ void game_render_gameplay(Game* game) {
         const auto& effects = game->effectManager.getEffects();
         if (!effects.empty()) {
             Texture2D boom = gTextures().get(TEX_RLBOOM);
-            float diameter = EXPLOSION_RADIUS * 2.0f;   // visual diameter = 2x damage radius
-            Vector2 size = {diameter, diameter};
-            Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
             BeginBlendMode(BLEND_ADDITIVE);
             DisableDepthMaskScope depthGuard;  // additive: don't write depth (see beam pass)
             for (const Effect& e : effects) {
                 if (!e.active) continue;
+                // Visual diameter = 2x damage radius, scaled per-effect (e.g. a tank's explodeSize).
+                float diameter = EXPLOSION_RADIUS * 2.0f * e.sizeScale;
+                Vector2 size = {diameter, diameter};
+                Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
                 Vector3 pos = {e.pos.x, EFFECT_HEIGHT, e.pos.y};
                 Rectangle src = game->explosionAnim.sourceRect(e.age, boom.width, boom.height);
                 DrawBillboardPro(game->camera, boom, src, pos,
