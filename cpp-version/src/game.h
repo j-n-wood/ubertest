@@ -183,6 +183,10 @@ struct Game {
     // 3D "lights out": when the active level is cleared, the scene shader dims (the literal-lighting
     // counterpart of the 2D tile "lights out" row). Eased toward its target each render frame.
     float lightsOutDarkness = 0.0f;
+    // Level the lights-out darkness is currently synced to. On entering a different level the
+    // darkness SNAPS to that level's state (lights are already on/off for the player, not
+    // transitioning); the ease only runs while staying on one level as it clears. See render.
+    int lightsOutSyncedLevel = -1;
 
     // Alert glow beacon: accumulated sine phase for the pulsing alert lights (glowSource: Alert).
     // Phase is integrated (not time×rate) so the pulse stays continuous as the rate rises with the

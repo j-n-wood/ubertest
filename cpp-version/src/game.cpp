@@ -2190,16 +2190,25 @@ void game_render_gameplay(Game* game) {
     // Update camera position for specular calculations
     sceneRendererUpdateCamera(&game->sceneRenderer, game->camera.position);
 
-    // 3D "lights out": ease the scene dimming toward its target for the active level. In the 3D
-    // renderer a cleared level literally dims the lights; the 2D tile modes keep the darkened atlas
-    // row instead (game_effective_tile_row), so leave darkness at 0 there.
+    // 3D "lights out": dim the scene for a cleared level. In the 3D renderer a cleared level
+    // literally dims the lights; the 2D tile modes keep the darkened atlas row instead
+    // (game_effective_tile_row), so leave darkness at 0 there.
     {
         constexpr float LIGHTS_OUT_DARKNESS = 0.6f;   // fraction of brightness removed when cleared
         const int L = game->currentLevel;
         const bool cleared = L >= 0 && L < (int)game->levelRuntime.size() && game->levelRuntime[L].cleared;
         float target = (game_mode_is_3d(game) && cleared) ? LIGHTS_OUT_DARKNESS : 0.0f;
-        float k = 1.0f - std::exp(-3.0f * GetFrameTime());   // frame-rate-independent ease (~0.3 s)
-        game->lightsOutDarkness += (target - game->lightsOutDarkness) * k;
+        if (L != game->lightsOutSyncedLevel) {
+            // Entered a different level — SNAP to its state. The lights are already on (or already
+            // out) for the player when they arrive; they aren't turning on/off now, so no fade.
+            game->lightsOutDarkness = target;
+            game->lightsOutSyncedLevel = L;
+        } else {
+            // Same level: ease toward the target so the lights fade out (~0.3 s) at the moment the
+            // level is cleared while the player is standing in it.
+            float k = 1.0f - std::exp(-3.0f * GetFrameTime());   // frame-rate-independent ease
+            game->lightsOutDarkness += (target - game->lightsOutDarkness) * k;
+        }
         sceneRendererSetDarkness(&game->sceneRenderer, game->lightsOutDarkness);
     }
 
