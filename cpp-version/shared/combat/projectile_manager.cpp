@@ -21,6 +21,7 @@ void ProjectileManager::spawn(b2WorldId worldId, Vector2 position, Vector2 direc
     p.velocity = vel;
     p.damage = damage;
     p.remainingLifetime = lifetime;
+    p.lifetime = lifetime;
     p.age = 0.0f;
     p.radius = (radius > 0.0f) ? radius : PROJECTILE_RADIUS;
     p.ownerId = ownerId;

@@ -3,13 +3,15 @@
     "id": 0,
     "name": "Plasma Bolt",
     "damage": 20.599,
-    "speed": 10.0,
+    "speed": 11.0,
     "fireRate": 0.8,
     "maxRange": 12.0,
     "optimumRange": 8.0,
     "type": "projectile",
     "damageType": "plasma",
-    "twin": false
+    "twin": false,
+    "spriteColor": [140, 255, 170],
+    "travelSparkRate": 32
   },
   {
     "id": 1,
@@ -38,8 +40,8 @@
   {
     "id": 3,
     "name": "Plasma Cannon",
-    "damage": 33.0,
-    "speed": 8.5,
+    "damage": 30.0,
+    "speed": 9.5,
     "fireRate": 1.1,
     "maxRange": 20.0,
     "optimumRange": 10.0,
@@ -48,7 +50,9 @@
     "damageType": "plasma",
     "twin": false,
     "impactSparks": 24,
-    "sparkColor": [80, 160, 255]
+    "sparkColor": [80, 160, 255],
+    "spriteColor": [120, 190, 255],
+    "travelSparkRate": 30
   },
   {
     "id": 4,
@@ -68,11 +72,16 @@
     "damage": 6.0,
     "speed": 27.5,
     "fireRate": 0.15,
-    "maxRange": 3.0,
+    "maxRange": 4.0,
     "optimumRange": 1.5,
+    "lifetime": 0.12,
     "type": "projectile",
     "damageType": "plasma",
-    "twin": false
+    "twin": false,
+    "spriteColor": [240, 225, 70],
+    "travelSparkRate": 120,
+    "travelSparkJitter": 0.16,
+    "travelSparkSize": 0.23
   },
   {
     "id": 6,
@@ -96,7 +105,9 @@
     "optimumRange": 10.0,
     "type": "projectile",
     "damageType": "plasma",
-    "twin": true
+    "twin": true,
+    "spriteColor": [100, 225, 240],
+    "travelSparkRate": 42
   },
   {
     "id": 8,

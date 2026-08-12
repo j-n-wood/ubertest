@@ -17,10 +17,12 @@ struct Projectile {
     Vector2 velocity = {0, 0};
     float damage = 0.0f;
     float remainingLifetime = 0.0f;
+    float lifetime = 0.0f;      // Total lifetime at spawn (immutable) — drives the end-of-life fade
     float age = 0.0f;           // Time alive (drives per-instance sprite animation)
     float radius = 0.1f;        // Physics (collision) radius (default == PROJECTILE_RADIUS)
     int32_t ownerId = 0;        // Collision group ID of the unit that fired
     int weaponId = -1;          // Firing weapon (for per-weapon rendering; -1 = unknown)
+    float sparkAccum = 0.0f;    // fractional carry for travel-spark emission (see game travel sparks)
     bool active = true;
     b2BodyId bodyId = b2_nullBodyId;
     BodyUserData userData;
@@ -71,6 +73,7 @@ public:
 
     // Read access for rendering or testing.
     const std::vector<Projectile>& getProjectiles() const { return m_projectiles; }
+    std::vector<Projectile>& getProjectilesMutable() { return m_projectiles; }  // travel-spark accum
 
     // Impacts recorded by the most recent processContactEvents (one per projectile that hit
     // something). Consumed by the render layer to spawn impact sparks; valid until the next call.

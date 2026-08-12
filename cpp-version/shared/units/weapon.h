@@ -39,6 +39,11 @@ enum class DamageType {
 inline constexpr int DEFAULT_IMPACT_SPARKS = 16;
 // Default impact spark colour (plasma green-white) — matches the pre-per-weapon look.
 inline constexpr Color DEFAULT_SPARK_COLOR = {205, 255, 190, 255};
+// Default projectile sprite tint (white = the texture's own colour, unchanged).
+inline constexpr Color DEFAULT_SPRITE_COLOR = {255, 255, 255, 255};
+// Travel-spark defaults (used when a weapon sheds sparks but doesn't override these).
+inline constexpr float DEFAULT_TRAVEL_SPARK_LIFE = 0.5f;   // seconds a shed spark lives
+inline constexpr float DEFAULT_TRAVEL_SPARK_SIZE = 0.14f;  // shed-spark start diameter (world units)
 
 struct WeaponDefinition {
     int id = -1;                    // Weapon ID (-1 = no weapon)
@@ -46,15 +51,38 @@ struct WeaponDefinition {
     float damage = 0.0f;           // Damage per hit
     float speed = 0.0f;            // Projectile velocity (world units/second)
     float fireRate = 0.0f;         // Cooldown between shots (seconds)
-    float maxRange = 0.0f;         // Max travel distance (world units)
+    float maxRange = 0.0f;         // AI-only firing gate: the AI won't fire beyond this (world units).
+                                   // Also the beam's hitscan reach. Does NOT bound projectile travel.
     float optimumRange = 0.0f;     // AI preferred engagement range (world units)
+    float lifetime = 0.0f;         // Projectile lifetime override (seconds); 0 = derive from maxRange/speed
+                                   // (back-compat). This — not maxRange — controls how far a bolt flies
+                                   // and drives its end-of-life alpha fade. See weaponProjectileLifetime.
     float radius = 0.1f;           // Projectile physics (collision) radius (world units)
     WeaponType type = WeaponType::Projectile;
     DamageType damageType = DamageType::Plasma;
     bool twin = false;             // Fires two projectiles
     int impactSparks = DEFAULT_IMPACT_SPARKS;   // per-hit impact spark count (projectiles)
     Color sparkColor = DEFAULT_SPARK_COLOR;     // impact spark colour (beam + projectile)
+    Color spriteColor = DEFAULT_SPRITE_COLOR;   // projectile sprite diffuse tint (white = unchanged)
+    // Travel sparks: a plasma bolt sheds `travelSparkRate` sparks/second as it flies (0 = none),
+    // radiating in random directions at a small speed and coloured with spriteColor. Their lifetime
+    // and start size are tunable per weapon. See docs/weapons.md.
+    float travelSparkRate = 0.0f;
+    float travelSparkLife = DEFAULT_TRAVEL_SPARK_LIFE;   // seconds each shed spark lives
+    float travelSparkSize = DEFAULT_TRAVEL_SPARK_SIZE;   // shed-spark start diameter (world units)
+    // Random position jitter (world-unit radius) applied to each shed spark's spawn point. Breaks up
+    // the visible banding a fast bolt gets from one spawn per fixed sim tick. 0 = spawn exactly on
+    // the bolt.
+    float travelSparkJitter = 0.0f;
 };
+
+// Resolved projectile lifetime (seconds): the weapon's explicit `lifetime` if set, else derived
+// from maxRange/speed (back-compat). This is what the spawn passes to the projectile — maxRange is
+// otherwise AI-only. Used by both player and AI fire so the rule lives in one place.
+inline float weaponProjectileLifetime(const WeaponDefinition& w) {
+    if (w.lifetime > 0.0f) return w.lifetime;
+    return (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
+}
 
 //------------------------------------------------------------------------------
 // Weapon State (runtime mutable state per unit)

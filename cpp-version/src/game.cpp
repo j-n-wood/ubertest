@@ -1394,7 +1394,7 @@ static void game_update_player_fire(Game* game, float dt) {
     if (w.type != WeaponType::Projectile) return;  // area/instant deferred
     if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
 
-    float lifetime = (w.speed > 0.0f) ? (w.maxRange / w.speed) : 1.0f;
+    float lifetime = weaponProjectileLifetime(w);   // lifetime controls travel; maxRange is AI-only
     game->projectileManager.spawn(game->physics.world_id, spawnFrom(off2d), dir,
                                   w.speed, w.damage, lifetime, cu->collisionGroupId, w.id, w.radius);
     // Twin: second barrel is the offset mirrored across the facing axis (negate lateral x),
@@ -1832,6 +1832,45 @@ void game_update_gameplay(Game* game, float dt) {
         }
 
         game->projectileManager.cleanup();
+
+        // Plasma travel sparks: a bolt whose weapon sets travelSparkRate sheds sparks as it flies —
+        // radiating in random directions at a small speed, tinted with the weapon's spriteColor. The
+        // rate is accumulated per bolt (simDt → pause/slow-mo aware). See docs/weapons.md.
+        for (Projectile& p : game->projectileManager.getProjectilesMutable()) {
+            if (!p.active) continue;
+            const WeaponDefinition& wdef = getWeaponDefinition(p.weaponId);
+            if (wdef.travelSparkRate <= 0.0f) continue;
+            p.sparkAccum += wdef.travelSparkRate * simDt;
+            int n = (int)p.sparkAccum;
+            if (n <= 0) continue;
+            p.sparkAccum -= (float)n;
+            const Color& col = wdef.spriteColor;
+            ParticleBurst tb;
+            tb.count = n;
+            tb.speedMin = 0.15f;  tb.speedMax = 0.6f;    // small velocity range
+            tb.lifeMin = wdef.travelSparkLife * 0.6f;    // per-weapon lifetime (with a little spread)
+            tb.lifeMax = wdef.travelSparkLife;
+            tb.startSize = wdef.travelSparkSize; tb.endSize = 0.0f;
+            tb.startColor = col;
+            tb.endColor = {col.r, col.g, col.b, 0};      // fade out (additive)
+            tb.angularVelMax = 180.0f;
+            tb.texture = TEX_FLARE;
+            tb.spreadRad = PI;                            // full radial — random directions
+            // Position jitter: without it a fast bolt drops sparks at fixed spacing (one spawn per
+            // sim tick) → visible banding. Scatter each spark in a disc of radius travelSparkJitter.
+            const float jit = wdef.travelSparkJitter;
+            if (jit > 0.0f) {
+                tb.count = 1;
+                for (int s = 0; s < n; ++s) {
+                    float ang = GetRandomValue(0, 6283) / 1000.0f;             // 0..2π
+                    float rad = jit * sqrtf(GetRandomValue(0, 1000) / 1000.0f); // uniform over the disc
+                    game->particleManager.burst(tb, {p.position.x + cosf(ang) * rad,
+                                                     p.position.y + sinf(ang) * rad});
+                }
+            } else {
+                game->particleManager.burst(tb, p.position);
+            }
+        }
 
         // Effects (explosions): advance + accumulate area damage onto units in range. Runs
         // before reap so this frame's damage lands; unitManager.update flushes it on the tick.
@@ -2327,6 +2366,7 @@ void game_render_gameplay(Game* game) {
                 // independently, one texture bind). Laser (2,4) → rotated blaster_blob streak.
                 // Everything else (0,5,7,…) → round flare glow. `src` is the drawn region and drives
                 // the aspect (frame region for the sheet, full texture otherwise).
+                const WeaponDefinition& wdef = getWeaponDefinition(p.weaponId);
                 Texture2D tex;
                 Rectangle src;
                 float len;
@@ -2335,7 +2375,7 @@ void game_render_gameplay(Game* game) {
                     tex = gTextures().get(game->asmdAnim.sheet);
                     src = game->asmdAnim.sourceRect(p.age, tex.width, tex.height);
                     len = ASMD_VISUAL_SIZE;
-                } else if (getWeaponDefinition(p.weaponId).damageType == DamageType::Laser) {
+                } else if (wdef.damageType == DamageType::Laser) {
                     tex = gTextures().get(TEX_BLASTER_BLOB);
                     src = {0.0f, 0.0f, (float)tex.width, (float)tex.height};
                     len = LASER_VISUAL_LEN;
@@ -2348,8 +2388,17 @@ void game_render_gameplay(Game* game) {
                 float aspect = (src.width > 0.0f) ? src.height / src.width : 1.0f;
                 Vector2 size = {len, len * aspect};  // preserve the drawn region's proportions
                 Vector2 origin = {size.x * 0.5f, size.y * 0.5f};
+                // Per-weapon diffuse tint (default white = the texture's own colour). Additive blend,
+                // so the tint's alpha scales the sprite's brightness. Fade out over the last
+                // PROJECTILE_FADE_FRAC of the bolt's life so it dims away instead of popping off at
+                // its lifetime end (short-range weapons rely on lifetime for range). See docs/weapons.md.
+                constexpr float PROJECTILE_FADE_FRAC = 0.35f;   // tail fraction over which alpha ramps 1→0
+                float lifeFrac = (p.lifetime > 0.0f) ? (p.remainingLifetime / p.lifetime) : 1.0f;
+                float fade = (lifeFrac >= PROJECTILE_FADE_FRAC) ? 1.0f : (lifeFrac / PROJECTILE_FADE_FRAC);
+                Color tint = wdef.spriteColor;
+                tint.a = (unsigned char)(tint.a * fade);
                 DrawBillboardPro(game->camera, tex, src, pos,
-                                 game->camera.up, size, origin, rotation, WHITE);
+                                 game->camera.up, size, origin, rotation, tint);
             }
             EndBlendMode();
         }  // depthGuard restores depth writes before the opaque V-mode markers below

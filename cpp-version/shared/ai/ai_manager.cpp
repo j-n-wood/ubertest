@@ -850,7 +850,7 @@ void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
     Vector2 unitPos = getUnitPosition(ai);
     Vector2 dir = Vector2Normalize(Vector2Subtract(playerPos, unitPos));
     const auto& wdef = ai.weaponState.definition;
-    float lifetime = (wdef.speed > 0.0f) ? (wdef.maxRange / wdef.speed) : 1.0f;
+    float lifetime = weaponProjectileLifetime(wdef);   // lifetime controls travel; maxRange is AI-only
 
     // Apply fire offset (facing-relative: x = lateral, y = forward), clamped to the unit's
     // collision radius so a stray/old-data offset can't spawn the bolt inside a wall.

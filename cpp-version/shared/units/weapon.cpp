@@ -58,6 +58,16 @@ static const char* damageTypeToString(DamageType t) {
     }
 }
 
+// Parse a "[r, g, b]" or "[r, g, b, a]" array under `key` into a Color; returns `dflt` if absent.
+static Color parseColorField(const json& j, const char* key, Color dflt) {
+    if (!j.contains(key) || !j[key].is_array()) return dflt;
+    const auto& c = j[key];
+    auto ch = [&](size_t i, unsigned char d) -> unsigned char {
+        return i < c.size() ? static_cast<unsigned char>(c[i].get<int>()) : d;
+    };
+    return {ch(0, dflt.r), ch(1, dflt.g), ch(2, dflt.b), ch(3, 255)};
+}
+
 static WeaponDefinition parseWeaponFromJson(const json& j) {
     WeaponDefinition w;
     w.id           = j.value("id", -1);
@@ -67,19 +77,18 @@ static WeaponDefinition parseWeaponFromJson(const json& j) {
     w.fireRate     = j.value("fireRate", 0.0f);
     w.maxRange     = j.value("maxRange", 0.0f);
     w.optimumRange = j.value("optimumRange", 0.0f);
+    w.lifetime     = j.value("lifetime", 0.0f);   // 0 = derive from maxRange/speed
     w.radius       = j.value("radius", 0.1f);
     w.type         = parseWeaponType(j.value("type", "projectile"));
     w.damageType   = parseDamageType(j.value("damageType", "plasma"));
     w.twin         = j.value("twin", false);
     w.impactSparks = j.value("impactSparks", DEFAULT_IMPACT_SPARKS);
-    if (j.contains("sparkColor") && j["sparkColor"].is_array()) {
-        const auto& c = j["sparkColor"];
-        auto ch = [&](size_t i, unsigned char dflt) -> unsigned char {
-            return i < c.size() ? static_cast<unsigned char>(c[i].get<int>()) : dflt;
-        };
-        w.sparkColor = {ch(0, DEFAULT_SPARK_COLOR.r), ch(1, DEFAULT_SPARK_COLOR.g),
-                        ch(2, DEFAULT_SPARK_COLOR.b), ch(3, 255)};
-    }
+    w.sparkColor   = parseColorField(j, "sparkColor", DEFAULT_SPARK_COLOR);
+    w.spriteColor  = parseColorField(j, "spriteColor", DEFAULT_SPRITE_COLOR);
+    w.travelSparkRate = j.value("travelSparkRate", 0.0f);
+    w.travelSparkLife = j.value("travelSparkLife", DEFAULT_TRAVEL_SPARK_LIFE);
+    w.travelSparkSize = j.value("travelSparkSize", DEFAULT_TRAVEL_SPARK_SIZE);
+    w.travelSparkJitter = j.value("travelSparkJitter", 0.0f);
     return w;
 }
 
@@ -145,6 +154,7 @@ bool saveWeaponsToFile(const std::string& path) {
         o["fireRate"]     = r3(w.fireRate);
         o["maxRange"]     = r3(w.maxRange);
         o["optimumRange"] = r3(w.optimumRange);
+        if (w.lifetime > 0.0f) o["lifetime"] = r3(w.lifetime);   // omitted when derived from range
         // radius defaults to 0.1 and is omitted unless overridden (matches the shipped file).
         if (std::fabs(w.radius - 0.1f) > 1e-6f) o["radius"] = r3(w.radius);
         o["type"]         = weaponTypeToString(w.type);
@@ -152,12 +162,17 @@ bool saveWeaponsToFile(const std::string& path) {
         o["twin"]         = w.twin;
         // Impact-spark overrides — omitted at their defaults to keep the file lean.
         if (w.impactSparks != DEFAULT_IMPACT_SPARKS) o["impactSparks"] = w.impactSparks;
-        const Color& sc = w.sparkColor;
-        if (sc.r != DEFAULT_SPARK_COLOR.r || sc.g != DEFAULT_SPARK_COLOR.g ||
-            sc.b != DEFAULT_SPARK_COLOR.b || sc.a != DEFAULT_SPARK_COLOR.a) {
-            if (sc.a == 255) o["sparkColor"] = {sc.r, sc.g, sc.b};
-            else             o["sparkColor"] = {sc.r, sc.g, sc.b, sc.a};
-        }
+        auto writeColor = [&](const char* key, const Color& c, const Color& dflt) {
+            if (c.r == dflt.r && c.g == dflt.g && c.b == dflt.b && c.a == dflt.a) return;  // omit at default
+            if (c.a == 255) o[key] = {c.r, c.g, c.b};
+            else            o[key] = {c.r, c.g, c.b, c.a};
+        };
+        writeColor("sparkColor", w.sparkColor, DEFAULT_SPARK_COLOR);
+        writeColor("spriteColor", w.spriteColor, DEFAULT_SPRITE_COLOR);
+        if (w.travelSparkRate > 0.0f) o["travelSparkRate"] = r3(w.travelSparkRate);
+        if (std::fabs(w.travelSparkLife - DEFAULT_TRAVEL_SPARK_LIFE) > 1e-6f) o["travelSparkLife"] = r3(w.travelSparkLife);
+        if (std::fabs(w.travelSparkSize - DEFAULT_TRAVEL_SPARK_SIZE) > 1e-6f) o["travelSparkSize"] = r3(w.travelSparkSize);
+        if (w.travelSparkJitter > 0.0f) o["travelSparkJitter"] = r3(w.travelSparkJitter);
         arr.push_back(std::move(o));
     }
 

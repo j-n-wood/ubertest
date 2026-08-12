@@ -158,6 +158,89 @@ TEST(WeaponImpactSparks, SurvivesSaveRoundTrip) {
     EXPECT_EQ(c.sparkColor.b, 255);
 }
 
+// Projectile sprite tint (spriteColor) + travel-spark rate: parsed, defaulted, and round-tripped.
+TEST(WeaponSpriteAndTravelSparks, ParsedDefaultedAndRoundTrips) {
+    const char* js = R"([
+      {"id": 0, "name": "Plain", "type": "projectile", "damageType": "plasma", "twin": false},
+      {"id": 1, "name": "Glowing", "type": "projectile", "damageType": "plasma", "twin": false,
+       "spriteColor": [140, 255, 170], "travelSparkRate": 22,
+       "travelSparkLife": 0.7, "travelSparkSize": 0.2, "travelSparkJitter": 0.15}
+    ])";
+    ASSERT_TRUE(loadWeaponsFromJson(js));
+
+    // Defaults: white sprite tint (texture unchanged), no travel sparks, default spark life/size, no jitter.
+    WeaponDefinition plain = getWeaponDefinition(0);
+    EXPECT_EQ(plain.spriteColor.r, DEFAULT_SPRITE_COLOR.r);
+    EXPECT_EQ(plain.spriteColor.g, DEFAULT_SPRITE_COLOR.g);
+    EXPECT_EQ(plain.spriteColor.b, DEFAULT_SPRITE_COLOR.b);
+    EXPECT_FLOAT_EQ(plain.travelSparkRate, 0.0f);
+    EXPECT_FLOAT_EQ(plain.travelSparkLife, DEFAULT_TRAVEL_SPARK_LIFE);
+    EXPECT_FLOAT_EQ(plain.travelSparkSize, DEFAULT_TRAVEL_SPARK_SIZE);
+    EXPECT_FLOAT_EQ(plain.travelSparkJitter, 0.0f);
+
+    // Parsed values, including the tunable lifetime + size + jitter.
+    WeaponDefinition g = getWeaponDefinition(1);
+    EXPECT_EQ(g.spriteColor.r, 140);
+    EXPECT_EQ(g.spriteColor.g, 255);
+    EXPECT_EQ(g.spriteColor.b, 170);
+    EXPECT_FLOAT_EQ(g.travelSparkRate, 22.0f);
+    EXPECT_FLOAT_EQ(g.travelSparkLife, 0.7f);
+    EXPECT_FLOAT_EQ(g.travelSparkSize, 0.2f);
+    EXPECT_FLOAT_EQ(g.travelSparkJitter, 0.15f);
+
+    // Round-trip: non-default fields are written; defaults are omitted and re-default on reload.
+    std::string path = ::testing::TempDir() + "weapons_sprite_roundtrip.json";
+    ASSERT_TRUE(saveWeaponsToFile(path));
+    std::ifstream in(path);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("\"spriteColor\""), std::string::npos);
+    EXPECT_NE(text.find("\"travelSparkRate\""), std::string::npos);
+    EXPECT_NE(text.find("\"travelSparkLife\""), std::string::npos);
+    EXPECT_NE(text.find("\"travelSparkSize\""), std::string::npos);
+    EXPECT_NE(text.find("\"travelSparkJitter\""), std::string::npos);
+
+    ASSERT_TRUE(loadWeaponsFromFile(path));
+    EXPECT_EQ(getWeaponDefinition(1).spriteColor.g, 255);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(1).travelSparkRate, 22.0f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(1).travelSparkLife, 0.7f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(1).travelSparkSize, 0.2f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(1).travelSparkJitter, 0.15f);
+    // Defaults omitted on save → still default on reload.
+    EXPECT_EQ(getWeaponDefinition(0).spriteColor.r, DEFAULT_SPRITE_COLOR.r);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(0).travelSparkRate, 0.0f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(0).travelSparkLife, DEFAULT_TRAVEL_SPARK_LIFE);
+}
+
+// Projectile lifetime is decoupled from maxRange: an explicit `lifetime` controls travel, else it
+// derives from maxRange/speed (back-compat). maxRange itself is the AI fire gate only.
+TEST(WeaponLifetime, ExplicitOverridesElseDerivesFromRange) {
+    const char* js = R"([
+      {"id": 0, "name": "Derived",  "speed": 10.0, "maxRange": 20.0, "type": "projectile"},
+      {"id": 1, "name": "Explicit", "speed": 10.0, "maxRange": 20.0, "lifetime": 0.3, "type": "projectile"}
+    ])";
+    ASSERT_TRUE(loadWeaponsFromJson(js));
+
+    // Unspecified: raw field 0, resolver derives maxRange/speed = 20/10 = 2.0.
+    WeaponDefinition d = getWeaponDefinition(0);
+    EXPECT_FLOAT_EQ(d.lifetime, 0.0f);
+    EXPECT_FLOAT_EQ(weaponProjectileLifetime(d), 2.0f);
+
+    // Explicit: wins, independent of maxRange.
+    WeaponDefinition e = getWeaponDefinition(1);
+    EXPECT_FLOAT_EQ(e.lifetime, 0.3f);
+    EXPECT_FLOAT_EQ(weaponProjectileLifetime(e), 0.3f);
+
+    // Round-trip: explicit written, derived omitted.
+    std::string path = ::testing::TempDir() + "weapons_lifetime.json";
+    ASSERT_TRUE(saveWeaponsToFile(path));
+    std::ifstream in(path);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("\"lifetime\""), std::string::npos);
+    ASSERT_TRUE(loadWeaponsFromFile(path));
+    EXPECT_FLOAT_EQ(getWeaponDefinition(1).lifetime, 0.3f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(0).lifetime, 0.0f);   // still derived on reload
+}
+
 // The runtime weapon editor tunes the table in place (getWeaponByIndex) and writes it
 // back with saveWeaponsToFile. Edits must round-trip, and the emitted numbers must be
 // clean (no float->double artefacts like 12.5 -> "12.500000476837158").
@@ -201,11 +284,17 @@ TEST(WeaponFileTest, ShippedPlasmaBolt) {
     EXPECT_EQ(w.id, 0);
     EXPECT_EQ(w.name, "Plasma Bolt");
     EXPECT_FLOAT_EQ(w.damage, 20.599f);
-    EXPECT_FLOAT_EQ(w.speed, 10.0f);
+    EXPECT_FLOAT_EQ(w.speed, 11.0f);
     EXPECT_FLOAT_EQ(w.fireRate, 0.8f);
     EXPECT_EQ(w.type, WeaponType::Projectile);
     EXPECT_EQ(w.damageType, DamageType::Plasma);
     EXPECT_FLOAT_EQ(w.radius, 0.1f);  // default physics radius
+    // Plasma bolt sheds coloured travel sparks (added feature). Rate is a tunable balance value,
+    // so just assert it's enabled; the sprite tint is asserted exactly.
+    EXPECT_GT(w.travelSparkRate, 0.0f);
+    EXPECT_EQ(w.spriteColor.r, 140);
+    EXPECT_EQ(w.spriteColor.g, 255);
+    EXPECT_EQ(w.spriteColor.b, 170);
 
     // Weapon 3 (Plasma Cannon) has a configured, larger physics radius.
     EXPECT_FLOAT_EQ(getWeaponDefinition(3).radius, 0.2f);

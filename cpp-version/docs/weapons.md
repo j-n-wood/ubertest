@@ -25,14 +25,20 @@ Each weapon (`shared/units/weapon.h : WeaponDefinition`):
 | `damage`       | damage per hit (subtracted from unit health)        |
 | `speed`        | projectile velocity (world units/s)                 |
 | `fireRate`     | cooldown between shots (seconds)                     |
-| `maxRange`     | max travel distance (world units) → lifetime = `maxRange/speed` |
+| `maxRange`     | **AI-only** fire gate (AI won't shoot beyond it); also the beam's hitscan reach. Does *not* bound projectile travel |
 | `optimumRange` | AI preferred engagement range                       |
+| `lifetime`     | projectile lifetime, seconds (controls travel + drives the fade); `0`/omitted → derived from `maxRange/speed` |
 | `type`         | `projectile` \| `beam` \| `area` \| `instant`       |
 | `damageType`   | armour-interaction tag (plasma/flame/cutter/…)      |
 | `twin`         | fire two projectiles per shot                        |
 | `radius`       | projectile physics (collision) radius, world units (default 0.1) |
 | `impactSparks` | per-hit impact-spark count (default 16); bigger shots make more |
 | `sparkColor`   | impact-spark colour `[r,g,b]` (default plasma green-white); used by beam + projectile impacts |
+| `spriteColor`  | projectile sprite diffuse tint `[r,g,b]` (default white = the texture's own colour); scales the additive billboard |
+| `travelSparkRate` | sparks/second a bolt sheds while flying (default 0 = none); the sparks radiate in random directions at a small speed and take `spriteColor`. Configured on the plasma weapons |
+| `travelSparkLife` | shed-spark lifetime, seconds (default 0.5); the emitter uses `[0.6·life, life]` for a little spread |
+| `travelSparkSize` | shed-spark start diameter, world units (default 0.14); it shrinks to nothing over its life |
+| `travelSparkJitter` | random spawn-point scatter radius, world units (default 0); breaks up the banding a fast bolt gets from one spawn per fixed sim tick |
 
 Weapon 0 = Plasma Bolt: damage 11, speed 3.0 (world units/s), fireRate 0.8s, maxRange 12,
 projectile → lifetime 4s. Speed/range are hand-tuned gameplay values (slow enough to read
@@ -81,6 +87,15 @@ A projectile is a dynamic Box2D bullet body: zero damping/gravity, constant line
 (no drag). Physics radius is per-weapon (`WeaponDefinition::radius`, default
 `PROJECTILE_RADIUS = 0.1`; weapon 3 = 0.2) — passed to `spawn` and stored on the projectile.
 Category `PROJECTILE`, mask `UNIT|STATIC|DOOR`, `groupIndex = ownerId`.
+
+**Lifetime vs range (decoupled).** How far a bolt flies is set by its **lifetime**, not `maxRange`:
+`weaponProjectileLifetime(w)` returns the weapon's explicit `lifetime` (seconds) if set, else falls
+back to `maxRange/speed` (so unspecified weapons are unchanged). Both the player and AI fire paths
+pass that to `spawn`, which stores it on the projectile (`Projectile::lifetime`, immutable) alongside
+the counting-down `remainingLifetime`. **`maxRange` is otherwise AI-only** — the "can I fire?" gate in
+`canFireAtPlayer` (and the beam's hitscan reach) — it no longer bounds projectile travel. So a
+short-range weapon (e.g. weapon 5 Plasma Torch, `lifetime 0.12`) gets its short reach from lifetime
+while `maxRange` still tells the AI when to shoot.
 
 Per-frame in the sim block (after the physics step): `update` (lifetime) → `syncFromPhysics`
 → `processContactEvents` → `cleanup`. On any contact the projectile deactivates and vanishes;
@@ -179,6 +194,21 @@ the look from it (per weapon id, since several plasma weapons must look differen
   points the way the bolt is moving.
 - **Everything else** (plasma weapons 0, 5, 7, …) → `flare.png`, a round glow, ~0.6 across.
   Weapons 5 and 7 are plasma but deliberately use the plain flare, not the ASMD blast.
+
+Every projectile sprite is tinted by its weapon's **`spriteColor`** (the `DrawBillboardPro` tint;
+default white leaves the texture unchanged) — additive blend, so the tint's alpha scales the
+sprite's brightness. The sprite also **alpha-fades over the last `PROJECTILE_FADE_FRAC` (0.35) of its
+lifetime** (`remainingLifetime / lifetime`), scaling the tint alpha to 0 so a bolt dims away at the
+end of its life instead of popping off abruptly — important now that short-range weapons end by
+lifetime rather than a wall hit.
+Separately, a bolt whose weapon sets **`travelSparkRate`** sheds particle sparks **as it flies**: a
+per-bolt rate accumulator (in the sim block, after `projectileManager.cleanup()`, `simDt`-scaled so
+it's pause/slow-mo aware) emits a small `ParticleManager` burst at the bolt's position — full-radial
+(`spreadRad = PI`, random directions), small speed (0.15–0.6), life/size from `travelSparkLife` /
+`travelSparkSize`, coloured with `spriteColor`. Because that's one spawn per fixed sim tick, a fast
+bolt drops sparks at near-constant spacing (visible banding); **`travelSparkJitter`** scatters each
+spark's spawn point within a disc of that radius (per spark, uniform over the disc) to break it up.
+Configured on the plasma weapons.
 
 Sprites use `DrawBillboardPro` with the billboard up-vector set to `camera.up`, **not** plain
 `DrawBillboard`: the latter hardcodes up `{0,1,0}`, which for this straight-down camera is
