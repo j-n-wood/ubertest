@@ -106,6 +106,10 @@ struct UnitInstance {
     bool damageAlert = false;
     Vector2 damageFromDir = {0, 0};
 
+    // Ship droid census: set true the first time this enemy is counted as defeated (destroyed or
+    // captured), so the running ship-wide count is decremented exactly once. See game_census_*.
+    bool defeatedCounted = false;
+
     // State
     bool active = true;
 

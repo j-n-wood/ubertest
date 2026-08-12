@@ -206,6 +206,7 @@ void transfer_update(Game* game, float dt) {
             game->aiManager.setControlled(st.captured, true);
             createWeld(game);  // link device to captured — from here the weld tracks it
             game_award_points(game, st.captured);  // capturing a droid scores like a kill
+            game_census_defeat(game, st.captured); // capture removes it from the ship droid tally
         }
         return;
     }

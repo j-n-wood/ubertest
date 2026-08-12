@@ -21,10 +21,15 @@ things that ever cross worlds are the **player device** and the **unit it is pil
   all systems (units, AI, projectiles, doors, collision, stepping) operate on the active world
   with no per-call-site changes. `UnitInstance::levelIndex` records a unit's level (the player
   device is `-1`; it migrates).
-- Droids are created **lazily on first entry** (`game_spawn_enemies` → `resolveSpawns` once,
-  fixing the roster of types), then persist. When a level is deactivated its droids are set
-  `active=false` (skipped by update/render) and its world stops stepping, so they freeze **in
-  place**. **Re-entry keeps every droid exactly where it froze** — no teleport
+- Droids are created **eagerly for every deck at ship load** — the starting deck via
+  `game_spawn_enemies` (spawned + activated), every other deck via `game_populate_level_roster`
+  (`resolveSpawns` once, fixing the roster of types) which spawns them **frozen** (`active=false`)
+  in that deck's own world. Only each deck's waypoints are needed to place them, so no geometry is
+  built for unvisited decks (`load3DLevelWaypoints`). This keeps the **ship-wide droid count
+  accurate from the start** (see *Ship census* / `game_census_*`) rather than only for visited
+  decks. The rosters then persist for the ship's lifetime. When a level is deactivated its droids
+  are set `active=false` (skipped by update/render) and its world stops stepping, so they freeze
+  **in place**. **Re-entry keeps every droid exactly where it froze** — no teleport
   (`game_reactivate_current_level`): it wakes them, heals them for the time away, rebuilds
   patrol AI resuming from the waypoint **nearest each droid's current position**, then rolls
   the level forward (see *Away-level catch-up*). So a level's droids, their health, and their
@@ -33,6 +38,15 @@ things that ever cross worlds are the **player device** and the **unit it is pil
   > Earlier this **re-scattered** each droid to a random waypoint on every activation. On
   > levels with disconnected sub-areas that could teleport a droid into a region it could
   > never have walked to; the catch-up simulation below replaces that with real movement.
+- **Ship-wide droid census** (`game_census_*`, `Game::shipDroidsRemaining`/`shipDroidsTotal`): a
+  running count maintained *as units spawn / are defeated*, so it matches the spawn logic by
+  construction (no spawn-def re-derivation). `game_census_spawn` increments it at each roster spawn;
+  `game_census_defeat` decrements once per unit (guarded by `UnitInstance::defeatedCounted`) when a
+  droid is **destroyed OR captured** (a captured droid still exists but is no longer an enemy);
+  `game_census_despawn` drops undefeated units when a roster is torn down to be rebuilt (the debug
+  renderer switch, which then re-spawns and re-counts). Because every deck is populated at load,
+  `shipDroidsRemaining` is the true shipwide live count from the start, and `game_ship_is_clear` (all
+  droids defeated) drives the "ship clear of droids" banner + the Ship Data console page.
 
 ## Level switch (`game_change_level`)
 

@@ -1,4 +1,5 @@
 {
+  "name": "Ship 1",
   "image": "ship_off.png",
   "imageLit": "ship_on.png",
   "refWidth": 578,

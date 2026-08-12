@@ -26,6 +26,11 @@
 bool load3DLevel(const std::string& assetPath, int levelNumber, SceneRenderer* renderer,
                  LevelRenderData& data);
 
+// Load ONLY the waypoints (positions + adjacency) for a level from its bundle entities.json — no
+// geometry/GPU work. Lets the game place a deck's enemy roster in its own world without building the
+// deck's full render data (eager population at ship load). Returns true if any waypoint was read.
+bool load3DLevelWaypoints(const std::string& assetPath, int levelNumber, LevelRenderData& data);
+
 // Read doors / chargers from the bundle's entities.json in the domain frame (positions in metres),
 // so Objects3D places them on the 3D geometry rather than at TMX-derived positions.
 void load3DLevelDoors(const std::string& assetPath, int levelNumber, std::vector<DoorSpec>& out);

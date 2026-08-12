@@ -99,6 +99,14 @@ bool load3DLevel(const std::string& assetPath, int levelNumber, SceneRenderer* r
     return true;
 }
 
+bool load3DLevelWaypoints(const std::string& assetPath, int levelNumber, LevelRenderData& data) {
+    const std::string path = bundleDir(assetPath, levelNumber) + "/level_" +
+                             std::to_string(levelNumber) + ".entities.json";
+    if (!fs::exists(path)) return false;
+    loadWaypoints(path, data);
+    return !data.waypointPositions.empty();
+}
+
 void load3DLevelDoors(const std::string& assetPath, int levelNumber, std::vector<DoorSpec>& out) {
     std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".entities.json");
     if (!f.is_open()) return;

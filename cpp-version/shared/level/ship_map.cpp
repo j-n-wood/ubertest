@@ -28,6 +28,7 @@ bool ShipMap::load(const std::string& path) {
     json j = json::parse(file, nullptr, false);
     if (j.is_discarded()) return false;
 
+    name_ = j.value("name", "");
     image_ = j.value("image", "");
     imageLit_ = j.value("imageLit", "");
 

@@ -58,7 +58,9 @@ struct LevelRuntime {
     b2WorldId world  = b2_nullWorldId;   // retained per-level physics world
     b2BodyId  origin = b2_nullBodyId;    // motor-joint anchor in that world
     std::vector<UnitInstance*> units;    // persistent droid roster (non-owning; UnitManager owns)
-    bool   populated  = false;           // roster created (lazily, on first entry)
+    bool   populated  = false;           // roster created — EAGERLY for every deck at ship load
+                                         // (frozen in its own world until entered), so the
+                                         // ship-wide droid count is accurate from the start
     bool   hadEnemies = false;           // roster ever had >= 1 enemy (gates the lights-out switch)
     bool   cleared    = false;           // all enemies destroyed/captured — lights out (permanent)
     double lastActive = 0.0;             // gameClock when last deactivated (away-heal timing)
@@ -173,6 +175,13 @@ struct Game {
     double scoreDisplay = 0.0;
     double alertLevel = 0.0;
 
+    // Ship-wide droid census (across ALL decks, including ones not yet visited). Recomputed each
+    // frame in the sim block. `shipCleared` latches the first frame the whole ship is clear — the
+    // hook for the "ship clear of droids" event (later: switch ships). See game_update_ship_status.
+    int shipDroidsRemaining = 0;   // live enemies left shipwide (unvisited decks count their spawn total)
+    int shipDroidsTotal = 0;       // enemies the ship spawns in total (0 = ship has none)
+    bool shipCleared = false;      // true once the ship has been cleared (one-shot event latch)
+
     // State
     bool running;
     int debugMode;
@@ -233,5 +242,14 @@ void game_award_points(Game* game, const UnitInstance* unit);
 // plus a ParticleManager spark burst. `sizeScale` stretches the blast radius + visual (e.g. a
 // destructible's explodeSize; 1.0 = unit-sized). Called from every unit-/object-death site.
 void game_spawn_explosion(Game* game, Vector2 pos, int32_t group, float sizeScale = 1.0f);
+
+// Count an enemy as defeated in the ship-wide droid tally — destroyed OR captured (a captured droid
+// still exists but is no longer an enemy). Idempotent per unit (guarded by UnitInstance::
+// defeatedCounted). Called from the kill reap and the transfer capture-completion.
+void game_census_defeat(Game* game, UnitInstance* unit);
+
+// True once the whole ship is clear: it had droids, none remain live, and every deck has been swept
+// (entered/spawned). Drives the "ship clear of droids" banner + the Ship Data page. See game.cpp.
+bool game_ship_is_clear(const Game* game);
 
 #endif

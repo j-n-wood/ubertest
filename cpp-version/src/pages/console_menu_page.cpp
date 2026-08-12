@@ -2,6 +2,7 @@
 #include "pages/page_manager.h"
 #include "pages/droid_library_page.h"
 #include "pages/status_page.h"
+#include "pages/ship_data_page.h"
 #include "game.h"
 #include "raylib.h"
 #include "raygui.h"
@@ -29,7 +30,10 @@ void ConsoleMenuPage::render() {
     if (GuiButton((Rectangle){bx, by + 60, bw, bh}, "Status")) {
         pages_->push(std::make_unique<StatusPage>(game_, pages_));
     }
-    if (GuiButton((Rectangle){bx, by + 120, bw, bh}, "Exit")) {
+    if (GuiButton((Rectangle){bx, by + 120, bw, bh}, "Ship Data")) {
+        pages_->push(std::make_unique<ShipDataPage>(game_, pages_));
+    }
+    if (GuiButton((Rectangle){bx, by + 180, bw, bh}, "Exit")) {
         pages_->pop();
     }
 

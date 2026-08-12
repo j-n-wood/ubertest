@@ -50,6 +50,10 @@ static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
 static void game_reap_objects(Game* game);
+static void game_update_ship_status(Game* game);
+static void game_census_spawn(Game* game, UnitInstance* enemy);
+static void game_census_despawn(Game* game, UnitInstance* unit);
+static void game_populate_level_roster(Game* game, int L);
 static void game_update_score(Game* game, float dt);
 static void game_update_player_fire(Game* game, float dt);
 
@@ -258,8 +262,20 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         game->playerWeapon = initWeaponState(game->playerUnit->definition->properties);
     }
 
-    // Spawn enemies for the starting level
+    // Spawn enemies for the starting level (spawned + activated), then EAGER-POPULATE every other
+    // deck's roster (frozen in its own world) so the ship-wide droid count is accurate from load —
+    // not only for decks the player has visited. Rosters are retained for the ship's lifetime and
+    // woken on entry (game_reactivate_current_level). Other decks need only their waypoints to place
+    // spawns (no geometry build), so this stays cheap.
     game_spawn_enemies(game);
+    for (int L = 0; L < (int)game->levels.size(); ++L) {
+        if (L == game->currentLevel) continue;
+        if (game->levelRenderData[L].waypointPositions.empty())
+            load3DLevelWaypoints(game->assetPath, game->levels[L].number, game->levelRenderData[L]);
+        game_populate_level_roster(game, L);
+    }
+    // Bind the lit shader to every enemy model just loaded (other decks may introduce new classes).
+    game->unitManager.applyShaderToModels(sceneRendererGetShader(&game->sceneRenderer));
 }
 
 //------------------------------------------------------------------------------
@@ -927,6 +943,7 @@ static void game_spawn_enemies(Game* game) {
             enemies.push_back(enemy);
             game->levelRuntime[L].units.push_back(enemy);
             game->enemyUnits.push_back(enemy);
+            game_census_spawn(game, enemy);   // count into the ship-wide droid tally
         } else {
             TraceLog(LOG_WARNING, "Failed to create enemy '%s'", defId.c_str());
         }
@@ -947,6 +964,49 @@ static void game_spawn_enemies(Game* game) {
     TraceLog(LOG_INFO, "Populated %zu enemies on deck %d (level index %d)", enemies.size(), deck, L);
 }
 
+// Eager population: create level L's persistent enemy roster in ITS OWN world, FROZEN (active=false)
+// until the deck is entered. Retained for the ship's lifetime and counted into the ship-wide census,
+// so the droid tally is accurate from ship load rather than only for visited decks. Does NOT touch
+// enemyUnits/aiManager — waking + AI happen on entry (game_reactivate_current_level). Requires level
+// L's waypoints in levelRenderData[L] (load3DLevelWaypoints fills them for un-built decks).
+static void game_populate_level_roster(Game* game, int L) {
+    if (L < 0 || L >= (int)game->levels.size()) return;
+    if (game->levelRuntime[L].populated) return;   // once per level
+
+    const LevelRenderData& rd = game->levelRenderData[L];
+    const int deck = game->levels[L].number;
+    const LevelSpawnDef* spawnDef = getSpawnDef(0, deck);
+    // No waypoints or no spawn def -> nothing to place; still mark the deck populated so the
+    // ship-clear check treats an empty deck as already swept.
+    if (rd.waypointPositions.empty() || !spawnDef) {
+        game->levelRuntime[L].populated = true;
+        game->levelRuntime[L].hadEnemies = false;
+        return;
+    }
+
+    // -1 = no player waypoint to avoid (there is no player on an inactive deck).
+    auto spawnEntries = resolveSpawns(*spawnDef, (int)rd.waypointPositions.size(), -1);
+    b2WorldId world = game->levelRuntime[L].world;
+    b2BodyId origin = game->levelRuntime[L].origin;
+    game->levelRuntime[L].units.clear();
+    for (const auto& spawn : spawnEntries) {
+        if (spawn.waypointIndex < 0 || spawn.waypointIndex >= (int)rd.waypointPositions.size()) continue;
+        Vector3 wpPos = rd.waypointPositions[spawn.waypointIndex];
+        std::string defId = "droid_class_" + std::to_string(spawn.classId);
+        UnitInstance* enemy = game->unitManager.createInstance(defId, {wpPos.x, wpPos.z}, spawn.angle,
+                                                               world, origin);
+        if (!enemy) { TraceLog(LOG_WARNING, "Failed to create enemy '%s'", defId.c_str()); continue; }
+        enemy->levelIndex = L;
+        enemy->active = false;   // frozen until the deck is entered (then woken by reactivation)
+        game->levelRuntime[L].units.push_back(enemy);
+        game_census_spawn(game, enemy);
+    }
+    game->levelRuntime[L].populated = true;
+    game->levelRuntime[L].hadEnemies = !game->levelRuntime[L].units.empty();
+    TraceLog(LOG_INFO, "Eager-populated %zu enemies on deck %d (level index %d)",
+             game->levelRuntime[L].units.size(), deck, L);
+}
+
 static void game_despawn_enemies(Game* game) {
     // Clear AI components (they reference enemy units)
     game->aiManager.components().clear();
@@ -954,6 +1014,7 @@ static void game_despawn_enemies(Game* game) {
     // Destroy enemy unit instances
     for (auto* enemy : game->enemyUnits) {
         if (enemy) {
+            game_census_despawn(game, enemy);  // torn down (not defeated) — drop from the live tally
             game->unitManager.destroyInstance(enemy);
         }
     }
@@ -1113,6 +1174,55 @@ static bool game_level_hostiles_remain(const Game* game) {
     return false;
 }
 
+//------------------------------------------------------------------------------
+// Ship-wide droid census — a running count maintained AS units spawn / are defeated, so it matches
+// the spawn logic by construction (no spawn-def lookups, no waypoint-cap guesswork). "Defeated" =
+// destroyed OR captured (a captured droid still exists but is no longer an enemy). A per-unit flag
+// guards against double-counting a unit whose live->dead transition is observed more than once.
+//------------------------------------------------------------------------------
+
+// Count a freshly spawned enemy into the ship census. Called once per enemy at roster population
+// (NOT for the player device, and NOT for a captured unit re-instantiated on a level change — those
+// don't go through the enemy-spawn path).
+static void game_census_spawn(Game* game, UnitInstance* enemy) {
+    if (!enemy) return;
+    enemy->defeatedCounted = false;
+    game->shipDroidsRemaining++;
+    if (game->shipDroidsRemaining > game->shipDroidsTotal) game->shipDroidsTotal = game->shipDroidsRemaining;
+}
+
+// Count an enemy as defeated (killed or captured). Guarded by the unit's flag so a repeat call
+// (e.g. capture, then a later reap of the same body) never double-decrements.
+void game_census_defeat(Game* game, UnitInstance* unit) {
+    if (!unit || unit->defeatedCounted) return;
+    unit->defeatedCounted = true;
+    if (game->shipDroidsRemaining > 0) game->shipDroidsRemaining--;
+}
+
+// Drop an enemy that is going away WITHOUT being defeated — the roster is being torn down to be
+// rebuilt (a renderer switch re-spawns and re-counts them). Not a defeat, so leave the flag clear;
+// an already-defeated (e.g. captured) unit isn't live, so it's skipped.
+static void game_census_despawn(Game* game, UnitInstance* unit) {
+    if (!unit || unit->defeatedCounted) return;
+    if (game->shipDroidsRemaining > 0) game->shipDroidsRemaining--;
+}
+
+// The whole ship is clear iff it ever had droids and none remain live anywhere. Every deck's roster
+// is populated up-front (eager population at ship load), so shipDroidsRemaining is the true shipwide
+// live count from the start — no "have all decks been visited?" caveat is needed.
+bool game_ship_is_clear(const Game* game) {
+    return game->shipDroidsTotal > 0 && game->shipDroidsRemaining == 0;
+}
+
+// Latch the one-shot clear event the first frame the ship becomes clear.
+static void game_update_ship_status(Game* game) {
+    if (!game->shipCleared && game_ship_is_clear(game)) {
+        game->shipCleared = true;   // event hook (later: switch ships)
+        TraceLog(LOG_INFO, "SHIP CLEAR — all %d droids on '%s' defeated",
+                 game->shipDroidsTotal, game->shipMap.name().c_str());
+    }
+}
+
 // Roll the active level's simulation forward `seconds` of game-time so its droids are where
 // they would have wandered while the player was elsewhere — instead of teleporting them.
 // Headless: no input, no rendering, no model animation; patrol-only (a far-away synthetic
@@ -1212,6 +1322,7 @@ static void game_reap_dead(Game* game) {
     };
     for (UnitInstance* u : dead) {
         game_award_points(game, u);  // score + alert for a direct kill (captured unit skipped above)
+        game_census_defeat(game, u); // remove from the ship-wide droid tally (once)
         // Explosion + sparks at the unit's position before it's freed (owner = its own group
         // so it doesn't self-damage). See docs/effects.md.
         if (b2Body_IsValid(u->bodyId)) {
@@ -1885,6 +1996,9 @@ void game_update_gameplay(Game* game, float dt) {
 
         // Same for destructible scenery (tanks): explode + drop the footprint when shot to death.
         game_reap_objects(game);
+
+        // Refresh the ship-wide droid census (drives the Ship Data page + the ship-clear event).
+        game_update_ship_status(game);
 
         // Lights out: the first time a populated level has no hostile (non-captured) enemies
         // left, latch it permanently and rebuild the tiles on the darkened atlas row. One-shot
@@ -2606,6 +2720,14 @@ void game_render_gameplay(Game* game) {
         const char* txt = "SLOW-MO";
         int w = MeasureText(txt, 20);
         DrawText(txt, GetScreenWidth() / 2 - w / 2, 40, 20, SKYBLUE);
+    }
+
+    // Ship-clear event message (hover-prompt style), shown while the whole ship is empty of droids.
+    // For now it's just an on-screen banner; later it drives switching to the next ship.
+    if (game_ship_is_clear(game)) {
+        const char* txt = "SHIP CLEAR OF DROIDS";
+        int w = MeasureText(txt, 24);
+        DrawText(txt, GetScreenWidth() / 2 - w / 2, GetScreenHeight() - 100, 24, GREEN);
     }
 
     // Console-use prompt (player standing on a console tile).

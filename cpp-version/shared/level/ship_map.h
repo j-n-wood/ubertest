@@ -22,6 +22,7 @@ public:
     bool load(const std::string& path);
     bool loaded() const { return loaded_; }
 
+    const std::string& name() const { return name_; }              // ship display name (metadata)
     const std::string& imageName() const { return image_; }        // dim base
     const std::string& imageLitName() const { return imageLit_; }   // lit overlay (may be empty)
 
@@ -30,6 +31,7 @@ public:
     const std::vector<Rectangle>* deckRects(int levelNumber) const;
 
 private:
+    std::string name_;
     std::string image_;
     std::string imageLit_;
     std::vector<Rectangle> elevators_;            // index = elevator id
