@@ -1,7 +1,7 @@
 #include "pages/console_menu_page.h"
 #include "pages/page_manager.h"
 #include "pages/droid_library_page.h"
-#include "pages/status_page.h"
+#include "pages/deck_info_page.h"
 #include "pages/ship_data_page.h"
 #include "game.h"
 #include "raylib.h"
@@ -27,8 +27,8 @@ void ConsoleMenuPage::render() {
     if (GuiButton((Rectangle){bx, by, bw, bh}, "Droid Library")) {
         pages_->push(std::make_unique<DroidLibraryPage>(game_, pages_));
     }
-    if (GuiButton((Rectangle){bx, by + 60, bw, bh}, "Status")) {
-        pages_->push(std::make_unique<StatusPage>(game_, pages_));
+    if (GuiButton((Rectangle){bx, by + 60, bw, bh}, "Deck Info")) {
+        pages_->push(std::make_unique<DeckInfoPage>(game_, pages_));
     }
     if (GuiButton((Rectangle){bx, by + 120, bw, bh}, "Ship Data")) {
         pages_->push(std::make_unique<ShipDataPage>(game_, pages_));

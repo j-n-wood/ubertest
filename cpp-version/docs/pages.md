@@ -58,7 +58,8 @@ where it left off when they pop. See [console.md](console.md).
 |-------------------|------------------------------------------------------|-------------|
 | `GamePage`        | The gameplay view — the base of the stack; wraps `game_update_gameplay`/`game_render_gameplay`. | `main` at startup |
 | `ConsoleMenuPage` | Console menu shown when using a console tile.        | `GamePage` (SPACE on a console tile) |
-| `StatusPage`      | Ship/droid status readout.                           | `ConsoleMenuPage` |
+| `DeckInfoPage`    | Current deck: a zoomed-out top-down **map** of the level geometry (geometry-only — no units/particles/objects; renders `levelRenderData[cur].tileModel` under an orthographic camera framed to its bounds), plus deck name + live droid count. | `ConsoleMenuPage` |
+| `ShipDataPage`    | Ship metadata (name) + ship-wide droids-remaining and alert status; shows "SHIP CLEAR" when `game_ship_is_clear`. | `ConsoleMenuPage` |
 | `DroidLibraryPage`| Spinning-droid library/debug viewer; owns a private Box2D world + `UnitManager` for its display droid. | `ConsoleMenuPage`, and `GamePage` F3 in debug mode |
 | `ShipViewPage`    | Side-on ship diagram + lift destination chooser. Reads the ship images from the shared `TextureManager` (doesn't own them). | `GamePage` (SPACE on a lift tile) |
 
