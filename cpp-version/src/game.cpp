@@ -1353,9 +1353,7 @@ static void game_reap_objects(Game* game) {
         // Owner group 0 is no unit's group (unit groups are negative), so nearby droids take the blast.
         // Scale the blast by the def's explodeSize (bigger scenery → bigger boom + wider chain reach).
         const float blast = (inst.def->explodeSize > 0.0f) ? inst.def->explodeSize : 1.0f;
-        game_spawn_explosion(game, {inst.position.x, inst.position.z}, 0, blast);
-        // Leave a scorch on the floor where it exploded (a cleanable "dirty mark").
-        game->decalManager.spawnBlastmark({inst.position.x, inst.position.z}, 0.5f * blast);
+        game_spawn_explosion(game, {inst.position.x, inst.position.z}, 0, blast);  // + a scorch decal
         if (b2Body_IsValid(inst.bodyId)) {
             // Invalidate the matching collisionBodies slot BEFORE destroying, so the level-teardown
             // sweep (which destroys every valid body) can't double-free this one.
@@ -1414,6 +1412,8 @@ static const ParticleBurst EXPLOSION_SPARKS = {
 void game_spawn_explosion(Game* game, Vector2 pos, int32_t group, float sizeScale) {
     game->effectManager.spawnExplosion(pos, group, sizeScale);   // animated blast + area damage (scaled)
     game->particleManager.burst(EXPLOSION_SPARKS, pos);          // render-only spark spray
+    // Every explosion (unit or destructible) leaves a scorch mark on the floor (a cleanable decal).
+    game->decalManager.spawnBlastmark(pos, 0.4f * sizeScale);
 }
 
 // Impact sparks: a directional burst of `count` sparks in colour `color`, reflected off a

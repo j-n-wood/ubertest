@@ -25,9 +25,11 @@ dark scorch / green drip colour).
 
 ## Spawning
 
-- **Blastmark** — in `game_reap_objects` (`src/game.cpp`), when a destructible object explodes:
-  `decalManager.spawnBlastmark({pos.x, pos.z}, 0.5·explodeSize)`. Only destructible-object
-  explosions, not unit deaths (matches uber).
+- **Blastmark** — in `game_spawn_explosion` (`src/game.cpp`), the shared entry point for **every**
+  explosion (unit deaths and destructible-object deaths both route through it):
+  `decalManager.spawnBlastmark(pos, 0.4·sizeScale)`, so the scorch scales with the blast (a tank's
+  `explodeSize` vs a unit's 1.0). (uber only marked destructible explosions; marking all of them is
+  our choice so combat visibly scorches the floor.)
 - **Drip** — `game_update_drips(game, dt)` in the sim block. A unit drips when its def's
   `dripThreshold` (health, `DroidProperties::dripThreshold`; 0 = never — authored per class in
   `assets/units/droid_class_*.json`) is met (`0 < currentHealth < dripThreshold`), it's **moving**
@@ -73,3 +75,7 @@ range/flag, the fade→reap lifecycle, and `clear`. `ai_test.cpp` checks the cle
   export; the `cleanable = false` flag reserves them, and cleaners already ignore non-cleanable marks.
 - **Weapon-impact marks** (uber `MARKINDEX`/`MARKRADIUS`) — a trivial add via `spawnBlastmark`.
 - Blastmark/drip texture colour + `DECAL_CLEAN_RATE` are easy tuning knobs.
+- **Projected decals** (marks that climb trim/walls + follow floor-height, instead of the flat
+  `Y≈0.03` quads) need a render-to-texture scene-depth pass — planned together with the distortion
+  post-effect (both need the same offscreen target). See
+  [render_to_texture.md](render_to_texture.md).
