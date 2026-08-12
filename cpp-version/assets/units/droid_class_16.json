@@ -7,7 +7,8 @@
   "maxSpeed": 80.0,
   "name": "Class 16",
   "properties": {
-    "armour": 5.0,
+        "dripThreshold": 70,
+"armour": 5.0,
     "brainType": 2,
     "classId": 16,
     "description": "Simple sentinel droid used to patrol restricted areas.",

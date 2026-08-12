@@ -7,7 +7,8 @@
   "maxSpeed": 120.0,
   "name": "Class 12",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 35,
+"armour": 0.0,
     "brainType": 2,
     "classId": 12,
     "description": "Cargo handling and general purpose crew droid.",

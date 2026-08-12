@@ -50,6 +50,7 @@ static void game_deactivate_level(Game* game, int level);
 static void game_reactivate_current_level(Game* game);
 static void game_reap_dead(Game* game);
 static void game_reap_objects(Game* game);
+static void game_update_drips(Game* game, float dt);
 static void game_update_ship_status(Game* game);
 static void game_census_spawn(Game* game, UnitInstance* enemy);
 static void game_census_despawn(Game* game, UnitInstance* unit);
@@ -159,6 +160,8 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     game_create_objects(game);
     game->effectManager.init(game->physics.world_id);  // bind active world (no tiles; dynamic)
     game->particleManager.clear();                      // render-only; no world binding
+    game->decalManager.build((int)game->levels.size()); // per-deck floor decal storage
+    game->decalManager.setActiveLevel(game->currentLevel);
 
     // Setup camera (top-down view)
     game->cameraHeight = 10.0f * WORLD_SCALE;  // metric; may change based on unit type
@@ -238,6 +241,9 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     }
     gTextures().loadFile(TEX_FLARE, game->assetPath + "/textures/effects/flare.png");
     gTextures().loadFile(TEX_BLASTER_BLOB, game->assetPath + "/textures/effects/blaster_blob.png");
+    // Floor decal masks (RGBA): scorch + drip. See DecalManager / docs/decals.md.
+    gTextures().loadFile(TEX_DECAL_BLASTMARK, game->assetPath + "/textures/decals/blastmark.png");
+    gTextures().loadFile(TEX_DECAL_DRIP, game->assetPath + "/textures/decals/drip.png");
     // ASMD blast animation (weapon 3): a single 4x1 sprite sheet (frames selected by source
     // rect, not by rebinding textures). Frame count is fixed here; a filename like "asmd4x1"
     // could encode it later.
@@ -1348,6 +1354,8 @@ static void game_reap_objects(Game* game) {
         // Scale the blast by the def's explodeSize (bigger scenery → bigger boom + wider chain reach).
         const float blast = (inst.def->explodeSize > 0.0f) ? inst.def->explodeSize : 1.0f;
         game_spawn_explosion(game, {inst.position.x, inst.position.z}, 0, blast);
+        // Leave a scorch on the floor where it exploded (a cleanable "dirty mark").
+        game->decalManager.spawnBlastmark({inst.position.x, inst.position.z}, 0.5f * blast);
         if (b2Body_IsValid(inst.bodyId)) {
             // Invalidate the matching collisionBodies slot BEFORE destroying, so the level-teardown
             // sweep (which destroys every valid body) can't double-free this one.
@@ -1357,6 +1365,31 @@ static void game_reap_objects(Game* game) {
             b2DestroyBody(inst.bodyId);
             inst.bodyId = b2_nullBodyId;
         }
+    }
+}
+
+// Damaged droids leak fluid onto the floor as they move (a cleanable "dirty mark"). A droid drips
+// while its health is below its def's dripThreshold AND it's actually moving, on a per-unit cooldown
+// that shortens as it gets more hurt. Only the active deck's roster (enemyUnits, incl. a captured
+// pilot) is considered; the player device has no threshold so never drips. Mirrors uber droid.cpp.
+static void game_update_drips(Game* game, float dt) {
+    constexpr float DRIP_MOVE_SPEED = 0.25f;   // u/s below which the droid counts as stationary
+    for (UnitInstance* u : game->enemyUnits) {
+        if (!u || !u->active || !u->definition) continue;
+        const float thr = u->definition->properties.dripThreshold;
+        if (thr <= 0.0f) continue;
+        const float hp = u->combatState.currentHealth;
+        if (hp <= 0.0f || hp >= thr) continue;            // not damaged past the threshold
+        if (u->dripCooldown > 0.0f) { u->dripCooldown -= dt; continue; }
+        if (!b2Body_IsValid(u->bodyId)) continue;
+        b2Vec2 v = b2Body_GetLinearVelocity(u->bodyId);
+        if (v.x * v.x + v.y * v.y < DRIP_MOVE_SPEED * DRIP_MOVE_SPEED) continue;  // must be moving
+
+        b2Vec2 p = b2Body_GetPosition(u->bodyId);
+        game->decalManager.spawnDrip({p.x, p.y}, u->definition->collisionRadius * 0.8f);
+        // Next drip: base + jitter + a health term, so a near-dead droid leaks faster.
+        float healthFrac = (u->combatState.maxHealth > 0.0f) ? hp / u->combatState.maxHealth : 0.0f;
+        u->dripCooldown = 0.35f + (float)GetRandomValue(0, 600) / 1000.0f + healthFrac * 1.5f;
     }
 }
 
@@ -1848,6 +1881,9 @@ void game_update_gameplay(Game* game, float dt) {
         }
     }
 
+    // Floor decals live per deck; point the manager at the current deck for spawns/cleaning/render.
+    game->decalManager.setActiveLevel(game->currentLevel);
+
     // --- Simulation: frozen while paused; time-scaled while in slow-motion. ---
     if (!game->paused) {
         float simDt = game->slowMotion ? dt * 0.1f : dt;
@@ -1863,7 +1899,8 @@ void game_update_gameplay(Game* game, float dt) {
             game->aiManager.update(simDt, playerPos2D,
                                    game->physics.world_id,
                                    &game->projectileManager,
-                                   &game->beamManager, game->playerUnit);
+                                   &game->beamManager, game->playerUnit,
+                                   &game->decalManager);
         }
 
         // Player weapon firing (LMB) — spawns before the step so bolts move this frame.
@@ -1989,6 +2026,11 @@ void game_update_gameplay(Game* game, float dt) {
 
         // Particles (render-only): advance + expire. Pause/slow-mo aware via simDt.
         game->particleManager.update(simDt);
+
+        // Floor decals: damaged moving droids drip; then reap any decal a cleaner faded to nothing
+        // (the AI drives the fade in aiManager.update above).
+        game_update_drips(game, simDt);
+        game->decalManager.update(simDt);
 
         // Remove droids destroyed this step (permanent for the level). This may spawn more
         // explosions (chain reactions) — added to effectManager for next frame.
@@ -2388,6 +2430,60 @@ void game_render_gameplay(Game* game) {
     } else {
         game->doorRenderer.render();
         game->chargerRenderer.render();
+    }
+
+    // Floor decals: alpha-blended textured quads laid FLAT on the floor (blastmarks + drips), drawn
+    // after the geometry/objects and before units (so units + walls sit on top). Manual ground-plane
+    // quad like the beam pass, but BLEND_ALPHA and lifted a hair (Y≈0.02) above the floor to avoid
+    // z-fighting. See DecalManager / docs/decals.md.
+    if (game_mode_is_3d(game)) {
+        const std::vector<Decal>& decals = game->decalManager.active();
+        if (!decals.empty()) {
+            constexpr float DECAL_Y = 0.03f;    // just above the floor to avoid z-fighting
+            constexpr float SCREEN_MARGIN = 140.0f;  // px slack for a decal's on-screen extent
+            const float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+            // Off-screen test: project the mark's centre and skip it if well outside the viewport.
+            // The top-down camera keeps every floor decal in front of it, so no behind-camera case.
+            auto onScreen = [&](Vector2 p) {
+                Vector2 s = GetWorldToScreen((Vector3){p.x, DECAL_Y, p.y}, game->camera);
+                return s.x > -SCREEN_MARGIN && s.x < sw + SCREEN_MARGIN &&
+                       s.y > -SCREEN_MARGIN && s.y < sh + SCREEN_MARGIN;
+            };
+
+            // Guards destroy in reverse construction order: the flush scope (constructed last) fires
+            // first, submitting the quads while blend/depth/cull are still set (see render_scope.h).
+            BlendModeScope blend(BLEND_ALPHA);
+            DisableDepthMaskScope depthGuard;         // test vs walls (occlude) but don't write depth
+            DisableBackfaceCullScope cullGuard;       // horizontal quad, seen from the top-down camera
+            RenderBatchFlushScope flushGuard;         // draw the quads before culling is restored
+
+            // Group by texture: bind each decal texture ONCE and emit all its (on-screen) quads in a
+            // single RL_QUADS batch, so we don't churn the bound texture per mark.
+            const TextureId decalTextures[] = {TEX_DECAL_BLASTMARK, TEX_DECAL_DRIP};
+            for (TextureId tid : decalTextures) {
+                Texture2D tex = gTextures().get(tid);
+                if (tex.id == 0) continue;
+                TextureBindScope texGuard(tex.id);
+                rlBegin(RL_QUADS);
+                for (const Decal& d : decals) {
+                    if (d.texture != tid || d.alpha <= 0.0f) continue;
+                    if (!onScreen(d.pos)) continue;   // frustum cull
+                    float c = cosf(d.rotation), s = sinf(d.rotation);
+                    // Square corners (±size) rotated by the mark's yaw about +Y, centred on it.
+                    auto corner = [&](float lx, float lz) -> Vector3 {
+                        return (Vector3){d.pos.x + lx * c - lz * s, DECAL_Y, d.pos.y + lx * s + lz * c};
+                    };
+                    Vector3 v0 = corner(-d.size, -d.size), v1 = corner(d.size, -d.size);
+                    Vector3 v2 = corner(d.size, d.size),   v3 = corner(-d.size, d.size);
+                    rlColor4ub(255, 255, 255, (unsigned char)(d.alpha * 255.0f));
+                    rlTexCoord2f(0.0f, 0.0f);  rlVertex3f(v0.x, v0.y, v0.z);
+                    rlTexCoord2f(1.0f, 0.0f);  rlVertex3f(v1.x, v1.y, v1.z);
+                    rlTexCoord2f(1.0f, 1.0f);  rlVertex3f(v2.x, v2.y, v2.z);
+                    rlTexCoord2f(0.0f, 1.0f);  rlVertex3f(v3.x, v3.y, v3.z);
+                }
+                rlEnd();
+            }
+        }
     }
 
     // Draw all units (player, enemies, etc.)
@@ -2799,6 +2895,7 @@ void game_destroy(Game* game) {
     game->shadowMap.destroy();
     game->effectManager.destroy();  // no bodies, but keep the pre-world-teardown convention
     game->particleManager.clear();  // render-only; just drop the buffers
+    game->decalManager.clear();     // render-only floor decals; drop all decks' marks
 
     // Destroy every per-level world (frees origins, collision, and any remaining bodies).
     // Unit bodies were already freed by unitManager.destroy() above. game->physics.world_id

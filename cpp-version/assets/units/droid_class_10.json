@@ -6,7 +6,8 @@
   "maxSpeed": 118.86553192138672,
   "name": "Class 10",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 31,
+"armour": 0.0,
     "brainType": 1,
     "classId": 10,
     "description": "General purpose maintenance robot. Specialised for computer and network repairs.",

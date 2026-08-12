@@ -7,7 +7,8 @@
   "maxSpeed": 100.0,
   "name": "Class 14",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 46,
+"armour": 0.0,
     "brainType": 2,
     "classId": 14,
     "description": "Low security sentinel droid, used to guard restricted areas and restrain prisoners.",

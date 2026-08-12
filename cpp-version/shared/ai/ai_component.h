@@ -14,7 +14,8 @@ class SectionInstance;
 enum class AIState {
     Patrol,     // Move between linked waypoints randomly
     Chase,      // Armed hostile: pursue player via waypoints, fire when able
-    Flee        // Unarmed damaged: move away from player via waypoints
+    Flee,       // Unarmed damaged: move away from player via waypoints
+    Clean       // Cleaner droid: go to a nearby floor decal, halt, and fade it away
 };
 
 //------------------------------------------------------------------------------
@@ -39,6 +40,7 @@ struct AIComponent {
 
     // Capabilities (cached from DroidProperties)
     bool armed = false;           // weapon >= 0
+    bool isCleaner = false;       // typeCode 102-199 — tidies runtime floor decals (see updateClean)
     bool hasTurret = false;       // has a turret-role section (derived at spawn)
     bool hasHead = false;         // has a head-role section (derived at spawn)
     bool omnidirectional = false; // never orient: hold body angle 0
@@ -112,6 +114,12 @@ inline constexpr float AI_DWELL_MAX = 1.2f;  // (per-unit override derived from 
 inline constexpr float AI_BACK_AVOIDANCE_WEIGHT = 0.2f;  // Reduced probability for previous waypoint
 inline constexpr float AI_COLINEAR_THRESHOLD = 0.7f;     // Dot product threshold to skip dwell
 inline constexpr float AI_FACING_THRESHOLD = 0.25f;      // Radians (~14 degrees) for fire alignment
+
+// Cleaner droids (typeCode 102-199): notice a runtime floor decal within AI_CLEAN_DETECT and, once
+// within AI_CLEAN_REACH of it, halt and fade it away. Detect > reach so it commits to a mark then
+// walks up to it.
+inline constexpr float AI_CLEAN_DETECT = 3.0f;   // world units — range to spot a decal to clean
+inline constexpr float AI_CLEAN_REACH  = 0.5f;   // world units — close enough to start cleaning
 
 // Head vision cone: a unit with a head-role section can only see (detect / keep line of
 // sight on) a target within this forward cone of the head's current facing. Dot product

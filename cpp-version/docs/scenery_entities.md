@@ -206,8 +206,11 @@ when calm. uber's other glow source, `gs_wave` (self-coloured sine pulse + a **s
 texture**), is **deferred** — the real driver is unit type 21 (`852.gltf`, scrolling blue-tek skin);
 the lift top is a scroll-only bonus. Full plan + difficulties in [glowscroll.md](glowscroll.md).
 
-**Phase 5 — Decals (deferred).** Runtime `dirty_t`-style projected sprites (explosion scorch, drips)
-and, separately, the map-placed `Feature` wall-detail layer (own index table) — lower priority.
+**Phase 5 — Decals (runtime DONE).** Runtime `dirty_t`-style floor decals are ported: **blastmarks**
+(destructible explosions), **drips** (damaged moving droids), and **cleaner droids** (typeCode
+102–199) that fade marks away — a `DecalManager` with per-deck persistence + a ground-plane alpha
+quad pass (texture-grouped + frustum-culled). See [decals.md](decals.md). Still deferred: the
+level-authored (permanent) `Feature` decal layer — reserved via the `cleanable=false` flag.
 
 **Out of scope:** MD2 model format (the single Organic).
 

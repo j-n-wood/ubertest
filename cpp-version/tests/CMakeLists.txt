@@ -34,8 +34,10 @@ add_executable(run_tests
     score_test.cpp
     effect_test.cpp
     particle_test.cpp
+    decal_test.cpp
     env_map_test.cpp
     ${CMAKE_SOURCE_DIR}/shared/rendering/env_map.cpp
+    ${CMAKE_SOURCE_DIR}/shared/effects/decal_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/console_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/lift_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/ship_map.cpp

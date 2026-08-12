@@ -86,6 +86,9 @@ struct DroidProperties {
     float turretTurnSpeed = 0.0f;  // Per-unit TURRET section slew rate (rad/s); 0 = global default
     float headTurnSpeed = 0.0f;    // Per-unit HEAD section slew rate (rad/s); 0 = global default
     float visualRadius = 0.0f;    // Visual detection / disengage range
+    // Drip decals: while damaged BELOW this many health points and moving, the droid leaks fluid
+    // marks onto the floor (see game_update_drips / DecalManager). 0 = never drips.
+    float dripThreshold = 0.0f;
     Vector3 fireOffset = {0, 0, 0}; // Projectile spawn offset from unit centre
     std::string description;
 };

@@ -7,7 +7,8 @@
   "maxSpeed": 139.35958862304688,
   "name": "Class 9",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 28,
+"armour": 0.0,
     "brainType": 1,
     "classId": 9,
     "description": "General purpose maintenance robot. Multiple grips allow efficient repairs.",

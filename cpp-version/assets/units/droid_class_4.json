@@ -6,7 +6,8 @@
   "maxSpeed": 118.72111511230469,
   "name": "Class 4",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 14,
+"armour": 0.0,
     "brainType": 1,
     "classId": 4,
     "description": "A more basic service robot, cheaper and robust.",

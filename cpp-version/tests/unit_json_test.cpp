@@ -93,4 +93,23 @@ TEST(UnitAnimationMarkers, DefaultsWhenUnmarked) {
     EXPECT_FALSE(def.properties.omnidirectional);
     EXPECT_FLOAT_EQ(def.properties.turretTurnSpeed, 0.0f);
     EXPECT_FLOAT_EQ(def.properties.headTurnSpeed, 0.0f);
+    EXPECT_FLOAT_EQ(def.properties.dripThreshold, 0.0f);  // absent → never drips
+}
+
+// dripThreshold (health below which a moving droid leaks drip decals) parses + round-trips.
+TEST(UnitDripThreshold, ParsesAndRoundTrips) {
+    static const char* DRIPPY = R"({
+      "name": "Drippy", "id": "drippy",
+      "properties": { "classId": 7, "energy": 30, "dripThreshold": 21.0 },
+      "rootSection": { "name": "body", "model": "m.gltf" }
+    })";
+    UnitDefinition def;
+    ASSERT_TRUE(parseUnitDefinitionFromString(DRIPPY, def));
+    EXPECT_FLOAT_EQ(def.properties.dripThreshold, 21.0f);
+
+    std::string out = serializeUnitDefinitionToString(def, /*pretty=*/true);
+    EXPECT_NE(out.find("dripThreshold"), std::string::npos);
+    UnitDefinition rt;
+    ASSERT_TRUE(parseUnitDefinitionFromString(out, rt));
+    EXPECT_FLOAT_EQ(rt.properties.dripThreshold, 21.0f);
 }

@@ -6,7 +6,8 @@
   "maxSpeed": 320.0,
   "name": "Class 6",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 21,
+"armour": 0.0,
     "brainType": 1,
     "classId": 6,
     "description": "Fast messenger robot capable of moving papers and small packages.",

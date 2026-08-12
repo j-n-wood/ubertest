@@ -31,6 +31,7 @@
 #include "combat/projectile_manager.h"
 #include "combat/beam_manager.h"
 #include "effects/effect_manager.h"
+#include "effects/decal_manager.h"
 #include "particles/particle_manager.h"
 #include "ai/ai_manager.h"
 #include "level/door_manager.h"
@@ -137,6 +138,10 @@ struct Game {
     // Particle systems (additive billboards, SoA). Render-only; spawned as bursts (e.g.
     // explosion sparks). See docs/effects.md.
     ParticleManager particleManager;
+
+    // Floor decals ("dirty marks"): blastmarks (destructible explosions) + drips (damaged moving
+    // droids), persisted per deck, faded away by cleaner droids. See docs/decals.md.
+    DecalManager decalManager;
 
     // Doors: simulation, plus the interim 2D renderer that reads doorManager.views()
     DoorManager doorManager;

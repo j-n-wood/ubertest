@@ -701,6 +701,23 @@ TEST_F(AITestFixture, DamageAlertFlagIsPolledInUpdate) {
 }
 
 //------------------------------------------------------------------------------
+// Cleaner droids: typeCode 102-199 are flagged as cleaners at init (they tidy floor decals).
+//------------------------------------------------------------------------------
+TEST_F(AITestFixture, CleanerBandFlaggedAtInit) {
+    UnitInstance unit;
+    unarmedDef.properties.typeCode = 123;   // per-test fixture — a cleaner-band code (like Class 1)
+    initSingleEnemy(unit, unarmedDef, 0, -10);
+    EXPECT_TRUE(aiManager.components()[0].isCleaner);
+}
+
+TEST_F(AITestFixture, NonCleanerTypeCodeNotFlagged) {
+    UnitInstance unit;
+    armedDef.properties.typeCode = 302;     // a fighting band — NOT a cleaner
+    initSingleEnemy(unit, armedDef, 0, -10);
+    EXPECT_FALSE(aiManager.components()[0].isCleaner);
+}
+
+//------------------------------------------------------------------------------
 // Disruptor (area weapon) test
 //------------------------------------------------------------------------------
 

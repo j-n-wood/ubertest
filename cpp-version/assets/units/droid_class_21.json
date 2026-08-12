@@ -7,7 +7,8 @@
   "acceleration": 300.000000,
   "deceleration": 300.000000,
   "properties": {
-    "classId": 21,
+        "dripThreshold": 49,
+"classId": 21,
     "typeCode": 834,
     "energy": 70,
     "armour": 3.0,

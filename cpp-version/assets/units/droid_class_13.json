@@ -7,7 +7,8 @@
   "maxSpeed": 100.0,
   "name": "Class 13",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 35,
+"armour": 0.0,
     "brainType": 2,
     "classId": 13,
     "description": "Advanced passenger interaction droid, handles most passenger support duties without help from human crew.",

@@ -37,6 +37,8 @@ enum TextureId {
     TEX_BEAM_LIGHTNING_0, // weapon 8 (Exterminator) frames 0..2
     TEX_BEAM_LIGHTNING_1,
     TEX_BEAM_LIGHTNING_2,
+    TEX_DECAL_BLASTMARK,  // floor scorch (destructible explosion) — see DecalManager
+    TEX_DECAL_DRIP,       // floor drip (damaged moving droid)
     TEX_COUNT
 };
 

@@ -10,6 +10,7 @@ struct UnitInstance;
 struct SpawnEntry;
 struct ProjectileManager;
 class BeamManager;
+class DecalManager;
 
 //------------------------------------------------------------------------------
 // AI Manager — updates all enemy AI components each frame
@@ -30,7 +31,8 @@ public:
     // beam-weapon units can hitscan-damage the player; nullptr (e.g. in tests) disables beams.
     void update(float dt, Vector2 playerPos, b2WorldId worldId,
                 ProjectileManager* projectiles,
-                BeamManager* beams = nullptr, UnitInstance* playerUnit = nullptr);
+                BeamManager* beams = nullptr, UnitInstance* playerUnit = nullptr,
+                DecalManager* decals = nullptr);
 
     // Notify that a unit took damage — triggers Chase (armed) or Flee (unarmed).
     void onDamageTaken(UnitInstance* unit);
@@ -62,6 +64,9 @@ private:
                      b2WorldId worldId, ProjectileManager* projectiles,
                      BeamManager* beams, UnitInstance* playerUnit);
     void updateFlee(AIComponent& ai, float dt, Vector2 playerPos);
+    // Cleaner droids: walk to the nearest floor decal, halt within reach, fade it away, then resume
+    // patrol once it's gone (or none is near). No-op without a DecalManager.
+    void updateClean(AIComponent& ai, float dt);
 
     // Waypoint selection
     int selectPatrolTarget(const AIComponent& ai) const;
@@ -129,6 +134,8 @@ private:
 
     // Cached each update() so movement helpers can raycast against the world.
     b2WorldId m_worldId = b2_nullWorldId;
+    // Cached each update() so cleaner droids can query/fade the active deck's decals (may be null).
+    DecalManager* m_decals = nullptr;
 };
 
 #endif // AI_MANAGER_H

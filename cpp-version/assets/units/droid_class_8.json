@@ -6,7 +6,8 @@
   "maxSpeed": 90.0,
   "name": "Class 8",
   "properties": {
-    "armour": 0.0,
+        "dripThreshold": 35,
+"armour": 0.0,
     "brainType": 1,
     "classId": 8,
     "description": "Slow maintenance robot, for external use. Confined to drive maintenance during hyperdrive.",

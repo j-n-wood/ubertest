@@ -110,6 +110,10 @@ struct UnitInstance {
     // captured), so the running ship-wide count is decremented exactly once. See game_census_*.
     bool defeatedCounted = false;
 
+    // Drip decals: countdown (s) to the next fluid mark this unit drops while damaged + moving.
+    // Reset to a randomized interval on each drip (shorter as health drops). See game_update_drips.
+    float dripCooldown = 0.0f;
+
     // State
     bool active = true;
 

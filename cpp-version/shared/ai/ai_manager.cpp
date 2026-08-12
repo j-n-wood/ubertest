@@ -4,6 +4,7 @@
 #include "units/weapon.h"
 #include "combat/projectile_manager.h"
 #include "combat/beam_manager.h"
+#include "effects/decal_manager.h"
 #include "level/spawn_config.h"
 #include "physics/body_user_data.h"
 #include "raymath.h"
@@ -84,6 +85,7 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
         ai.detectionRadius = def.proximityRadius;
         ai.visualRange = props.visualRadius;
         ai.armed = props.weapon >= 0;
+        ai.isCleaner = props.typeCode >= 102 && props.typeCode <= 199;  // cleaner droid band
         // Aiming sections drive turret/head behaviour; capability flags are derived from
         // their presence (a hasTurret prop with no turret section has nothing to aim).
         ai.turretSection = unit_find_section_by_role(unit, SectionRole::Turret);
@@ -112,8 +114,10 @@ void AIManager::init(const std::vector<SpawnEntry>& spawns,
 
 void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
                        ProjectileManager* projectiles,
-                       BeamManager* beams, UnitInstance* playerUnit) {
+                       BeamManager* beams, UnitInstance* playerUnit,
+                       DecalManager* decals) {
     m_worldId = worldId;  // cache for movement helpers (raycasts)
+    m_decals = decals;    // cache for cleaner droids (may be null)
     for (auto& ai : components_) {
         if (!ai.unit || !ai.unit->active) continue;
         if (ai.controlled) continue;  // player is piloting this unit — no AI drive
@@ -142,6 +146,9 @@ void AIManager::update(float dt, Vector2 playerPos, b2WorldId worldId,
                 break;
             case AIState::Flee:
                 updateFlee(ai, dt, playerPos);
+                break;
+            case AIState::Clean:
+                updateClean(ai, dt);
                 break;
         }
 
@@ -360,6 +367,14 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
             ai.loseSightTimer = 0.0f;
             return;
         }
+    }
+
+    // Cleaner droids peel off patrol to tidy a nearby floor decal (lower priority than chasing a
+    // detected player, handled above).
+    if (ai.isCleaner && m_decals &&
+        m_decals->nearestCleanable(getUnitPosition(ai), AI_CLEAN_DETECT) >= 0) {
+        ai.state = AIState::Clean;
+        return;
     }
 
     // Dwelling at waypoint
@@ -622,6 +637,33 @@ void AIManager::updateFlee(AIComponent& ai, float dt, Vector2 playerPos) {
         Vector2 dir = Vector2Subtract(wpPos, unitPos);
         float angle = facing_angle_to(dir.x, dir.y);
         setMotion(ai, wpPos, angle);
+    }
+}
+
+//------------------------------------------------------------------------------
+// Clean — cleaner droids tidy runtime floor decals
+//------------------------------------------------------------------------------
+
+void AIManager::updateClean(AIComponent& ai, float dt) {
+    if (!m_decals) { ai.state = AIState::Patrol; return; }   // decals unavailable (e.g. tests)
+    Vector2 pos = getUnitPosition(ai);
+    int idx = m_decals->nearestCleanable(pos, AI_CLEAN_DETECT);
+    const std::vector<Decal>& decals = m_decals->active();
+    if (idx < 0 || idx >= (int)decals.size()) {
+        ai.state = AIState::Patrol;        // nothing left to clean — resume patrol
+        ai.targetWaypoint = -1;
+        return;
+    }
+
+    Vector2 target = decals[idx].pos;
+    if (Vector2Distance(pos, target) > AI_CLEAN_REACH) {
+        // Walk up to the mark, facing the way we're going.
+        Vector2 dir = Vector2Subtract(target, pos);
+        setMotion(ai, target, facing_angle_to(dir.x, dir.y));
+    } else {
+        // Close enough — halt and slowly fade the mark away (removed once alpha hits 0).
+        holdPosition(ai);
+        m_decals->cleanAt(idx, dt);
     }
 }
 

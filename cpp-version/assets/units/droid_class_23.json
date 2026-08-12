@@ -7,7 +7,8 @@
   "maxSpeed": 220.0,
   "name": "Class 23",
   "properties": {
-    "armour": 3.0,
+        "dripThreshold": 56,
+"armour": 3.0,
     "brainType": 3,
     "classId": 23,
     "description": "Command cyborg, largely autonomous control unit. Warning: the influence device can not control a primode brain for long.",

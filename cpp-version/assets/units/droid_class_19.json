@@ -7,7 +7,8 @@
   "maxSpeed": 130.0,
   "name": "Class 19",
   "properties": {
-    "armour": 7.0,
+        "dripThreshold": 70,
+"armour": 7.0,
     "brainType": 2,
     "classId": 19,
     "description": "Heavy-duty battle droid.",
