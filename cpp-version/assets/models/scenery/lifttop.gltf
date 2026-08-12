@@ -314,6 +314,7 @@
         "roughnessFactor": 1
       },
       "extras": {
+        "glow": true,
         "shaderHint": "blinn-phong",
         "originalFormat": "asc",
         "blinnPhong": {

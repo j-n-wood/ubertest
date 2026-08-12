@@ -41,6 +41,11 @@ public:
 
 private:
     std::unordered_map<int, Model> models_;   // keyed by def renderIndex
+    // Per-material glow flags for each glow model (keyed by def renderIndex; one byte per glTF
+    // material, 1 = that submesh self-illuminates). Glow is a per-material property — only the
+    // flagged materials emit (e.g. the alert light's blue-glass lens, not its metal housing) —
+    // read from each material's glTF `extras.glow`. See docs/scenery_entities.md.
+    std::unordered_map<int, std::vector<unsigned char>> glowMats_;
     Shader shader_{};                          // the shared scene shader (for the per-draw emissive uniforms)
     int emissiveLoc_ = -1;                     // cached "emissive" (strength) uniform location
     int emissiveColorLoc_ = -1;                // cached "emissiveColor" (tint) uniform location

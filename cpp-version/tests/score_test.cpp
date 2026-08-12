@@ -60,15 +60,16 @@ TEST(ScorePointsTest, PerClass) {
 }
 
 //------------------------------------------------------------------------------
-// Display clocks toward the logical score at 50/s, both directions, no overshoot.
+// Display clocks toward the logical score at SCORE_CLOCK_RATE/s, both directions, no overshoot.
 //------------------------------------------------------------------------------
 TEST(ScoreClockTest, ChasesAndClamps) {
-    // Up: 50/s.
-    EXPECT_DOUBLE_EQ(score_clock_step(0.0, 100.0, 1.0), 50.0);
+    const double R = SCORE_CLOCK_RATE;   // one second's worth of clocking
+    // Up: SCORE_CLOCK_RATE/s (target far enough that a full step doesn't reach it).
+    EXPECT_DOUBLE_EQ(score_clock_step(0.0, R * 2.0, 1.0), R);
     // Up but target closer than a full step -> snap to target (no overshoot).
-    EXPECT_DOUBLE_EQ(score_clock_step(0.0, 30.0, 1.0), 30.0);
-    // Down (recharge lowered score): 50/s toward target.
-    EXPECT_DOUBLE_EQ(score_clock_step(100.0, 0.0, 1.0), 50.0);
+    EXPECT_DOUBLE_EQ(score_clock_step(0.0, R - 20.0, 1.0), R - 20.0);
+    // Down (recharge lowered score): SCORE_CLOCK_RATE/s toward target.
+    EXPECT_DOUBLE_EQ(score_clock_step(R * 2.0, 0.0, 1.0), R);
     EXPECT_DOUBLE_EQ(score_clock_step(20.0, 0.0, 1.0), 0.0);   // clamp at target going down
     // Already at target.
     EXPECT_DOUBLE_EQ(score_clock_step(42.0, 42.0, 1.0), 42.0);

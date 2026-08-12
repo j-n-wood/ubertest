@@ -12,7 +12,7 @@ inline constexpr int SCORE_POINTS_PER_CLASS = 50;
 
 // Alert level: rises by the points scored on each kill/capture, decays steadily, and
 // its band drives a passive score trickle. Thresholds (points): green < 1000 <= yellow < 2000 <= amber < 3000 <= red.
-inline constexpr double ALERT_DECAY_RATE = 2.0;      // points/second
+inline constexpr double ALERT_DECAY_RATE = 5.0;      // points/second
 inline constexpr double ALERT_YELLOW = 1000.0;
 inline constexpr double ALERT_AMBER  = 2000.0;
 inline constexpr double ALERT_RED    = 3000.0;
@@ -23,7 +23,7 @@ inline constexpr double RECHARGE_DRAIN_RATE = 5.0;             // score points/s
 inline constexpr float  CHARGER_HEAL_FRACTION_PER_SEC = 0.25f; // fraction of maxHealth/second
 
 // Displayed score lags the logical score, "clocking" through integers at this rate.
-inline constexpr double SCORE_CLOCK_RATE = 50.0;     // points/second
+inline constexpr double SCORE_CLOCK_RATE = 100.0;     // points/second
 
 enum class AlertBand { Green, Yellow, Amber, Red };
 
