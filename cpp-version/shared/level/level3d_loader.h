@@ -7,6 +7,7 @@
 #include "level/console_manager.h"   // ConsoleSpec
 #include "level/object_manager.h"    // ObjectSpec
 #include "level/lift_manager.h"      // TransporterSpec
+#include "effects/decal_manager.h"   // Decal
 #include "rendering/scene_renderer.h"
 #include <string>
 #include <vector>
@@ -37,6 +38,12 @@ void load3DLevelDoors(const std::string& assetPath, int levelNumber, std::vector
 void load3DLevelChargers(const std::string& assetPath, int levelNumber, std::vector<ChargerSpec>& out);
 void load3DLevelConsoles(const std::string& assetPath, int levelNumber, std::vector<ConsoleSpec>& out);
 void load3DLevelObjects(const std::string& assetPath, int levelNumber, std::vector<ObjectSpec>& out);
+
+// Read level-authored (permanent) floor decals from the bundle's entities.json `decals[]` array.
+// Each record's `type` (uber feature id 29..34) selects the decal texture, half-extent, and aspect;
+// `pos`/`rot` are render-metric. Output decals are non-cleanable (caller adds them via
+// DecalManager::addLevelDecal). See docs/decals.md.
+void load3DLevelDecals(const std::string& assetPath, int levelNumber, std::vector<Decal>& out);
 
 // Static wall collision from the bundle's level_<n>.collision.json, in the game's 2D physics plane
 // (render X, render Z), already metric. Polygons are CCW convex solids; chains are wall outlines.

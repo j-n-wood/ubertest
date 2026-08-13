@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cstdarg>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -21,6 +22,36 @@ constexpr const char* ASSET_MODELS = "models";
 constexpr const char* ASSET_TEXTURES = "textures";
 constexpr const char* ASSET_SHADERS = "shaders";
 constexpr const char* ASSET_UNITS = "units";
+
+// Trace-log callback that keeps the log readable *as a file* (so a run's output can be captured to
+// e.g. build/shot.log and inspected with a text reader instead of scrolling the terminal). raylib
+// emits hundreds of per-mesh/per-texture INFO lines at startup; those are dropped here, while the
+// game's own diagnostics and every WARNING/ERROR/FATAL are kept. Wired via SetTraceLogCallback
+// before InitWindow.
+static void conciseTraceLog(int level, const char* text, va_list args) {
+    if (level == LOG_INFO) {
+        // raylib boilerplate is prefixed with an uppercase "TAG:"; the game's messages are not.
+        static const char* kNoisy[] = {
+            "VAO:", "VBO:", "TEXTURE:", "SHADER:", "FILEIO:", "RLGL:", "GL:", "GLAD:", "IMAGE:",
+            "MODEL:", "MATERIAL:", "MESH:", "DISPLAY:", "PLATFORM:", "AUDIO:", "VR:", "FBO:",
+        };
+        for (const char* p : kNoisy)
+            if (strncmp(text, p, strlen(p)) == 0) return;
+    }
+    const char* tag = "INFO";
+    switch (level) {
+        case LOG_TRACE:   tag = "TRACE"; break;
+        case LOG_DEBUG:   tag = "DEBUG"; break;
+        case LOG_WARNING: tag = "WARN";  break;
+        case LOG_ERROR:   tag = "ERROR"; break;
+        case LOG_FATAL:   tag = "FATAL"; break;
+        default:          tag = "INFO";  break;
+    }
+    FILE* out = (level >= LOG_WARNING) ? stderr : stdout;
+    fprintf(out, "%s: ", tag);
+    vfprintf(out, text, args);
+    fputc('\n', out);
+}
 
 void printUsage(const char* programName) {
     printf("Usage: %s [options]\n", programName);
@@ -90,7 +121,11 @@ int main(int argc, char* argv[]) {
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
     LevelRenderMode renderMode = LevelRenderMode::Objects3D;  // default; --renderer overrides, G toggles at runtime
-    int startDeck = -1;  // --deck N: jump to deck N after init (debug), -1 = start on deck 0
+    // Deck the game starts on. TODO: randomise this later (pick a random deck number). Reached via
+    // the normal world-switch path after init (see below), so the player device is migrated into the
+    // deck's world and placed at its lift stop — NOT by changing the level index inside game_init.
+    constexpr int GAME_START_DECK = 7;
+    int startDeck = -1;  // --deck N override (debug); -1 = use GAME_START_DECK
 
     // Screenshot capture (dev/QA): after --shot-frame frames, save the framebuffer to a PNG and exit.
     // Combine with --args-file to keep the command line stable. Optional camera override via
@@ -164,6 +199,7 @@ int main(int argc, char* argv[]) {
         printf("  Units:    %s/%s\n\n", assetPath, ASSET_UNITS);
     }
 
+    SetTraceLogCallback(conciseTraceLog);  // trim raylib boot spam so the log reads cleanly as a file
     InitWindow(1280, 720, testConfig.enabled ? "Rotation Test" : "Top-Down Game");
     // Disable raylib's built-in ESC-to-close: ESC is handled per-context instead
     // (console pages pop back a level; gameplay input treats it as quit).
@@ -178,7 +214,9 @@ int main(int argc, char* argv[]) {
     Game game{};
     game.levelRenderMode = renderMode;  // startup renderer selection (before the first build in game_init)
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
-    if (startDeck >= 0) game_debug_goto_deck(&game, startDeck);  // debug: jump to a specific deck
+    // Move to the start deck (or a --deck override) via the same switch path lifts use, so the
+    // player is correctly migrated into that deck's world and placed at its lift stop.
+    game_debug_goto_deck(&game, startDeck >= 0 ? startDeck : GAME_START_DECK);
 
     // View-states are pages on a stack; gameplay is the base GamePage. Other pages
     // (console, future title) are pushed on top and drive update/render while active.

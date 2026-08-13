@@ -283,6 +283,20 @@ static void writeEntities(const Domain& domain, float scale, int level, const st
                            {"spin", {o.spin.x, o.spin.y, o.spin.z}}});
     doc["objects"] = objects;
 
+    // Level-authored floor decals: map Feature records whose type id is in the decal band (29..34 in
+    // uber's features.txt — biohazard/storage/danger/processing markings). `type` selects the decal
+    // texture + size + aspect in the loader; pos/rot are render-metric verbatim (same as objects).
+    // These are permanent, non-cleanable, purely visual (no collision — writeCollision ignores
+    // features). See docs/decals.md.
+    json decals = json::array();
+    for (const auto& area : domain.areas)
+        for (const auto& fe : area.features)
+            if (fe.renderIndex >= 29 && fe.renderIndex <= 34)
+                decals.push_back({{"type", fe.renderIndex},
+                                  {"pos", {fe.position.x, fe.position.y, fe.position.z}},
+                                  {"rot", {fe.rotation.x, fe.rotation.y, fe.rotation.z}}});
+    doc["decals"] = decals;
+
     std::ofstream f(path);
     f << doc.dump(2) << "\n";
 }

@@ -142,7 +142,10 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         }
     }
 
-    // Build render data for starting level (level_0_maintenance)
+    // Build render data for the initial level (index 0). The configured start deck (GAME_START_DECK
+    // in main) is reached AFTER init via the normal world-switch path (game_debug_goto_deck ->
+    // game_change_level), which migrates the player device into that deck's world and places it at
+    // the lift stop — this init sequence only knows how to build index 0.
     game->currentLevel = 0;
     game->physics.world_id = game->levelRuntime[0].world;  // active world
     if (!game_build_level_render_data(game)) {
@@ -244,6 +247,11 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
     // Floor decal masks (RGBA): scorch + drip. See DecalManager / docs/decals.md.
     gTextures().loadFile(TEX_DECAL_BLASTMARK, game->assetPath + "/textures/decals/blastmark.png");
     gTextures().loadFile(TEX_DECAL_DRIP, game->assetPath + "/textures/decals/drip.png");
+    gTextures().loadFile(TEX_DECAL_BIOHAZARD, game->assetPath + "/textures/decals/biohaz.png");
+    gTextures().loadFile(TEX_DECAL_STORAGEAREA, game->assetPath + "/textures/decals/storagearea.png");
+    gTextures().loadFile(TEX_DECAL_PROCESSINGAREA, game->assetPath + "/textures/decals/processingarea.png");
+    gTextures().loadFile(TEX_DECAL_TEXT_BIOHAZARD, game->assetPath + "/textures/decals/text_biohazard.png");
+    gTextures().loadFile(TEX_DECAL_TEXT_DANGER, game->assetPath + "/textures/decals/text_danger.png");
     // ASMD blast animation (weapon 3): a single 4x1 sprite sheet (frames selected by source
     // rect, not by rebinding textures). Frame count is fixed here; a filename like "asmd4x1"
     // could encode it later.
@@ -279,6 +287,14 @@ void game_init(Game* game, const char* assetPath, const char* unitId, const Rota
         if (game->levelRenderData[L].waypointPositions.empty())
             load3DLevelWaypoints(game->assetPath, game->levels[L].number, game->levelRenderData[L]);
         game_populate_level_roster(game, L);
+    }
+    // Level-authored floor decals belong to their deck permanently, so load them for EVERY deck
+    // (including the current one, unlike rosters) — returning to a deck must show the same authored
+    // marks. addLevelDecal keeps them in a store the runtime cap/clean/reap logic never touches.
+    for (int L = 0; L < (int)game->levels.size(); ++L) {
+        std::vector<Decal> decals;
+        load3DLevelDecals(game->assetPath, game->levels[L].number, decals);
+        for (const Decal& d : decals) game->decalManager.addLevelDecal(L, d);
     }
     // Bind the lit shader to every enemy model just loaded (other decks may introduce new classes).
     game->unitManager.applyShaderToModels(sceneRendererGetShader(&game->sceneRenderer));
@@ -2437,8 +2453,11 @@ void game_render_gameplay(Game* game) {
     // quad like the beam pass, but BLEND_ALPHA and lifted a hair (Y≈0.02) above the floor to avoid
     // z-fighting. See DecalManager / docs/decals.md.
     if (game_mode_is_3d(game)) {
-        const std::vector<Decal>& decals = game->decalManager.active();
-        if (!decals.empty()) {
+        // Two decal stores share this pass: runtime "dirty marks" (active(), faded/cleaned) and
+        // permanent level-authored decals (activeLevelDecals()). Both draw identically as flat quads.
+        const std::vector<Decal>& runtimeDecals = game->decalManager.active();
+        const std::vector<Decal>& levelDecals   = game->decalManager.activeLevelDecals();
+        if (!runtimeDecals.empty() || !levelDecals.empty()) {
             constexpr float DECAL_Y = 0.03f;    // just above the floor to avoid z-fighting
             constexpr float SCREEN_MARGIN = 140.0f;  // px slack for a decal's on-screen extent
             const float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
@@ -2457,30 +2476,38 @@ void game_render_gameplay(Game* game) {
             DisableBackfaceCullScope cullGuard;       // horizontal quad, seen from the top-down camera
             RenderBatchFlushScope flushGuard;         // draw the quads before culling is restored
 
-            // Group by texture: bind each decal texture ONCE and emit all its (on-screen) quads in a
-            // single RL_QUADS batch, so we don't churn the bound texture per mark.
-            const TextureId decalTextures[] = {TEX_DECAL_BLASTMARK, TEX_DECAL_DRIP};
+            // Emit one decal as a floor quad: half-width (size*aspect) along the texture U axis,
+            // half-depth (size) along V, rotated by the decal's yaw about +Y and centred on it.
+            auto emit = [&](const Decal& d) {
+                if (d.alpha <= 0.0f || !onScreen(d.pos)) return;
+                float c = cosf(d.rotation), s = sinf(d.rotation);
+                float hw = d.size * d.aspect, hv = d.size;
+                auto corner = [&](float lx, float lz) -> Vector3 {
+                    return (Vector3){d.pos.x + lx * c - lz * s, DECAL_Y, d.pos.y + lx * s + lz * c};
+                };
+                Vector3 v0 = corner(-hw, -hv), v1 = corner(hw, -hv);
+                Vector3 v2 = corner(hw, hv),   v3 = corner(-hw, hv);
+                rlColor4ub(255, 255, 255, (unsigned char)(d.alpha * 255.0f));
+                rlTexCoord2f(0.0f, 0.0f);  rlVertex3f(v0.x, v0.y, v0.z);
+                rlTexCoord2f(1.0f, 0.0f);  rlVertex3f(v1.x, v1.y, v1.z);
+                rlTexCoord2f(1.0f, 1.0f);  rlVertex3f(v2.x, v2.y, v2.z);
+                rlTexCoord2f(0.0f, 1.0f);  rlVertex3f(v3.x, v3.y, v3.z);
+            };
+
+            // Group by texture: bind each decal texture ONCE and emit all its (on-screen) quads —
+            // from both stores — in a single RL_QUADS batch, so we don't churn the bound texture.
+            const TextureId decalTextures[] = {
+                TEX_DECAL_BLASTMARK, TEX_DECAL_DRIP,
+                TEX_DECAL_BIOHAZARD, TEX_DECAL_STORAGEAREA, TEX_DECAL_PROCESSINGAREA,
+                TEX_DECAL_TEXT_BIOHAZARD, TEX_DECAL_TEXT_DANGER,
+            };
             for (TextureId tid : decalTextures) {
                 Texture2D tex = gTextures().get(tid);
                 if (tex.id == 0) continue;
                 TextureBindScope texGuard(tex.id);
                 rlBegin(RL_QUADS);
-                for (const Decal& d : decals) {
-                    if (d.texture != tid || d.alpha <= 0.0f) continue;
-                    if (!onScreen(d.pos)) continue;   // frustum cull
-                    float c = cosf(d.rotation), s = sinf(d.rotation);
-                    // Square corners (±size) rotated by the mark's yaw about +Y, centred on it.
-                    auto corner = [&](float lx, float lz) -> Vector3 {
-                        return (Vector3){d.pos.x + lx * c - lz * s, DECAL_Y, d.pos.y + lx * s + lz * c};
-                    };
-                    Vector3 v0 = corner(-d.size, -d.size), v1 = corner(d.size, -d.size);
-                    Vector3 v2 = corner(d.size, d.size),   v3 = corner(-d.size, d.size);
-                    rlColor4ub(255, 255, 255, (unsigned char)(d.alpha * 255.0f));
-                    rlTexCoord2f(0.0f, 0.0f);  rlVertex3f(v0.x, v0.y, v0.z);
-                    rlTexCoord2f(1.0f, 0.0f);  rlVertex3f(v1.x, v1.y, v1.z);
-                    rlTexCoord2f(1.0f, 1.0f);  rlVertex3f(v2.x, v2.y, v2.z);
-                    rlTexCoord2f(0.0f, 1.0f);  rlVertex3f(v3.x, v3.y, v3.z);
-                }
+                for (const Decal& d : runtimeDecals) if (d.texture == tid) emit(d);
+                for (const Decal& d : levelDecals)   if (d.texture == tid) emit(d);
                 rlEnd();
             }
         }

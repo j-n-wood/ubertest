@@ -39,6 +39,12 @@ enum TextureId {
     TEX_BEAM_LIGHTNING_2,
     TEX_DECAL_BLASTMARK,  // floor scorch (destructible explosion) — see DecalManager
     TEX_DECAL_DRIP,       // floor drip (damaged moving droid)
+    // Level-authored (permanent) floor decals — see load3DLevelDecals / docs/decals.md.
+    TEX_DECAL_BIOHAZARD,      // biohazard symbol (feature type 29)
+    TEX_DECAL_STORAGEAREA,    // "STORAGE AREA" strip (type 30)
+    TEX_DECAL_PROCESSINGAREA, // "PROCESSING AREA" strip (type 31)
+    TEX_DECAL_TEXT_BIOHAZARD, // biohazard warning text (type 32)
+    TEX_DECAL_TEXT_DANGER,    // "DANGER" strip (type 33)
     TEX_COUNT
 };
 

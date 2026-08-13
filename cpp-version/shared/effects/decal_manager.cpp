@@ -9,7 +9,9 @@ float randomYaw() {
 }  // namespace
 
 void DecalManager::build(int levelCount) {
-    byLevel_.assign(levelCount > 0 ? levelCount : 0, {});
+    int n = levelCount > 0 ? levelCount : 0;
+    byLevel_.assign(n, {});
+    levelDecals_.assign(n, {});
     active_ = 0;
 }
 
@@ -31,6 +33,19 @@ const std::vector<Decal>& DecalManager::active() const {
     static const std::vector<Decal> kEmpty;
     const std::vector<Decal>* v = activeVec();
     return v ? *v : kEmpty;
+}
+
+const std::vector<Decal>& DecalManager::activeLevelDecals() const {
+    static const std::vector<Decal> kEmpty;
+    if (active_ < 0 || active_ >= (int)levelDecals_.size()) return kEmpty;
+    return levelDecals_[active_];
+}
+
+void DecalManager::addLevelDecal(int level, const Decal& d) {
+    if (level < 0 || level >= (int)levelDecals_.size()) return;
+    Decal ld = d;
+    ld.cleanable = false;   // level decals are permanent — never cleaned or reaped
+    levelDecals_[level].push_back(ld);
 }
 
 static void pushCapped(std::vector<Decal>& v, const Decal& d) {
@@ -85,4 +100,5 @@ bool DecalManager::cleanAt(int idx, float dt) {
 
 void DecalManager::clear() {
     for (auto& v : byLevel_) v.clear();
+    for (auto& v : levelDecals_) v.clear();
 }

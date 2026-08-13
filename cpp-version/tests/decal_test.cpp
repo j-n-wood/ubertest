@@ -52,9 +52,42 @@ TEST(DecalManager, NearestCleanableRespectsRangeAndFlag) {
     EXPECT_EQ(m.nearestCleanable({0.3f, 0}, 0.1f), -1);   // nothing within a tiny radius
     EXPECT_EQ(m.nearestCleanable({9.5f, 0}, 2.0f), 1);    // picks the closer (far) mark
 
-    // A non-cleanable decal (e.g. a future level decal) is never returned.
-    m.setActiveLevel(0);
-    // (No public API to add a non-cleanable one yet; the flag defaults true for runtime marks.)
+    // A level-authored (non-cleanable) decal sitting right on a mark is never returned — it lives in
+    // the separate store that nearestCleanable doesn't scan.
+    m.addLevelDecal(0, Decal{{0.3f, 0}, 0.5f, 0.0f, 1.0f, TEX_DECAL_BIOHAZARD, true, 1.0f});
+    EXPECT_EQ(m.nearestCleanable({0.3f, 0}, 1.0f), 0);    // still the runtime mark, not the level decal
+}
+
+TEST(DecalManager, LevelDecalsPersistPerDeckAndAreNeverCleaned) {
+    DecalManager m;
+    m.build(3);
+
+    // addLevelDecal targets an explicit deck regardless of the active one; aspect is preserved and
+    // cleanable is forced false even though we pass true.
+    m.addLevelDecal(1, Decal{{7.0f, 8.0f}, 0.4f, 1.57f, 1.0f, TEX_DECAL_STORAGEAREA, true, 4.0f});
+    m.addLevelDecal(2, Decal{{1.0f, 2.0f}, 0.8f, 0.0f, 1.0f, TEX_DECAL_BIOHAZARD, true, 1.0f});
+    m.addLevelDecal(99, Decal{});   // out-of-range is a safe no-op
+
+    m.setActiveLevel(0); EXPECT_TRUE(m.activeLevelDecals().empty());
+    m.setActiveLevel(1);
+    ASSERT_EQ(m.activeLevelDecals().size(), 1u);
+    EXPECT_FALSE(m.activeLevelDecals()[0].cleanable);          // forced permanent
+    EXPECT_EQ(m.activeLevelDecals()[0].texture, TEX_DECAL_STORAGEAREA);
+    EXPECT_FLOAT_EQ(m.activeLevelDecals()[0].aspect, 4.0f);    // strip aspect kept
+    m.setActiveLevel(2); EXPECT_EQ(m.activeLevelDecals().size(), 1u);
+
+    // Level decals live in a store the runtime cleaning/reaping never touches: cleaners can't see
+    // them (nearestCleanable scans only runtime marks) and update() doesn't reap them.
+    m.setActiveLevel(1);
+    EXPECT_EQ(m.nearestCleanable({7.0f, 8.0f}, 5.0f), -1);
+    m.update(1.0f);
+    EXPECT_EQ(m.activeLevelDecals().size(), 1u);               // still there
+    EXPECT_TRUE(m.active().empty());                           // no runtime marks were added
+
+    // clear() empties the level-decal store too.
+    m.clear();
+    m.setActiveLevel(1); EXPECT_TRUE(m.activeLevelDecals().empty());
+    m.setActiveLevel(2); EXPECT_TRUE(m.activeLevelDecals().empty());
 }
 
 TEST(DecalManager, CleanFadesThenRemoves) {

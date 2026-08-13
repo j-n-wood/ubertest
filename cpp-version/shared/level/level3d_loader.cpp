@@ -179,6 +179,48 @@ void load3DLevelObjects(const std::string& assetPath, int levelNumber, std::vect
     }
 }
 
+void load3DLevelDecals(const std::string& assetPath, int levelNumber, std::vector<Decal>& out) {
+    std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".entities.json");
+    if (!f.is_open()) return;
+    json doc;
+    try { f >> doc; } catch (...) { return; }
+    if (!doc.contains("decals")) return;
+
+    // Feature type id (29..34, from uber features.txt) -> texture + geometry. `halfV` is the
+    // half-extent along the texture V (depth) axis in metres; `aspect` = width/depth, so the
+    // half-width along U is halfV*aspect. Values from VISIBLERADIUS (32/64 uber units * 0.0254 m)
+    // and the source texture aspect (64x64 / 128x32 / 128x128 / 256x64). Type 34 (text_storage_area,
+    // never placed in ship1) has no texture and is intentionally omitted -> skipped below.
+    struct DecalDef { TextureId tex; float halfV; float aspect; };
+    static const std::unordered_map<int, DecalDef> kDefs = {
+        {29, {TEX_DECAL_BIOHAZARD,      0.8128f, 1.0f}},  // biohaz 64x64,   r32
+        {30, {TEX_DECAL_STORAGEAREA,    0.4064f, 4.0f}},  // storagearea 128x32, r64
+        {31, {TEX_DECAL_PROCESSINGAREA, 0.4064f, 4.0f}},  // processingarea 128x32, r64
+        {32, {TEX_DECAL_TEXT_BIOHAZARD, 1.6256f, 1.0f}},  // text_biohazard 128x128, r64
+        {33, {TEX_DECAL_TEXT_DANGER,    0.4064f, 4.0f}},  // text_danger 256x64, r64
+    };
+
+    for (const auto& d : doc["decals"]) {
+        int type = d.value("type", -1);
+        auto it = kDefs.find(type);
+        if (it == kDefs.end()) continue;   // unknown/unsupported decal type — skip defensively
+        const DecalDef& def = it->second;
+        Decal decal;
+        if (d.contains("pos") && d["pos"].size() >= 3)
+            decal.pos = {d["pos"][0].get<float>(), d["pos"][2].get<float>()};   // domain X, Z (metres)
+        // rot.z is the game-frame yaw; the game->render Y-axis negation flips its sign (see the
+        // render_frame_rotation_inversion convention used elsewhere for facing angles).
+        float rotZ = (d.contains("rot") && d["rot"].size() >= 3) ? d["rot"][2].get<float>() : 0.0f;
+        decal.rotation = -rotZ;
+        decal.size = def.halfV;
+        decal.aspect = def.aspect;
+        decal.alpha = 1.0f;
+        decal.texture = def.tex;
+        decal.cleanable = false;
+        out.push_back(decal);
+    }
+}
+
 bool load3DLevelCollision(const std::string& assetPath, int levelNumber, Collision3D& out) {
     std::ifstream f(bundleDir(assetPath, levelNumber) + "/level_" + std::to_string(levelNumber) + ".collision.json");
     if (!f.is_open()) return false;

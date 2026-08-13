@@ -23,11 +23,12 @@ inline constexpr int   DECAL_MAX_PER_LEVEL = 256;
 
 struct Decal {
     Vector2   pos = {0, 0};     // world XZ (physics coords)
-    float     size = 0.3f;      // half-extent, world units
+    float     size = 0.3f;      // half-extent along the V (depth) axis, world units
     float     rotation = 0.0f;  // yaw about up (radians) — random so marks don't visibly tile
     float     alpha = 1.0f;     // 1 = full, fades to 0 when cleaned (then removed)
     TextureId texture = TEX_DECAL_BLASTMARK;
-    bool      cleanable = true; // runtime marks yes; level-authored decals (future) no
+    bool      cleanable = true; // runtime marks yes; level-authored decals no
+    float     aspect = 1.0f;    // width(U)/depth(V); >1 = wide strip (e.g. text). Half-width = size*aspect.
 };
 
 class DecalManager {
@@ -40,8 +41,14 @@ public:
 
     void update(float dt);               // remove fully-faded decals on the active deck
 
-    // The active deck's decals — the game's render pass reads this.
-    const std::vector<Decal>& active() const;
+    // Level-authored (permanent) decals: spawned as part of the level, never cleaned or reaped.
+    // Kept in a store parallel to the runtime marks so the cap/fade/reap logic never touches them
+    // and cleaners structurally can't see them (nearestCleanable only scans the runtime store).
+    void addLevelDecal(int level, const Decal& d);
+
+    // The active deck's decals — the game's render pass reads these.
+    const std::vector<Decal>& active() const;          // runtime marks
+    const std::vector<Decal>& activeLevelDecals() const;  // permanent level-authored decals
 
     // Nearest cleanable, still-visible decal on the active deck within maxDist of `pos`, or -1.
     int  nearestCleanable(Vector2 pos, float maxDist) const;
@@ -51,7 +58,8 @@ public:
     void clear();                        // drop every deck's decals (teardown)
 
 private:
-    std::vector<std::vector<Decal>> byLevel_;   // decals per level index
+    std::vector<std::vector<Decal>> byLevel_;      // runtime marks per level index (capped/faded/reaped)
+    std::vector<std::vector<Decal>> levelDecals_;  // permanent level-authored decals per level index
     int active_ = 0;
 
     std::vector<Decal>* activeVec();
