@@ -80,11 +80,23 @@ void EffectManager::spawnExplosion(Vector2 pos, int32_t ownerGroup, float sizeSc
     effects_.push_back(e);
 }
 
+void EffectManager::spawnDisruptorFlash(Vector2 pos) {
+    Effect e;
+    e.type = EffectType::DisruptorFlash;
+    e.pos = pos;
+    e.age = 0.0f;
+    e.rotationDeg = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * 360.0f;
+    e.active = true;
+    effects_.push_back(e);   // no ownerGroup/sizeScale — purely visual, no damage
+}
+
 void EffectManager::update(float dt) {
     for (Effect& e : effects_) {
         if (!e.active) continue;
         e.age += dt;
-        if (e.age >= EXPLOSION_LIFETIME) { e.active = false; continue; }
+        const float lifetime = (e.type == EffectType::DisruptorFlash) ? DISRUPTOR_FLASH_LIFETIME
+                                                                      : EXPLOSION_LIFETIME;
+        if (e.age >= lifetime) { e.active = false; continue; }
 
         if (e.type == EffectType::Explosion && !B2_IS_NULL(world_)) {
             const float R = EXPLOSION_RADIUS * e.sizeScale;

@@ -1,5 +1,9 @@
 # TODO
 
+## Glass wall stops vision
+## 'Containment' area waypoints valid to spawn at
+## Starting spots
+
 ## Future: Native Ellipsoid Mesh Generation
 Plan saved to: `.claude/plans/composed-twirling-raven.md`
 

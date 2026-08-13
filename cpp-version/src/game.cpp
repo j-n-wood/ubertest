@@ -1433,6 +1433,7 @@ static void game_update_disruptors(Game* game, float dt) {
 
         int hits = disruptorBlast(game->physics.world_id, {fp.x, fp.y}, firer,
                                   getWeaponDefinition(weaponId), candidates);
+        game->effectManager.spawnDisruptorFlash({fp.x, fp.y});   // bright white bloom at the firer
         TraceLog(LOG_INFO, "Disruptor blast: %d hit", hits);
     };
     tick(game->playerUnit);
@@ -2705,22 +2706,41 @@ void game_render_gameplay(Game* game) {
         }
     }
 
-    // Effects: explosions as animated additive billboards with a per-effect random screen-space
-    // rotation (rotation spins the quad about the view axis). Frame from each effect's own age.
+    // Effects: additive billboards with a per-effect random screen-space rotation (rotation spins the
+    // quad about the view axis). Explosions animate the rlboom sheet from their own age; disruptor
+    // flashes are a single white flare that expands and fades over their short life.
     {
         constexpr float EFFECT_HEIGHT = 0.5f;
         const auto& effects = game->effectManager.getEffects();
         if (!effects.empty()) {
             Texture2D boom = gTextures().get(TEX_RLBOOM);
+            Texture2D flare = gTextures().get(TEX_FLARE);
             BeginBlendMode(BLEND_ADDITIVE);
             DisableDepthMaskScope depthGuard;  // additive: don't write depth (see beam pass)
             for (const Effect& e : effects) {
                 if (!e.active) continue;
-                // Visual diameter = 2x damage radius, scaled per-effect (e.g. a tank's explodeSize).
+                Vector3 pos = {e.pos.x, EFFECT_HEIGHT, e.pos.y};
+                if (e.type == EffectType::DisruptorFlash) {
+                    // Bright white bloom: expand (ease-out) from start to max diameter while the
+                    // added brightness fades to nothing — reads as a quick flash from the firer.
+                    float t = e.age / DISRUPTOR_FLASH_LIFETIME;
+                    if (t > 1.0f) t = 1.0f;
+                    float ease = 1.0f - (1.0f - t) * (1.0f - t);            // ease-out expansion
+                    float diameter = DISRUPTOR_FLASH_START_DIAM +
+                                     (DISRUPTOR_FLASH_MAX_DIAM - DISRUPTOR_FLASH_START_DIAM) * ease;
+                    float fade = 1.0f - t * t;                             // stays bright, fades late
+                    unsigned char a = (unsigned char)(fade * 255.0f);
+                    Vector2 size = {diameter, diameter};
+                    Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
+                    Rectangle src = {0.0f, 0.0f, (float)flare.width, (float)flare.height};
+                    DrawBillboardPro(game->camera, flare, src, pos, game->camera.up, size, origin,
+                                     e.rotationDeg, Color{255, 255, 255, a});
+                    continue;
+                }
+                // Explosion: visual diameter = 2x damage radius, scaled per-effect (e.g. explodeSize).
                 float diameter = EXPLOSION_RADIUS * 2.0f * e.sizeScale;
                 Vector2 size = {diameter, diameter};
                 Vector2 origin = {diameter * 0.5f, diameter * 0.5f};
-                Vector3 pos = {e.pos.x, EFFECT_HEIGHT, e.pos.y};
                 Rectangle src = game->explosionAnim.sourceRect(e.age, boom.width, boom.height);
                 DrawBillboardPro(game->camera, boom, src, pos,
                                  game->camera.up, size, origin, e.rotationDeg, WHITE);

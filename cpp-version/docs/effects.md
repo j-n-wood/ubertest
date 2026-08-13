@@ -14,9 +14,11 @@ clear old effects), `spawnExplosion(pos, ownerGroup)`, `update(dt)`, `destroy()`
 `update(simDt)` in the un-paused sim block (before `game_reap_dead`), render in
 `game_render_gameplay`, `destroy()` in `game_destroy` before the worlds are torn down.
 
-`Effect` = `{ type, pos, age, rotationDeg, ownerGroup, active }`. `EffectType` currently has
-only `Explosion`; new kinds (some non-damaging) get a new enum value with their own
-`update`/render branch.
+`Effect` = `{ type, pos, age, rotationDeg, ownerGroup, sizeScale, active }`. `EffectType` has
+`Explosion` and `DisruptorFlash` (a **non-damaging** white additive bloom spawned at a disruptor
+detonation — `spawnDisruptorFlash(pos)`; expands + fades over `DISRUPTOR_FLASH_LIFETIME`, no area
+query in `update`, drawn as a `TEX_FLARE` billboard). New kinds get a new enum value with their own
+per-type lifetime + `update`/render branch. See docs/weapons.md → Disruptor.
 
 ## Explosions
 

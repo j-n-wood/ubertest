@@ -14,7 +14,7 @@
 // EffectType values with their own update/render rules. See docs/effects.md.
 //------------------------------------------------------------------------------
 
-enum class EffectType { Explosion };
+enum class EffectType { Explosion, DisruptorFlash };
 
 // Explosion tuning (see docs/effects.md).
 inline constexpr float EXPLOSION_DPS      = 10.0f;   // energy/s at the core
@@ -23,6 +23,12 @@ inline constexpr float EXPLOSION_CORE     = 0.25f;   // dps is capped to EXPLOSI
 inline constexpr float EXPLOSION_FPS      = 10.0f;   // animation frames/second
 inline constexpr int   EXPLOSION_FRAMES   = 8;       // rlboom sheet is 8x1
 inline constexpr float EXPLOSION_LIFETIME = EXPLOSION_FRAMES / EXPLOSION_FPS;  // plays once (0.8s)
+
+// Disruptor flash tuning — a purely-visual (no damage) white additive bloom at the firer when a
+// disruptor blast lands: a bright disc that expands and fades out quickly. See docs/weapons.md.
+inline constexpr float DISRUPTOR_FLASH_LIFETIME   = 0.5f;    // seconds (the user's "fades in ~0.5s")
+inline constexpr float DISRUPTOR_FLASH_START_DIAM = 7.0f;    // start diameter (world units)
+inline constexpr float DISRUPTOR_FLASH_MAX_DIAM   = 12.0f;   // grows to this by end of life
 
 struct Effect {
     EffectType type = EffectType::Explosion;
@@ -40,6 +46,7 @@ public:
 
     void init(b2WorldId world);   // bind the active level world; clears existing effects
     void spawnExplosion(Vector2 pos, int32_t ownerGroup, float sizeScale = 1.0f);
+    void spawnDisruptorFlash(Vector2 pos);   // non-damaging white bloom at a disruptor detonation
     void update(float dt);        // advance age, apply area damage, expire + compact
     void destroy();               // clear (no bodies to free — effects don't collide)
 

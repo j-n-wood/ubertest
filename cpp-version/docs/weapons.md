@@ -208,8 +208,13 @@ short **windup** it damages *every* unit in range with clear line-of-sight from 
 - **AI.** `canFire` already range- and LOS-gates and returns `true` for `Area` regardless of facing;
   `tryFireAtPlayer` arms the windup instead of spawning a bolt. `optimumRange` = `maxRange` (25 m)
   makes the AI halt at max range to fire (class 21 is the disruptor droid).
-- **Visual — Stage 2 (not yet).** Firing currently has no on-screen effect beyond the log line; the
-  bright white flash/light is a separate follow-up.
+- **Visual.** On detonation `game_update_disruptors` spawns a `DisruptorFlash` effect at the firer —
+  a purely-visual (no damage) **bright white additive bloom** that expands (ease-out, ~4 → 12 m) and
+  fades over `DISRUPTOR_FLASH_LIFETIME` (0.5 s), rendered as a `TEX_FLARE` billboard in the effects
+  additive pass (`EffectManager`, `game_render_gameplay`). Tunables:
+  `DISRUPTOR_FLASH_{LIFETIME,START_DIAM,MAX_DIAM}` in `effect_manager.h`. A charging glow during the
+  windup and an optional shadow-casting point light remain possible follow-ups (the latter needs
+  multi-light shadow maps — see `docs/render_to_texture.md`).
 
 ## Rendering
 
