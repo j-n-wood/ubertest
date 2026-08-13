@@ -55,7 +55,8 @@ BeamHit BeamManager::castRay(b2WorldId world, Vector2 origin, float angle, float
     // Stop at walls, CLOSED doors (an open door clears its filter), and units.
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_PROJECTILE;
-    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR | CATEGORY_UNIT;
+    // Glass blocks beams (a weapon, not sight) as well as walls, closed doors, and units.
+    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR | CATEGORY_UNIT | CATEGORY_GLASS;
     BeamCastCtx ctx;
     ctx.shooter = shooter;
     b2World_CastRay(world, o, translation, filter, beamCastCallback, &ctx);

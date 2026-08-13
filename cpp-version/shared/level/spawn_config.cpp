@@ -162,17 +162,32 @@ static int pickRandomClass(int typeIndex) {
 std::vector<SpawnEntry> resolveSpawns(
     const LevelSpawnDef& def,
     int waypointCount,
-    int playerWaypointIdx)
+    int playerWaypointIdx,
+    const std::vector<uint8_t>& waypointIsStart)
 {
     std::vector<SpawnEntry> results;
 
-    // Build list of available waypoint indices (excluding player's)
+    // Only "droid start" waypoints (uber's `start` flag) are valid AI-spawn points — this keeps
+    // profile droids out of isolated waypoint networks (e.g. deck 7's organic-unit loop) that are
+    // unreachable from the main area, so no unit spawns where it can't be found or destroyed. If no
+    // start flags were supplied (TMX path) or none are marked, fall back to all waypoints.
+    auto isSpawnEligible = [&](int i) {
+        if (i == playerWaypointIdx) return false;
+        if (i >= 0 && i < static_cast<int>(waypointIsStart.size())) return waypointIsStart[i] != 0;
+        return true;   // no flag data for this index → eligible (back-compat)
+    };
+    bool anyStart = false;
+    for (int i = 0; i < waypointCount && i < static_cast<int>(waypointIsStart.size()); ++i) {
+        if (waypointIsStart[i]) { anyStart = true; break; }
+    }
+
+    // Build list of available waypoint indices (excluding player's; start-only when we have flags).
     std::vector<int> availableWaypoints;
     availableWaypoints.reserve(waypointCount);
     for (int i = 0; i < waypointCount; ++i) {
-        if (i != playerWaypointIdx) {
-            availableWaypoints.push_back(i);
-        }
+        if (i == playerWaypointIdx) continue;
+        if (anyStart && !isSpawnEligible(i)) continue;   // restrict to start waypoints
+        availableWaypoints.push_back(i);
     }
 
     // Shuffle waypoints for random assignment

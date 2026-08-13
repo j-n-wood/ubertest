@@ -534,12 +534,17 @@ static void game_create_level_collision(Game* game) {
             TraceLog(LOG_WARNING, "No collision.json for level %d; 3D level has no wall collision", deck);
             return;
         }
-        int wallN = 0, skipped = 0;
-        for (auto& poly : coll.polygons) {
-            PhysicsBody b = physics_create_static_polygon(&game->physics, poly.data(), (int)poly.size());
-            if (b.valid) { game->collisionBodies.push_back(b); wallN++; } else skipped++;
+        int wallN = 0, skipped = 0, glassN = 0;
+        for (size_t i = 0; i < coll.polygons.size(); ++i) {
+            auto& poly = coll.polygons[i];
+            // Glass walls get CATEGORY_GLASS so sight raycasts pass through; normal walls CATEGORY_STATIC.
+            bool glass = i < coll.polygonGlass.size() && coll.polygonGlass[i];
+            uint16_t cat = glass ? CATEGORY_GLASS : CATEGORY_STATIC;
+            PhysicsBody b = physics_create_static_polygon(&game->physics, poly.data(), (int)poly.size(), cat);
+            if (b.valid) { game->collisionBodies.push_back(b); wallN++; if (glass) glassN++; } else skipped++;
         }
-        TraceLog(LOG_INFO, "3D collision level %d: %d wall polygons (%d skipped)", deck, wallN, skipped);
+        TraceLog(LOG_INFO, "3D collision level %d: %d wall polygons (%d glass, %d skipped)",
+                 deck, wallN, glassN, skipped);
         return;
     }
 
@@ -932,7 +937,8 @@ static void game_spawn_enemies(Game* game) {
     // Resolve spawns to concrete entries
     auto spawnEntries = resolveSpawns(*spawnDef,
         (int)renderData.waypointPositions.size(),
-        playerWaypointIdx);
+        playerWaypointIdx,
+        renderData.waypointIsStart);   // spawn only on "droid start" waypoints (skip isolated nets)
 
     if (spawnEntries.empty()) {
         TraceLog(LOG_INFO, "No enemies to spawn on deck %d", deck);
@@ -1008,7 +1014,8 @@ static void game_populate_level_roster(Game* game, int L) {
     }
 
     // -1 = no player waypoint to avoid (there is no player on an inactive deck).
-    auto spawnEntries = resolveSpawns(*spawnDef, (int)rd.waypointPositions.size(), -1);
+    auto spawnEntries = resolveSpawns(*spawnDef, (int)rd.waypointPositions.size(), -1,
+                                      rd.waypointIsStart);   // spawn only on "droid start" waypoints
     b2WorldId world = game->levelRuntime[L].world;
     b2BodyId origin = game->levelRuntime[L].origin;
     game->levelRuntime[L].units.clear();

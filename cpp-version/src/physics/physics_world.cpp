@@ -60,7 +60,8 @@ PhysicsBody physics_create_static_box(PhysicsWorld* world, Vector2 pos, float w,
     return body;
 }
 
-PhysicsBody physics_create_static_polygon(PhysicsWorld* world, const Vector2* verts, int count) {
+PhysicsBody physics_create_static_polygon(PhysicsWorld* world, const Vector2* verts, int count,
+                                          uint16_t category) {
     PhysicsBody body = {0};
     if (count < 3 || count > 8) return body;
 
@@ -76,7 +77,9 @@ PhysicsBody physics_create_static_polygon(PhysicsWorld* world, const Vector2* ve
 
     b2Polygon poly = b2MakePolygon(&hull, 0.0f);
     b2ShapeDef shape_def = b2DefaultShapeDef();
-    shape_def.filter.categoryBits = CATEGORY_STATIC;
+    // `category` is CATEGORY_STATIC for normal walls; glass walls pass CATEGORY_GLASS so sight
+    // raycasts (which mask STATIC only) pass through while physical collision still applies.
+    shape_def.filter.categoryBits = category;
     shape_def.filter.maskBits = MASK_STATIC;
     b2CreatePolygonShape(body.body_id, &shape_def, &poly);
     body.valid = true;

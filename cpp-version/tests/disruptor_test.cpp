@@ -56,18 +56,32 @@ protected:
         b2CreateCircleShape(u.bodyId, &sd, &circle);
     }
 
-    void makeWall(Vector2 c, float hx, float hy) {
+    void makeWall(Vector2 c, float hx, float hy, uint16_t category = CATEGORY_STATIC) {
         b2BodyDef bd = b2DefaultBodyDef();
         bd.type = b2_staticBody;
         bd.position = {c.x, c.y};
         b2BodyId w = b2CreateBody(world, &bd);
         b2Polygon box = b2MakeBox(hx, hy);
         b2ShapeDef sd = b2DefaultShapeDef();
-        sd.filter.categoryBits = CATEGORY_STATIC;
+        sd.filter.categoryBits = category;
         sd.filter.maskBits = 0xFFFF;
         b2CreatePolygonShape(w, &sd, &box);
     }
 };
+
+// Glass walls (CATEGORY_GLASS) block the disruptor blast too — only sight passes through glass, the
+// damage does not (the user's rule). The disruptor's LOS cast masks CATEGORY_GLASS.
+TEST_F(DisruptorTest, GlassWallBlocksTheBlast) {
+    UnitInstance firer, behindGlass;
+    makeUnit(firer, {0.0f, 0.0f}, def);
+    makeWall({0.0f, 2.5f}, 3.0f, 0.3f, CATEGORY_GLASS);   // glass wall across the +Y sightline
+    makeUnit(behindGlass, {0.0f, 5.0f}, def);
+    std::vector<UnitInstance*> units = {&firer, &behindGlass};
+
+    int hits = disruptorBlast(world, {0.0f, 0.0f}, &firer, disruptor, units);
+    EXPECT_EQ(hits, 0);
+    EXPECT_FLOAT_EQ(behindGlass.combatState.currentHealth, 100.0f) << "glass blocks the disruptor blast";
+}
 
 TEST_F(DisruptorTest, DamagesAllUnitsInRangeAndLos) {
     UnitInstance firer, a, b, c;

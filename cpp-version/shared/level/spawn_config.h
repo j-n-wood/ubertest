@@ -63,9 +63,14 @@ const LevelSpawnDef* getSpawnDef(int shipIndex, int levelIndex);
 // Picks random classes within each type group based on the profile.
 // Assigns distinct waypoints, avoiding playerWaypointIdx.
 // waypointCount = total available waypoints (indices 0..waypointCount-1).
+// waypointIsStart (optional, parallel to the waypoints): if non-empty, profile droids are placed
+// ONLY on "droid start" waypoints (uber's `start` flag), so units never spawn in isolated networks
+// that are unreachable from the main area. Empty (or no start waypoints) → falls back to all
+// waypoints. Explicitly-placed droids (with a waypointIndex) are unaffected.
 std::vector<SpawnEntry> resolveSpawns(
     const LevelSpawnDef& def,
     int waypointCount,
-    int playerWaypointIdx);
+    int playerWaypointIdx,
+    const std::vector<uint8_t>& waypointIsStart = {});
 
 #endif // SPAWN_CONFIG_H

@@ -189,6 +189,11 @@ struct LevelRenderData {
     std::vector<Vector3> waypointPositions;
     std::vector<std::pair<int, int>> waypointLinks; // pairs of waypoint indices
 
+    // Per-waypoint "droid start" flag (uber's waypoint `start`): only these are valid AI-spawn
+    // points. Parallel to waypointPositions. Empty if the source didn't provide flags (TMX path),
+    // in which case spawn resolution falls back to all waypoints. See resolveSpawns.
+    std::vector<uint8_t> waypointIsStart;
+
     // Waypoint adjacency list — waypointAdjacency[i] = indices of waypoints linked to i
     std::vector<std::vector<int>> waypointAdjacency;
 

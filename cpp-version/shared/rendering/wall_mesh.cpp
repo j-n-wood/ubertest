@@ -697,12 +697,13 @@ std::vector<WallCollisionQuad> buildWallCollision(const Domain& domain, const Wa
     const float halfThick = 9.5f * scale;                  // uber st_walls edge half-width (game units)
     const float maxSec = (scale > 0.0f ? 64.0f * scale : 64.0f);
 
-    auto emit = [&](Vector2 p0, Vector2 p1, Vector2 perp, float a, float b) {
+    auto emit = [&](Vector2 p0, Vector2 p1, Vector2 perp, float a, float b, bool glass) {
         WallCollisionQuad q;
         q.v[0] = {p0.x + perp.x * a, p0.y + perp.y * a};
         q.v[1] = {p1.x + perp.x * a, p1.y + perp.y * a};
         q.v[2] = {p1.x + perp.x * b, p1.y + perp.y * b};
         q.v[3] = {p0.x + perp.x * b, p0.y + perp.y * b};
+        q.glass = glass;
         out.push_back(q);
     };
     auto dist2 = [](Vector2 a, Vector2 b) { float dx = a.x - b.x, dy = a.y - b.y; return std::sqrt(dx * dx + dy * dy); };
@@ -722,6 +723,7 @@ std::vector<WallCollisionQuad> buildWallCollision(const Domain& domain, const Wa
 
                 float latMin = 1e9f, latMax = -1e9f;
                 bool stWalls = false;
+                bool glass = false;
                 for (int pid : *profileIds) {
                     auto it = table.profiles.find(pid);
                     if (it == table.profiles.end() || !it->second.valid) continue;
@@ -730,6 +732,7 @@ std::vector<WallCollisionQuad> buildWallCollision(const Domain& domain, const Wa
                     if (yMax - yMin < MIN_WALL_HEIGHT) continue;   // trim/border — not collision
                     for (const auto& pt : it->second.points) { latMin = std::min(latMin, pt.x); latMax = std::max(latMax, pt.x); }
                     if (it->second.solidType == 1) stWalls = true;
+                    if (it->second.drawtype == 5) glass = true;    // dt_glass profile → LOS-transparent collision
                 }
                 if (latMin > latMax) continue;
                 latMin *= scale; latMax *= scale;
@@ -771,10 +774,10 @@ std::vector<WallCollisionQuad> buildWallCollision(const Domain& domain, const Wa
                     if (len < 1e-5f) continue;
                     Vector2 perp = {-dz / len, dx / len};
                     if (stWalls) {
-                        emit(p0, p1, perp, latMax - halfThick, latMax + halfThick);  // outer edge (+lateral)
-                        emit(p0, p1, perp, latMin - halfThick, latMin + halfThick);  // outer edge (-lateral)
+                        emit(p0, p1, perp, latMax - halfThick, latMax + halfThick, glass);  // outer edge (+lateral)
+                        emit(p0, p1, perp, latMin - halfThick, latMin + halfThick, glass);  // outer edge (-lateral)
                     } else {
-                        emit(p0, p1, perp, latMin, latMax);                          // full footprint
+                        emit(p0, p1, perp, latMin, latMax, glass);                          // full footprint
                     }
                 }
             }

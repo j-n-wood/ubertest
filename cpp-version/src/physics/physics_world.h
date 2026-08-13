@@ -3,6 +3,7 @@
 
 #include "box2d/box2d.h"
 #include "raylib.h"
+#include "physics/body_user_data.h"   // CATEGORY_STATIC / CATEGORY_GLASS (default arg below)
 
 typedef struct PhysicsBody {
     b2BodyId body_id;
@@ -26,7 +27,10 @@ PhysicsBody physics_create_static_box(PhysicsWorld* world, Vector2 pos, float w,
 //   polygon: CCW convex, 3..8 verts (a solid wall block). Invalid/degenerate -> {valid=false}.
 //   chain:   an open or looped wall outline; Box2D requires >= 4 points, so shorter chains and
 //            degenerate loops are rejected with {valid=false}.
-PhysicsBody physics_create_static_polygon(PhysicsWorld* world, const Vector2* verts, int count);
+// `category` selects the collision category: CATEGORY_STATIC (default) for normal walls, or
+// CATEGORY_GLASS for LOS-transparent glass walls (see body_user_data.h / game_create_level_collision).
+PhysicsBody physics_create_static_polygon(PhysicsWorld* world, const Vector2* verts, int count,
+                                          uint16_t category = CATEGORY_STATIC);
 PhysicsBody physics_create_static_chain(PhysicsWorld* world, const Vector2* verts, int count, bool loop);
 
 // A single static wall segment (a..b) in the 2D physics plane. Zero-length segments -> {valid=false}.

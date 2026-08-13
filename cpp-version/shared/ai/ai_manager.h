@@ -86,7 +86,11 @@ private:
     // includeDoors: when true the cast also blocks on CLOSED doors (CATEGORY_DOOR) — used
     // for firing line-of-sight. Pathfinding leaves it false so units don't reroute around
     // doors (which open on proximity). Open doors clear their filter and never block either way.
-    bool pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors = false) const;
+    // seeThroughGlass: sight uses (detection/firing LOS) pass true so glass walls (CATEGORY_GLASS)
+    // don't block the ray; pathfinding leaves it false so glass blocks movement paths (units can't
+    // walk through glass). See body_user_data.h / game_create_level_collision.
+    bool pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors = false,
+                   bool seeThroughGlass = false) const;
     int  nearestWaypoint(Vector2 pos) const;
     int  nearestReachableWaypoint(Vector2 pos, float radius) const;
 

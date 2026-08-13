@@ -3,7 +3,7 @@
 
 #include "raylib.h"
 #include "box2d/box2d.h"
-#include <span>
+#include <vector>
 
 struct UnitInstance;
 struct WeaponDefinition;
@@ -21,6 +21,6 @@ struct WeaponDefinition;
 // See game_update_disruptors (windup → blast) and docs/weapons.md.
 //------------------------------------------------------------------------------
 int disruptorBlast(b2WorldId world, Vector2 firePos, const UnitInstance* firer,
-                   const WeaponDefinition& weapon, std::span<UnitInstance* const> units);
+                   const WeaponDefinition& weapon, const std::vector<UnitInstance*>& units);
 
 #endif // DISRUPTOR_H

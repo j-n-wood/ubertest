@@ -49,6 +49,7 @@ void load3DLevelDecals(const std::string& assetPath, int levelNumber, std::vecto
 // (render X, render Z), already metric. Polygons are CCW convex solids; chains are wall outlines.
 struct Collision3D {
     std::vector<std::vector<Vector2>> polygons;
+    std::vector<uint8_t> polygonGlass;   // parallel to polygons: 1 = glass wall (LOS-transparent, CATEGORY_GLASS)
     struct Chain { std::vector<Vector2> verts; bool loop = false; };
     std::vector<Chain> chains;
 };

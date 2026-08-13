@@ -24,7 +24,9 @@ bool lineClear(b2WorldId world, Vector2 a, Vector2 b) {
     b2Vec2 translation = {b.x - a.x, b.y - a.y};
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_PROJECTILE;
-    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR;   // walls + CLOSED doors only (open doors clear)
+    // Walls, CLOSED doors, and glass all block the disruptor (the user's rule: glass stops the blast
+    // too — only pure sight passes through glass). Open doors clear their filter and never block.
+    filter.maskBits = CATEGORY_STATIC | CATEGORY_DOOR | CATEGORY_GLASS;
     LosCtx ctx;
     b2World_CastRay(world, o, translation, filter, losCastCallback, &ctx);
     return !ctx.blocked;
@@ -33,7 +35,7 @@ bool lineClear(b2WorldId world, Vector2 a, Vector2 b) {
 }  // namespace
 
 int disruptorBlast(b2WorldId world, Vector2 firePos, const UnitInstance* firer,
-                   const WeaponDefinition& weapon, std::span<UnitInstance* const> units) {
+                   const WeaponDefinition& weapon, const std::vector<UnitInstance*>& units) {
     const float maxR2 = weapon.maxRange * weapon.maxRange;
     int hits = 0;
     for (UnitInstance* u : units) {

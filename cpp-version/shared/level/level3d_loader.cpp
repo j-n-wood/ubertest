@@ -34,11 +34,16 @@ void loadWaypoints(const std::string& path, LevelRenderData& data) {
 
     data.waypointPositions.clear();
     data.waypointLinks.clear();
+    data.waypointIsStart.clear();
     data.waypointAdjacency.assign(wps.size(), {});
 
     for (const auto& w : wps) {
         const json& p = w["pos"];
         data.waypointPositions.push_back({p[0].get<float>(), p[1].get<float>(), p[2].get<float>()});
+        // uber's `start` flag = "droid start"; only these are AI-spawn points (writeEntities emits
+        // the flag only when true, so absence = not a start waypoint). See resolveSpawns.
+        bool isStart = w.contains("flags") && w["flags"].value("start", false);
+        data.waypointIsStart.push_back(isStart ? 1 : 0);
     }
     for (int i = 0; i < (int)wps.size(); i++) {
         if (!wps[i].contains("neighbors")) continue;
@@ -231,7 +236,10 @@ bool load3DLevelCollision(const std::string& assetPath, int levelNumber, Collisi
         for (const auto& p : doc["polygons"]) {
             std::vector<Vector2> verts;
             for (const auto& v : p["vertices"]) verts.push_back({v[0].get<float>(), v[1].get<float>()});
-            if (verts.size() >= 3) out.polygons.push_back(std::move(verts));
+            if (verts.size() >= 3) {
+                out.polygons.push_back(std::move(verts));
+                out.polygonGlass.push_back(p.value("glass", false) ? 1 : 0);   // LOS-transparent wall
+            }
         }
     }
     if (doc.contains("chains")) {

@@ -63,7 +63,9 @@ GeometryMeshCollection createDomainWallMeshes(const Domain& domain, float scale,
                                               bool enableCaps = true, bool enableMiter = true);
 
 // One wall-collision footprint quad, corners in the game's 2D physics plane (render X, render Z).
-struct WallCollisionQuad { Vector2 v[4]; };
+// `glass` marks quads from a glass profile (material drawtype 5, e.g. the glass tunnel) — solid to
+// physical collision but transparent to sight raycasts downstream (CATEGORY_GLASS). See body_user_data.h.
+struct WallCollisionQuad { Vector2 v[4]; bool glass = false; };
 
 // Build wall-collision quads for a whole domain (shared by the export + the viewer's collision
 // wireframe, so both agree). A normal profile emits one quad per path segment spanning its lateral

@@ -76,3 +76,26 @@ colour grading, scanlines).
   the door to further post-FX cheaply.
 - **Recommendation:** do them **together** when picked up, because the RT + composite is the shared
   90%. Until then the flat-floor decals stay the uber-equivalent baseline.
+
+## Related: disruptor shadow-casting light (deferred)
+
+The disruptor's firing visual currently ships as a flat additive white **flash** billboard at the
+firer (`EffectType::DisruptorFlash`, `game_render_gameplay` / `docs/weapons.md`). A more dramatic
+option — floated when the weapon was built — is to have the blast briefly act as a **shadow-casting
+point light** from the firer's position, throwing hard shadows off walls and droids as it flares.
+
+This is a **bigger rendering change than the flash** and belongs with the work above, because it
+needs the same "more than one render target per frame" restructuring:
+
+- The renderer today has a **single** shadow map, rendered from the *global* light's POV
+  (`shared/rendering/shadow_map.*`). A disruptor light means a **second, dynamic** shadow-casting
+  light — a second depth pass from the firer's position each frame the flash is alive, plus the
+  lighting shader sampling and blending a second shadow map.
+- Scope: multi-light support in the scene shader (light array + per-light shadow sampler), a
+  transient light registered by the flash effect (position = firer, short life, falloff), and the
+  extra depth pass. Point-light shadows ideally want a cube/omni map (6 faces) or a clever 2D
+  projection for this top-down view — non-trivial.
+- **Cost:** substantial (new depth pass + shader multi-light path + resource management). **Payoff:**
+  strong one-off combat juice, but only for a weapon fired occasionally. **Recommendation:** keep the
+  flat flash as the baseline; pick this up only alongside a broader dynamic-lighting pass, not on its
+  own.

@@ -152,3 +152,30 @@ TEST_F(SpawnFixture, HandlesInsufficientWaypoints) {
         EXPECT_LT(spawn.waypointIndex, 4);
     }
 }
+
+// Profile droids must spawn ONLY on "droid start" waypoints (uber's `start` flag), never in an
+// isolated network of non-start waypoints (deck 7's organic loop) where they'd be unreachable.
+TEST_F(SpawnFixture, ProfileSpawnsOnlyOnStartWaypoints) {
+    const LevelSpawnDef* def = getSpawnDef(0, 0);
+    ASSERT_NE(def, nullptr);
+
+    // 20 waypoints; only 5,6,7,8 are droid-start. 15,16,17,18,19 are an "isolated network".
+    std::vector<uint8_t> isStart(20, 0);
+    for (int i : {5, 6, 7, 8}) isStart[i] = 1;
+
+    auto results = resolveSpawns(*def, 20, /*playerWaypointIdx=*/-1, isStart);
+    ASSERT_FALSE(results.empty());
+    for (const auto& spawn : results) {
+        EXPECT_TRUE(isStart[spawn.waypointIndex])
+            << "spawn landed on non-start waypoint " << spawn.waypointIndex;
+    }
+}
+
+// No start flags supplied (e.g. the TMX path) → fall back to all waypoints (prior behaviour), so a
+// level without flag data still spawns its droids.
+TEST_F(SpawnFixture, FallsBackToAllWaypointsWhenNoStartFlags) {
+    const LevelSpawnDef* def = getSpawnDef(0, 0);
+    ASSERT_NE(def, nullptr);
+    auto results = resolveSpawns(*def, 20, -1, {});   // empty flags
+    EXPECT_FALSE(results.empty());
+}

@@ -297,7 +297,8 @@ void AIManager::handleCollision(AIComponent& ai, UnitInstance* other) {
 // mitigation: a unit whose path grazes an obstacle slides around it rather than
 // pinning, which covers most pillar/table/stub-wall cases in practice.
 
-bool AIManager::pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors) const {
+bool AIManager::pathClear(Vector2 from, Vector2 to, float radius, bool includeDoors,
+                          bool seeThroughGlass) const {
     if (B2_IS_NULL(m_worldId)) return true;
     Vector2 d = Vector2Subtract(to, from);
     float len = Vector2Length(d);
@@ -313,10 +314,13 @@ bool AIManager::pathClear(Vector2 from, Vector2 to, float radius, bool includeDo
     // Cast as a unit against walls (and, for firing LOS, closed doors) — other units are
     // not treated as blockers. A closed door has categoryBits CATEGORY_DOOR and maskBits
     // including CATEGORY_UNIT, so this unit-category cast hits it; an open door clears its
-    // maskBits to 0 and is skipped.
+    // maskBits to 0 and is skipped. Glass walls (CATEGORY_GLASS) block MOVEMENT paths but not
+    // SIGHT: pass seeThroughGlass=true for line-of-sight (detection/firing) so the ray passes
+    // through glass; leave it false for pathfinding so a unit won't try to walk through glass.
     b2QueryFilter filter;
     filter.categoryBits = CATEGORY_UNIT;
-    filter.maskBits = CATEGORY_STATIC | (includeDoors ? CATEGORY_DOOR : 0);
+    filter.maskBits = CATEGORY_STATIC | (includeDoors ? CATEGORY_DOOR : 0)
+                                      | (seeThroughGlass ? 0 : CATEGORY_GLASS);
 
     WallCastCtx ctx;
     b2World_CastCircle(m_worldId, &circle, xf, translation, filter, wallCastCallback, &ctx);
@@ -361,7 +365,7 @@ void AIManager::updatePatrol(AIComponent& ai, float dt, Vector2 playerPos) {
         // The LOS check also stops a just-disengaged unit re-detecting the player through
         // the wall it lost them behind.
         if (dist <= ai.detectionRadius && sightConeSeesTarget(ai, playerPos) &&
-            pathClear(pos, playerPos, 0.0f, /*includeDoors=*/true)) {
+            pathClear(pos, playerPos, 0.0f, /*includeDoors=*/true, /*seeThroughGlass=*/true)) {
             ai.state = AIState::Chase;
             ai.hostile = true;
             ai.loseSightTimer = 0.0f;
@@ -786,8 +790,8 @@ bool AIManager::hasSightOfPlayer(const AIComponent& ai, Vector2 playerPos) const
     Vector2 unitPos = getUnitPosition(ai);
     if (ai.visualRange > 0.0f && Vector2Distance(unitPos, playerPos) > ai.visualRange)
         return false;
-    // Thin sightline (radius floored to 0.1 in pathClear); closed doors block it.
-    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true))
+    // Thin sightline (radius floored to 0.1 in pathClear); closed doors block it, glass does not.
+    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true, /*seeThroughGlass=*/true))
         return false;
     if (!sightConeSeesTarget(ai, playerPos))
         return false;
@@ -854,7 +858,10 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
     // fly, NOT the droid's body — a bolt can pass through a gap the droid can't fit through.
     // (pathClear floors the radius at 0.1, matching the default projectile.) includeDoors:
     // a CLOSED door blocks the shot; an open one doesn't.
-    if (!pathClear(unitPos, playerPos, ai.weaponState.definition.radius, /*includeDoors=*/true))
+    // Firing LOS: glass doesn't block the sightline (the bolt/beam itself is stopped by glass, so a
+    // shot at a target behind glass simply hits the glass — matches "only LOS passes glass").
+    if (!pathClear(unitPos, playerPos, ai.weaponState.definition.radius, /*includeDoors=*/true,
+                   /*seeThroughGlass=*/true))
         return false;
 
     // Head units can only fire at a target their head can see (in its forward cone).
@@ -945,8 +952,8 @@ bool AIManager::beamActive(const AIComponent& ai, Vector2 playerPos) const {
     if (!ai.armed) return false;
     Vector2 unitPos = getUnitPosition(ai);
     if (Vector2Distance(unitPos, playerPos) > ai.weaponState.definition.maxRange) return false;
-    // Thin sightline; closed doors block. No facing gate — the beam sweeps as the unit aims.
-    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true)) return false;
+    // Thin sightline; closed doors block, glass does not (the beam itself is stopped by glass).
+    if (!pathClear(unitPos, playerPos, 0.0f, /*includeDoors=*/true, /*seeThroughGlass=*/true)) return false;
     if (!sightConeSeesTarget(ai, playerPos)) return false;
     return true;
 }

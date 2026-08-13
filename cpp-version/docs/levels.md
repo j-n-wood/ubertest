@@ -48,6 +48,31 @@ things that ever cross worlds are the **player device** and the **unit it is pil
   `shipDroidsRemaining` is the true shipwide live count from the start, and `game_ship_is_clear` (all
   droids defeated) drives the "ship clear of droids" banner + the Ship Data console page.
 
+## Waypoint spawn points (`start` flag)
+
+Only waypoints flagged **`start`** ("droid start" in uber's `waypoint.cpp`) are valid AI-spawn
+points. `writeEntities` exports the flag, `loadWaypoints` reads it into
+`LevelRenderData::waypointIsStart`, and `resolveSpawns` restricts profile droids to start waypoints
+(falling back to all waypoints only if a level supplies no flags — e.g. the TMX path). This mirrors
+uber's `domain::startWaypoint` and, crucially, keeps droids **out of isolated waypoint networks**
+(e.g. deck 7's organic-unit loop, waypoint ids 18/20/21/22/23) that are unreachable from the main
+area — otherwise units spawn there and can never be found, killed, or cleared. Explicitly-placed
+droids (`PLACEDROID` with a waypointIndex) still go to their exact waypoint.
+
+## Glass walls (`CATEGORY_GLASS`)
+
+A wall built from a **glass profile** (material drawtype 5, e.g. the glass tunnel that seals off
+deck 7's isolated loop) is physically solid but **transparent to line-of-sight**. `buildWallCollision`
+tags those quads (`WallCollisionQuad::glass`), `writeCollision` emits `"glass": true`, the loader
+carries it (`Collision3D::polygonGlass`), and `game_create_level_collision` builds those bodies with
+`CATEGORY_GLASS` instead of `CATEGORY_STATIC`. Because the **sight** raycasts mask only `CATEGORY_STATIC`
+(+`CATEGORY_DOOR`) — render visibility (`game_has_line_of_sight`) and AI detection/firing LOS
+(`AIManager::pathClear(..., seeThroughGlass=true)`) — they pass through glass. Everything **physical
+or damaging** includes `CATEGORY_GLASS` and is blocked by it: unit movement (`MASK_UNIT`), projectiles
+(`MASK_PROJECTILE`), beams (`BeamManager::castRay`), the disruptor blast (`disruptorBlast`), and
+pathfinding (`pathClear` with the default `seeThroughGlass=false`, so units don't try to walk through
+glass). Net: you can see through glass but not move, shoot, or disrupt through it.
+
 ## Level switch (`game_change_level`)
 
 1. Release transfer control, remembering the piloted class + health.

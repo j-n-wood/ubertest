@@ -116,9 +116,11 @@ void writeCollision(const Domain& domain, const WallProfileTable& table, float s
     doc["space"] = "render-metric wall footprint polygons (x, z)";
     json polys = json::array();
     for (const auto& q : buildWallCollision(domain, table, scale)) {
-        polys.push_back({{"vertices", json::array({
+        json poly = {{"vertices", json::array({
             json::array({q.v[0].x, q.v[0].y}), json::array({q.v[1].x, q.v[1].y}),
-            json::array({q.v[2].x, q.v[2].y}), json::array({q.v[3].x, q.v[3].y})})}});
+            json::array({q.v[2].x, q.v[2].y}), json::array({q.v[3].x, q.v[3].y})})}};
+        if (q.glass) poly["glass"] = true;   // LOS-transparent wall (CATEGORY_GLASS in the game)
+        polys.push_back(std::move(poly));
     }
     doc["polygons"] = polys;
     doc["chains"] = json::array();  // walls are footprint polygons; no chains
