@@ -21,12 +21,13 @@ UnitCombatState initCombatState(const DroidProperties& properties) {
 // Damage model
 //------------------------------------------------------------------------------
 
-bool applyDamage(UnitCombatState& state, float rawDamage) {
+bool applyDamage(UnitCombatState& state, float rawDamage, bool ignoreArmour) {
     if (!state.alive || rawDamage <= 0.0f) return state.alive;
 
     // Armour is a flat damage reduction (uber/source/uberdroid/destructible.cpp:
-    // `damage -= armour`). A hit that doesn't beat the armour is fully absorbed.
-    float effectiveDamage = rawDamage - state.armour;
+    // `damage -= armour`). A hit that doesn't beat the armour is fully absorbed. `ignoreArmour`
+    // bypasses it entirely (disruptor).
+    float effectiveDamage = ignoreArmour ? rawDamage : (rawDamage - state.armour);
     if (effectiveDamage <= 0.0f) return state.alive;
 
     state.currentHealth = std::max(0.0f, state.currentHealth - effectiveDamage);

@@ -110,6 +110,7 @@ DroidProperties parseDroidProperties(const json& j) {
     props.headTurnSpeed   = j.value("headTurnSpeed", 0.0f);
     props.visualRadius    = j.value("visualRadius", 0.0f);
     props.dripThreshold   = j.value("dripThreshold", 0.0f);
+    props.disruptorShielded = j.value("disruptorShielded", false);
     if (j.contains("fireOffset")) {
         props.fireOffset = parseVector3(j["fireOffset"], {0, 0, 0});
     }
@@ -134,6 +135,7 @@ json droidPropertiesToJson(const DroidProperties& props) {
     if (props.headTurnSpeed != 0.0f) j["headTurnSpeed"] = props.headTurnSpeed;
     j["visualRadius"]    = props.visualRadius;
     if (props.dripThreshold != 0.0f) j["dripThreshold"] = props.dripThreshold;
+    if (props.disruptorShielded) j["disruptorShielded"] = props.disruptorShielded;
     if (props.fireOffset.x != 0 || props.fireOffset.y != 0 || props.fireOffset.z != 0) {
         j["fireOffset"] = vector3ToJson(props.fireOffset);
     }

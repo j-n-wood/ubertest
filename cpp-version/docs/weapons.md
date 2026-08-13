@@ -10,9 +10,10 @@ unit" means) and [scoring.md](scoring.md) (kills award score).
 
 This phase covers **projectile** weapons: weapon 0 (Plasma Bolt, the device/class 0) plus the
 laser bolts weapons 2 (Laser Rifle) and 4 (Rapid Laser) carried by combat droids. **Beam**
-weapons (1 Gas Axe, 8 Exterminator) are also live — see "Beam weapons" below. Area / instant
-weapons, floor "marks" (`mark_radius`/splash), per-weapon colour/light, and particle systems
-are later phases — those non-firing weapon types are parsed but gated off in both fire paths.
+weapons (1 Gas Axe, 8 Exterminator) are also live — see "Beam weapons" below. The **Area**
+disruptor (weapon 6) is live too — see "Disruptor" below (its on-screen flash is a separate
+Stage 2). Only **instant** weapons remain gated off; floor "marks" (`mark_radius`/splash),
+per-weapon colour/light, and particle systems are later phases.
 
 ## Data (`weapons.json`)
 
@@ -120,9 +121,11 @@ visible.
 > the small 0-9 *tier* and `armour` set to the real energy — so e.g. class 16 had
 > `armour: 100` (100% reduction = *immune*) and 100× health. The parser and the 24
 > `assets/units/droid_class_*.json` energy/armour values are now corrected (weapon was already
-> right). Per-damage-type armour and disruptor-immunity from the original loader
-> (`cutter = ½ armour`, `disruptor = 0`, `disruptor_shielded`) are **not** modelled yet — only
-> a single flat armour value is used, which is exact for plasma (the one active weapon).
+> right). Per-damage-type armour is still simplified to one flat value (exact for plasma), but the
+> disruptor's `disruptor = 0` armour and the per-class `disruptor_shielded` immunity **are** now
+> modelled: the disruptor passes `ignoreArmour` to `applyDamage`, and the 4 shielded classes carry
+> `disruptorShielded: true` in their JSON (see "Disruptor" below). The `cutter = ½ armour` term is
+> still not modelled.
 
 Each Box2D body stores a pointer to its `Projectile::userData` for contact identification.
 Because the projectiles live in a `std::vector` that reallocates on growth and compacts in
@@ -176,6 +179,37 @@ is the sim layer, mirroring the door/charger/projectile split — the game draws
   helper (a `spreadRad` cone, per-weapon colour), also used by projectile impacts. Emission is
   rate-limited to ~30 sparks/second per hitting beam through a fractional accumulator
   (`Game::beamSparkAccum`). A beam that reaches `maxRange` untouched has `hit=false` and no sparks.
+
+## Disruptor (area weapon)
+
+The **Disruptor** (weapon 6, `WeaponType::Area`, `DamageType::Disruptor`) is an omnidirectional
+area zap ported from uber's `shot.cpp` area effect. It has **no projectile and no facing** — after a
+short **windup** it damages *every* unit in range with clear line-of-sight from the firer.
+
+- **Windup.** A new `WeaponDefinition::windup` (seconds; `weapons.json` sets **0.4** for the
+  disruptor — the uber value, matching the fire sample). On fire, both fire paths just gate on the
+  normal fire-rate cooldown (`tryFire`) and then arm the firing **unit**: `UnitInstance::
+  disruptorWindup` = windup, `disruptorWeaponId` = the weapon. No shot object is spawned.
+- **Detonation.** `game_update_disruptors` (`src/game.cpp`, sim block, run **before**
+  `game_reap_dead`) counts each unit's windup down; at ≤ 0 it calls **`disruptorBlast`**
+  (`shared/combat/disruptor.{h,cpp}`) over `{playerUnit} ∪ enemyUnits`. That pure helper skips the
+  firer and any `disruptorShielded` unit, and for each unit within `maxRange` with a clear wall/
+  closed-door sightline (its own `b2World_CastRay`, masking out units so only geometry blocks — the
+  same filter `BeamManager::castRay` uses) applies `damage` via `applyDamage(…, ignoreArmour=true)`
+  and sets `damageAlert`/`damageFromDir` so survivors react. Kills are collected the same frame by
+  the reap that follows (explosions, scoring, census). It logs `Disruptor blast: N hit`. Keeping the
+  sweep pure over a `b2World` (no Game coupling) makes it unit-testable (`tests/disruptor_test.cpp`).
+- **No team filter.** Matches uber: an *enemy* disruptor damages the player **and** other droids;
+  only the firer and shielded units are spared. Cooldown (1.7 s) > windup (0.4 s), so a unit can't
+  re-arm before its blast resolves.
+- **Immunity.** 4 classes carry `disruptorShielded: true` in their JSON —
+  `droid_class_{8,20,21,23}` (uber typeCodes 420 / 821 / 834 / 999). Class 21 is the disruptor unit
+  itself, so a class-21 firer is doubly excluded (firer check + its own shield).
+- **AI.** `canFire` already range- and LOS-gates and returns `true` for `Area` regardless of facing;
+  `tryFireAtPlayer` arms the windup instead of spawning a bolt. `optimumRange` = `maxRange` (25 m)
+  makes the AI halt at max range to fire (class 21 is the disruptor droid).
+- **Visual — Stage 2 (not yet).** Firing currently has no on-screen effect beyond the log line; the
+  bright white flash/light is a separate follow-up.
 
 ## Rendering
 

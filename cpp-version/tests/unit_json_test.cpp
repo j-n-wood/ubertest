@@ -113,3 +113,32 @@ TEST(UnitDripThreshold, ParsesAndRoundTrips) {
     ASSERT_TRUE(parseUnitDefinitionFromString(out, rt));
     EXPECT_FLOAT_EQ(rt.properties.dripThreshold, 21.0f);
 }
+
+// disruptorShielded (immune to disruptor area damage) parses + round-trips; absent → false.
+TEST(UnitDisruptorShielded, ParsesAndRoundTrips) {
+    static const char* SHIELDED = R"({
+      "name": "Shielded", "id": "shielded",
+      "properties": { "classId": 8, "energy": 50, "disruptorShielded": true },
+      "rootSection": { "name": "body", "model": "m.gltf" }
+    })";
+    UnitDefinition def;
+    ASSERT_TRUE(parseUnitDefinitionFromString(SHIELDED, def));
+    EXPECT_TRUE(def.properties.disruptorShielded);
+
+    std::string out = serializeUnitDefinitionToString(def, /*pretty=*/true);
+    EXPECT_NE(out.find("disruptorShielded"), std::string::npos);
+    UnitDefinition rt;
+    ASSERT_TRUE(parseUnitDefinitionFromString(out, rt));
+    EXPECT_TRUE(rt.properties.disruptorShielded);
+
+    // Absent → defaults false and is omitted from serialization.
+    static const char* PLAIN = R"({
+      "name": "Plain", "id": "plain",
+      "properties": { "classId": 9, "energy": 30 },
+      "rootSection": { "name": "body", "model": "m.gltf" }
+    })";
+    UnitDefinition pd;
+    ASSERT_TRUE(parseUnitDefinitionFromString(PLAIN, pd));
+    EXPECT_FALSE(pd.properties.disruptorShielded);
+    EXPECT_EQ(serializeUnitDefinitionToString(pd, true).find("disruptorShielded"), std::string::npos);
+}

@@ -24,7 +24,7 @@ static const char* TEST_WEAPONS_JSON = R"([
   {"id": 5, "name": "Plasma Torch", "damage": 6.0, "speed": 27.5, "fireRate": 0.15,
    "maxRange": 9.0, "optimumRange": 7.5, "type": "projectile", "damageType": "plasma", "twin": false},
   {"id": 6, "name": "Disruptor", "damage": 40.0, "speed": 0.0, "fireRate": 1.7,
-   "maxRange": 25.0, "optimumRange": 25.0, "type": "area", "damageType": "disruptor", "twin": false},
+   "maxRange": 25.0, "optimumRange": 25.0, "windup": 0.4, "type": "area", "damageType": "disruptor", "twin": false},
   {"id": 7, "name": "Twin Particle Cannon", "damage": 22.0, "speed": 16.0, "fireRate": 1.1,
    "maxRange": 20.0, "optimumRange": 10.0, "type": "projectile", "damageType": "plasma", "twin": true},
   {"id": 8, "name": "Exterminator", "damage": 6.0, "speed": 12.5, "fireRate": 1.2,
@@ -107,6 +107,10 @@ TEST_F(WeaponTestFixture, WeaponTypesParsed) {
     EXPECT_EQ(getWeaponDefinition(2).damageType, DamageType::Laser);
     EXPECT_EQ(getWeaponDefinition(6).damageType, DamageType::Disruptor);
     EXPECT_EQ(getWeaponDefinition(8).damageType, DamageType::Cutter);
+
+    // Disruptor area windup (delay before the blast lands); other weapons default to 0.
+    EXPECT_FLOAT_EQ(getWeaponDefinition(6).windup, 0.4f);
+    EXPECT_FLOAT_EQ(getWeaponDefinition(0).windup, 0.0f);
 }
 
 TEST_F(WeaponTestFixture, AllWeaponsLoaded) {

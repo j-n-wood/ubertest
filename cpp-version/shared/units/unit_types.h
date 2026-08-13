@@ -89,6 +89,9 @@ struct DroidProperties {
     // Drip decals: while damaged BELOW this many health points and moving, the droid leaks fluid
     // marks onto the floor (see game_update_drips / DecalManager). 0 = never drips.
     float dripThreshold = 0.0f;
+    // Immune to disruptor (area weapon) damage — a disruptor blast skips shielded units. Ported from
+    // uber's per-class `disruptor_shielded` flag (4 classes carry it). See game_update_disruptors.
+    bool disruptorShielded = false;
     Vector3 fireOffset = {0, 0, 0}; // Projectile spawn offset from unit centre
     std::string description;
 };

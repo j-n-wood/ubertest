@@ -38,9 +38,10 @@ inline constexpr float MIN_HEALTH = 10.0f;
 // Maps: energy -> health (scaled), armour -> damage reduction percentage.
 UnitCombatState initCombatState(const DroidProperties& properties);
 
-// Apply raw damage to combat state. Armour reduces effective damage.
+// Apply raw damage to combat state. Armour reduces effective damage, unless `ignoreArmour` is set
+// (e.g. the disruptor, whose damage type bypasses armour entirely — matches uber's mArmour=0).
 // Returns true if the unit is still alive after damage.
-bool applyDamage(UnitCombatState& state, float rawDamage);
+bool applyDamage(UnitCombatState& state, float rawDamage, bool ignoreArmour = false);
 
 // Accumulate continuous/realtime raw damage (applied later by updateRealtimeDamage).
 void accumulateRealtimeDamage(UnitCombatState& state, float rawDamage);

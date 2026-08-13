@@ -91,6 +91,7 @@
     "fireRate": 1.7,
     "maxRange": 25.0,
     "optimumRange": 25.0,
+    "windup": 0.4,
     "type": "area",
     "damageType": "disruptor",
     "twin": false

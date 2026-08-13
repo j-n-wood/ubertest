@@ -7,6 +7,7 @@
 #include "rendering/glass_render.h"
 #include "level/level3d_loader.h"
 #include "level/spawn_config.h"
+#include "combat/disruptor.h"
 #include "units/movement_tuning.h"
 #include "units/heal.h"
 #include <cmath>
@@ -1407,6 +1408,37 @@ static void game_update_drips(Game* game, float dt) {
     }
 }
 
+// Disruptor (area weapon): a fired unit's windup counts down; when it elapses the blast damages
+// every non-shielded unit within maxRange that has a clear wall/door line-of-sight from the firer,
+// EXCEPT the firer itself. No team filter — an enemy disruptor hits the player and other droids too
+// (matches uber). Damage bypasses armour. Death/explosions/scoring are handled the same frame by the
+// game_reap_dead sweep that runs right after this. Both the player device (or captured pilot) and the
+// enemy roster can be firers, so both are ticked. See docs/weapons.md.
+static void game_update_disruptors(Game* game, float dt) {
+    auto tick = [&](UnitInstance* firer) {
+        if (!firer || firer->disruptorWindup <= 0.0f) return;
+        firer->disruptorWindup -= dt;
+        if (firer->disruptorWindup > 0.0f) return;                 // still charging
+        firer->disruptorWindup = 0.0f;
+        const int weaponId = firer->disruptorWeaponId;
+        firer->disruptorWeaponId = -1;
+        if (!firer->active || !b2Body_IsValid(firer->bodyId)) return;   // firer died mid-windup
+        b2Vec2 fp = b2Body_GetPosition(firer->bodyId);
+
+        // Candidate set = the player device (or captured pilot) + the active enemy roster.
+        std::vector<UnitInstance*> candidates;
+        candidates.reserve(game->enemyUnits.size() + 1);
+        if (game->playerUnit) candidates.push_back(game->playerUnit);
+        for (UnitInstance* e : game->enemyUnits) candidates.push_back(e);
+
+        int hits = disruptorBlast(game->physics.world_id, {fp.x, fp.y}, firer,
+                                  getWeaponDefinition(weaponId), candidates);
+        TraceLog(LOG_INFO, "Disruptor blast: %d hit", hits);
+    };
+    tick(game->playerUnit);
+    for (UnitInstance* e : game->enemyUnits) tick(e);
+}
+
 //------------------------------------------------------------------------------
 // Score + alert
 //------------------------------------------------------------------------------
@@ -1551,7 +1583,16 @@ static void game_update_player_fire(Game* game, float dt) {
                                w.damage, dt, cu, w.id);
         return;
     }
-    if (w.type != WeaponType::Projectile) return;  // area/instant deferred
+    // Area (disruptor): no projectile — arm a windup on the firing unit; game_update_disruptors runs
+    // the omnidirectional LOS area-damage sweep when it elapses. Cooldown-gated like any weapon.
+    if (w.type == WeaponType::Area) {
+        if (tryFire(game->playerWeapon)) {
+            cu->disruptorWindup   = (w.windup > 0.0f) ? w.windup : 0.4f;
+            cu->disruptorWeaponId = w.id;
+        }
+        return;
+    }
+    if (w.type != WeaponType::Projectile) return;  // instant deferred
     if (!tryFire(game->playerWeapon)) return;       // respects fire-rate cooldown
 
     float lifetime = weaponProjectileLifetime(w);   // lifetime controls travel; maxRange is AI-only
@@ -2047,6 +2088,10 @@ void game_update_gameplay(Game* game, float dt) {
         // (the AI drives the fade in aiManager.update above).
         game_update_drips(game, simDt);
         game->decalManager.update(simDt);
+
+        // Disruptor windups: resolve any area blast whose windup elapses this step (LOS area damage),
+        // BEFORE the reap so its kills are collected below in the same frame.
+        game_update_disruptors(game, simDt);
 
         // Remove droids destroyed this step (permanent for the level). This may spawn more
         // explosions (chain reactions) — added to effectManager for next frame.

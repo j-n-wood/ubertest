@@ -21,6 +21,7 @@ add_executable(run_tests
     combat_state_test.cpp
     weapon_test.cpp
     beam_test.cpp
+    disruptor_test.cpp
     tileset_uv_test.cpp
     unit_json_test.cpp
     sprite_animation_test.cpp
@@ -50,6 +51,7 @@ add_executable(run_tests
     ${CMAKE_SOURCE_DIR}/shared/units/weapon.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/projectile_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/combat/beam_manager.cpp
+    ${CMAKE_SOURCE_DIR}/shared/combat/disruptor.cpp
     ${CMAKE_SOURCE_DIR}/shared/effects/effect_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/particles/particle_manager.cpp
     ${CMAKE_SOURCE_DIR}/shared/level/spawn_config.cpp

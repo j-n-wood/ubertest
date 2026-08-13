@@ -881,8 +881,20 @@ bool AIManager::canFire(const AIComponent& ai, Vector2 playerPos) const {
 
 void AIManager::tryFireAtPlayer(AIComponent& ai, Vector2 playerPos,
                                 b2WorldId worldId, ProjectileManager* projectiles) {
+    // Area (disruptor): no projectile — arm a windup on the unit; game_update_disruptors does the
+    // omnidirectional LOS area-damage sweep when it elapses. canFire already gates range + LOS (and
+    // returns true for Area regardless of facing). Consumes the fire cooldown like any weapon.
+    if (ai.weaponState.definition.type == WeaponType::Area) {
+        if (!canFire(ai, playerPos)) return;
+        if (!tryFire(ai.weaponState)) return;
+        const WeaponDefinition& w = ai.weaponState.definition;
+        ai.unit->disruptorWindup   = (w.windup > 0.0f) ? w.windup : 0.4f;
+        ai.unit->disruptorWeaponId = w.id;
+        return;
+    }
+
     if (!projectiles) return;
-    // Only projectile weapons fire this phase (beam/area/instant deferred); don't
+    // Only projectile weapons fire this phase (beam/instant deferred); don't
     // consume the cooldown for a weapon type we can't yet spawn.
     if (ai.weaponState.definition.type != WeaponType::Projectile) return;
     if (!canFire(ai, playerPos)) return;

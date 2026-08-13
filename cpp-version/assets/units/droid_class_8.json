@@ -6,6 +6,7 @@
   "maxSpeed": 90.0,
   "name": "Class 8",
   "properties": {
+        "disruptorShielded": true,
         "dripThreshold": 35,
 "armour": 0.0,
     "brainType": 1,

@@ -7,6 +7,7 @@
   "acceleration": 400.000000,
   "deceleration": 400.000000,
   "properties": {
+        "disruptorShielded": true,
         "dripThreshold": 49,
 "classId": 20,
     "typeCode": 821,

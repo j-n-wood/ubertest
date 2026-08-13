@@ -58,6 +58,8 @@ struct WeaponDefinition {
                                    // (back-compat). This — not maxRange — controls how far a bolt flies
                                    // and drives its end-of-life alpha fade. See weaponProjectileLifetime.
     float radius = 0.1f;           // Projectile physics (collision) radius (world units)
+    float windup = 0.0f;           // Area weapons (disruptor): delay (seconds) between the fire
+                                   // command and the area damage landing. 0 = instant. See docs/weapons.md.
     WeaponType type = WeaponType::Projectile;
     DamageType damageType = DamageType::Plasma;
     bool twin = false;             // Fires two projectiles

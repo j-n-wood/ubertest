@@ -79,6 +79,7 @@ static WeaponDefinition parseWeaponFromJson(const json& j) {
     w.optimumRange = j.value("optimumRange", 0.0f);
     w.lifetime     = j.value("lifetime", 0.0f);   // 0 = derive from maxRange/speed
     w.radius       = j.value("radius", 0.1f);
+    w.windup       = j.value("windup", 0.0f);
     w.type         = parseWeaponType(j.value("type", "projectile"));
     w.damageType   = parseDamageType(j.value("damageType", "plasma"));
     w.twin         = j.value("twin", false);
@@ -157,6 +158,7 @@ bool saveWeaponsToFile(const std::string& path) {
         if (w.lifetime > 0.0f) o["lifetime"] = r3(w.lifetime);   // omitted when derived from range
         // radius defaults to 0.1 and is omitted unless overridden (matches the shipped file).
         if (std::fabs(w.radius - 0.1f) > 1e-6f) o["radius"] = r3(w.radius);
+        if (w.windup > 0.0f) o["windup"] = r3(w.windup);   // area weapons only
         o["type"]         = weaponTypeToString(w.type);
         o["damageType"]   = damageTypeToString(w.damageType);
         o["twin"]         = w.twin;

@@ -114,6 +114,12 @@ struct UnitInstance {
     // Reset to a randomized interval on each drip (shorter as health drops). See game_update_drips.
     float dripCooldown = 0.0f;
 
+    // Disruptor (area weapon) windup: when this unit fires a disruptor, `disruptorWindup` is set to
+    // the weapon's windup (s) and `disruptorWeaponId` to the weapon id. game_update_disruptors counts
+    // it down and, at 0, does the omnidirectional LOS area-damage sweep from this unit. 0 = idle.
+    float disruptorWindup = 0.0f;
+    int   disruptorWeaponId = -1;
+
     // State
     bool active = true;
 
