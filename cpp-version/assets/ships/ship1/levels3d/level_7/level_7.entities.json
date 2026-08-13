@@ -393,9 +393,7 @@
       ]
     },
     {
-      "flags": {
-        "transmat": true
-      },
+      "flags": {},
       "id": 18,
       "neighbors": [
         19,

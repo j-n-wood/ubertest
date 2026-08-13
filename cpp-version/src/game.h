@@ -235,6 +235,11 @@ void game_switch_to_stop(Game* game, const LiftStop& stop);
 // Debug: jump to a deck by its stable deck number (used by the --deck startup flag).
 void game_debug_goto_deck(Game* game, int deckNumber);
 
+// Ship start: place the player at a `transmat` waypoint (uber's player-start pads, detected from the
+// loaded ship's waypoints — ship-specific). Switches to that pad's deck. Returns false if the ship
+// has no transmat pads (caller should fall back to a deck/lift-stop start). See game_start_at_transmat.
+bool game_start_at_transmat(Game* game);
+
 // Advance to the next level renderer (Tilemap -> CustomTiles -> Objects3D -> …) and reload the
 // current level in that renderer's coordinate frame. Bound to the in-game G key.
 void game_cycle_renderer(Game* game);

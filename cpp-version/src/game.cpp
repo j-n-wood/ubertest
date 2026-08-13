@@ -1691,6 +1691,33 @@ void game_debug_goto_deck(Game* game, int deckNumber) {
     TraceLog(LOG_WARNING, "game_debug_goto_deck: no deck with number %d", deckNumber);
 }
 
+bool game_start_at_transmat(Game* game) {
+    // Gather the ship's transmat (player-start) pads from every deck's waypoints. Ship-specific: the
+    // flags come from the loaded ship's bundles, so a new ship brings its own pads automatically.
+    // Every deck's waypoints are already loaded (eager population at ship load).
+    struct Pad { int level; int deckNumber; Vector2 pos; };
+    std::vector<Pad> pads;
+    for (int L = 0; L < (int)game->levelRenderData.size() && L < (int)game->levels.size(); ++L) {
+        const LevelRenderData& rd = game->levelRenderData[L];
+        for (size_t i = 0; i < rd.waypointIsTransmat.size() && i < rd.waypointPositions.size(); ++i) {
+            if (!rd.waypointIsTransmat[i]) continue;
+            Vector3 p = rd.waypointPositions[i];   // render X,Yup,Z → physics is (X, Z)
+            pads.push_back({L, game->levels[L].number, {p.x, p.z}});
+        }
+    }
+    if (pads.empty()) return false;
+
+    // TODO: randomise the choice among pads for a future "random start". For now pick the lowest deck
+    // number so the start is stable/reproducible.
+    const Pad* chosen = &pads[0];
+    for (const Pad& pd : pads) if (pd.deckNumber < chosen->deckNumber) chosen = &pd;
+
+    game_change_level(game, chosen->level, &chosen->pos);   // migrate the player onto the pad's deck
+    TraceLog(LOG_INFO, "Ship start: player at transmat pad on deck %d (%zu pad(s) on this ship)",
+             chosen->deckNumber, pads.size());
+    return true;
+}
+
 // Lift use: move the player to a specific stop, switching level if needed.
 void game_switch_to_stop(Game* game, const LiftStop& stop) {
     if (stop.level == game->currentLevel) {

@@ -35,6 +35,7 @@ void loadWaypoints(const std::string& path, LevelRenderData& data) {
     data.waypointPositions.clear();
     data.waypointLinks.clear();
     data.waypointIsStart.clear();
+    data.waypointIsTransmat.clear();
     data.waypointAdjacency.assign(wps.size(), {});
 
     for (const auto& w : wps) {
@@ -44,6 +45,9 @@ void loadWaypoints(const std::string& path, LevelRenderData& data) {
         // the flag only when true, so absence = not a start waypoint). See resolveSpawns.
         bool isStart = w.contains("flags") && w["flags"].value("start", false);
         data.waypointIsStart.push_back(isStart ? 1 : 0);
+        // uber's `transmat` flag = PLAYER-start pad (not on the AI network). See game_start_at_transmat.
+        bool isTransmat = w.contains("flags") && w["flags"].value("transmat", false);
+        data.waypointIsTransmat.push_back(isTransmat ? 1 : 0);
     }
     for (int i = 0; i < (int)wps.size(); i++) {
         if (!wps[i].contains("neighbors")) continue;

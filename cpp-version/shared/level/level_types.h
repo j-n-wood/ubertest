@@ -194,6 +194,11 @@ struct LevelRenderData {
     // in which case spawn resolution falls back to all waypoints. See resolveSpawns.
     std::vector<uint8_t> waypointIsStart;
 
+    // Per-waypoint "transmat" flag (uber's waypoint `transmat` = PLAYER start pad, NOT on the AI
+    // movement network). The ship-start places the player at one of these. Parallel to
+    // waypointPositions. See game_start_at_transmat.
+    std::vector<uint8_t> waypointIsTransmat;
+
     // Waypoint adjacency list — waypointAdjacency[i] = indices of waypoints linked to i
     std::vector<std::vector<int>> waypointAdjacency;
 

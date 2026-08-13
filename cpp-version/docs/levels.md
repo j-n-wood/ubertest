@@ -48,16 +48,25 @@ things that ever cross worlds are the **player device** and the **unit it is pil
   `shipDroidsRemaining` is the true shipwide live count from the start, and `game_ship_is_clear` (all
   droids defeated) drives the "ship clear of droids" banner + the Ship Data console page.
 
-## Waypoint spawn points (`start` flag)
+## Waypoint spawn points (`start` flag) & player start (`transmat`)
 
-Only waypoints flagged **`start`** ("droid start" in uber's `waypoint.cpp`) are valid AI-spawn
-points. `writeEntities` exports the flag, `loadWaypoints` reads it into
-`LevelRenderData::waypointIsStart`, and `resolveSpawns` restricts profile droids to start waypoints
-(falling back to all waypoints only if a level supplies no flags — e.g. the TMX path). This mirrors
-uber's `domain::startWaypoint` and, crucially, keeps droids **out of isolated waypoint networks**
-(e.g. deck 7's organic-unit loop, waypoint ids 18/20/21/22/23) that are unreachable from the main
-area — otherwise units spawn there and can never be found, killed, or cleared. Explicitly-placed
-droids (`PLACEDROID` with a waypointIndex) still go to their exact waypoint.
+Waypoints carry uber's flags; two matter for placement:
+
+- **`start`** ("droid start") — the only valid **AI-spawn** points. `writeEntities` exports the flag,
+  `loadWaypoints` reads it into `LevelRenderData::waypointIsStart`, and `resolveSpawns` restricts
+  profile droids to start waypoints (falling back to all waypoints only if a level supplies no
+  flags — the TMX path). This mirrors uber's `domain::startWaypoint` and keeps droids **out of
+  isolated waypoint networks** (e.g. a glass-sealed loop) that are unreachable from the main area —
+  otherwise units spawn where they can never be found, killed, or cleared. Explicitly-placed droids
+  (`PLACEDROID` with a waypointIndex) still go to their exact waypoint.
+- **`transmat`** ("player start", NOT on the AI network) — the **player** materialises here at ship
+  start. `game_start_at_transmat` (called from `main` when there's no `--deck` override) scans every
+  deck's `LevelRenderData::waypointIsTransmat`, collects the ship's pads, and places the player at one
+  (currently the lowest deck number; **randomising over the pads is the planned "random start"**) via
+  the normal `game_change_level` switch. Ship-specific: the pads come from the loaded ship's bundles.
+  Falls back to `GAME_START_DECK`'s lift stop if a ship has no transmat pads. (ship1 has 3, on decks
+  4/5/6; deck 7's was removed from the source because that pad sits inside a glass-sealed, otherwise
+  unreachable area.)
 
 ## Glass walls (`CATEGORY_GLASS`)
 

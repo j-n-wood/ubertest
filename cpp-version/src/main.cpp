@@ -121,11 +121,11 @@ int main(int argc, char* argv[]) {
     const char* unitId = nullptr;      // Default (will use droid_class_0)
     RotationTestConfig testConfig;
     LevelRenderMode renderMode = LevelRenderMode::Objects3D;  // default; --renderer overrides, G toggles at runtime
-    // Deck the game starts on. TODO: randomise this later (pick a random deck number). Reached via
-    // the normal world-switch path after init (see below), so the player device is migrated into the
-    // deck's world and placed at its lift stop — NOT by changing the level index inside game_init.
+    // Fallback start deck, used ONLY if the ship has no transmat (player-start) pads. The normal
+    // start is game_start_at_transmat (see below); randomisation of the start will live there (over
+    // the transmat pads), not here. Reached via the normal world-switch (player migrated + placed).
     constexpr int GAME_START_DECK = 7;
-    int startDeck = -1;  // --deck N override (debug); -1 = use GAME_START_DECK
+    int startDeck = -1;  // --deck N override (debug); -1 = transmat pad, else GAME_START_DECK fallback
 
     // Screenshot capture (dev/QA): after --shot-frame frames, save the framebuffer to a PNG and exit.
     // Combine with --args-file to keep the command line stable. Optional camera override via
@@ -214,9 +214,14 @@ int main(int argc, char* argv[]) {
     Game game{};
     game.levelRenderMode = renderMode;  // startup renderer selection (before the first build in game_init)
     game_init(&game, assetPath, unitId, testConfig.enabled ? &testConfig : nullptr);
-    // Move to the start deck (or a --deck override) via the same switch path lifts use, so the
-    // player is correctly migrated into that deck's world and placed at its lift stop.
-    game_debug_goto_deck(&game, startDeck >= 0 ? startDeck : GAME_START_DECK);
+    // Start position: a --deck override wins (debug); otherwise place the player at the ship's
+    // transmat pad (uber's player-start); if the ship has no transmat pads, fall back to
+    // GAME_START_DECK's lift stop. All paths migrate the player via the normal world-switch.
+    if (startDeck >= 0) {
+        game_debug_goto_deck(&game, startDeck);
+    } else if (!game_start_at_transmat(&game)) {
+        game_debug_goto_deck(&game, GAME_START_DECK);
+    }
 
     // View-states are pages on a stack; gameplay is the base GamePage. Other pages
     // (console, future title) are pushed on top and drive update/render while active.
